@@ -72,10 +72,47 @@ console.log('[vue] runtime adapters bound to Pinia')
 
 themeStore.init()
 
-applyNativeControlStyles(document.getElementById('btn-prev-sentence'), {
+const readerToolbarButtonIds = [
+  'btn-prev-sentence',
+  'btn-next-sentence',
+  'toggle-follow',
+  'highlight-mode-btn',
+  'import-marks-btn',
+  'export-json',
+  'export-md-all',
+  'toggle-chunk-btn',
+  'btn-annotation-backfill-ai',
+  'btn-preview-vocabulary',
+  'btn-toggle-preview-vocabulary',
+  'btn-settle-article-vocabulary',
+  'btn-chunk-focus',
+]
+
+readerToolbarButtonIds.forEach((id) => {
+  applyNativeControlStyles(document.getElementById(id), {
+    owner: 'reader',
+    variant: 'outline',
+    size: 'sm',
+  })
+})
+
+document.querySelectorAll('.speed-btn[data-speed]').forEach((button) => {
+  applyNativeControlStyles(button, {
+    owner: 'reader',
+    variant: 'outline',
+    size: 'sm',
+  })
+})
+
+applyNativeControlStyles(document.getElementById('btn-chunk-cn-hold'), {
   owner: 'reader',
   variant: 'outline',
-  size: 'sm',
+  size: 'xs',
+})
+applyNativeControlStyles(document.getElementById('btn-chunk-style'), {
+  owner: 'reader',
+  variant: 'outline',
+  size: 'xs',
 })
 
 // Host-backed domains are optional until the Host explicitly reports a

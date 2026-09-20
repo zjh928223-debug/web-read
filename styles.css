@@ -574,21 +574,31 @@ body {
   gap: 8px;
   align-items: center;
   flex: 0 0 auto;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
 }
 
 #srs-review-entry-root {
   display: inline-flex;
   align-items: center;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   /* Reserve the Teleport target's final footprint before Vue inserts its entries. */
-  min-width: 237px;
+  min-width: min(248px, 100%);
+  max-width: 100%;
   min-height: 28px;
 }
 
-#srs-review-entry-root .learning-entry-group > .small-btn {
-  flex: 0 0 auto;
-  white-space: nowrap;
+#srs-review-entry-root .learning-entry-group > :is(.learning-entry-button, .small-btn) {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  height: auto;
+  min-height: 32px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  text-align: center;
+  white-space: normal;
 }
 
 .learning-model-entry {
@@ -1786,6 +1796,65 @@ body {
       min-height: var(--pru-control-h-sm, 32px);
     }
 
+    /* Reserve only geometry before the module CSS and Vue Teleports finish
+       loading. This low-priority layer must never own button colors, borders,
+       typography, hover, focus, or active-state visuals. */
+    @layer reader-footprint, theme, base, components, utilities;
+    @layer reader-footprint {
+      [data-ui-owner="reader"]:where(button, [role="button"]) {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        box-sizing: border-box;
+        min-height: 32px;
+        height: 32px;
+        gap: 6px;
+        padding: 0 12px;
+      }
+      [data-ui-owner="reader"]#btn-chunk-cn-hold,
+      [data-ui-owner="reader"]#btn-chunk-style {
+        min-height: 24px;
+        height: 24px;
+        gap: 4px;
+        padding: 0 8px;
+      }
+      [data-ui-owner="reader"]#btn-prev-sentence,
+      [data-ui-owner="reader"]#btn-next-sentence {
+        width: 68px;
+      }
+      [data-ui-owner="reader"].speed-btn {
+        width: 64px;
+      }
+      [data-ui-owner="reader"]#toggle-follow,
+      [data-ui-owner="reader"]#highlight-mode-btn {
+        width: 72px;
+      }
+      [data-ui-owner="reader"]#btn-annotation-backfill-ai,
+      [data-ui-owner="reader"]#btn-toggle-preview-vocabulary,
+      [data-ui-owner="reader"]#btn-settle-article-vocabulary {
+        min-width: 96px;
+      }
+      [data-ui-owner="reader"]#btn-preview-vocabulary {
+        min-width: 82px;
+      }
+      [data-ui-owner="reader"]#btn-chunk-cn-hold {
+        width: 42px;
+      }
+      [data-ui-owner="reader"]#btn-chunk-focus {
+        width: 54px;
+      }
+      [data-ui-owner="reader"]#btn-chunk-style {
+        width: 30px;
+      }
+      [data-ui-owner="reader"]#import-marks-btn { width: 68px; }
+      [data-ui-owner="reader"]#export-json { width: 76px; }
+      [data-ui-owner="reader"]#export-md-all { width: 65px; }
+      [data-ui-owner="reader"]#toggle-chunk-btn { min-width: 122px; }
+    }
+    .speed-controls {
+      min-height: var(--pru-control-h-sm, 32px);
+    }
+
     .transcript-header {
       display: flex;
       align-items: center;
@@ -1807,12 +1876,14 @@ body {
     
     .transcript-actions {
         display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center;
+        width: 100%;
+        min-width: 0;
         position: relative;
         z-index: 1;
     }
 
     /* 鎸夐挳閫氱敤鏍峰紡 */
-    #toggle-follow, .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])),
+    #toggle-follow:where(:not([data-ui-owner="reader"])), .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])),
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
       #style-editor-modal, #chunk-style-modal,
@@ -1820,7 +1891,7 @@ body {
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
     ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])),
-    .speed-controls button, .seek-controls button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])), #highlight-mode-btn, #toggle-chunk-btn {
+    .speed-controls button:where(:not([data-ui-owner="reader"])), .seek-controls button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])), #highlight-mode-btn:where(:not([data-ui-owner="reader"])), #toggle-chunk-btn:where(:not([data-ui-owner="reader"])) {
       padding: 5px 12px;
       border: 1px solid var(--glass-border);
       background: var(--glass-button-bg);
@@ -1846,7 +1917,7 @@ body {
       isolation: isolate;
       overflow: hidden;
     }
-    #toggle-follow::before, .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]))::before,
+    #toggle-follow:where(:not([data-ui-owner="reader"]))::before, .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]))::before,
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
       #style-editor-modal, #chunk-style-modal,
@@ -1854,7 +1925,7 @@ body {
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
     ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]))::before,
-    .speed-controls button::before, .seek-controls button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]))::before, #highlight-mode-btn::before, #toggle-chunk-btn::before, .file-btn::before, .mini-toggle::before {
+    .speed-controls button:where(:not([data-ui-owner="reader"]))::before, .seek-controls button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]))::before, #highlight-mode-btn:where(:not([data-ui-owner="reader"]))::before, #toggle-chunk-btn:where(:not([data-ui-owner="reader"]))::before, .file-btn::before, .mini-toggle:where(:not([data-ui-owner="reader"]))::before {
       content: "";
       position: absolute;
       inset: 0;
@@ -1865,7 +1936,7 @@ body {
       transition: opacity var(--glass-duration-fast) var(--glass-ease);
       z-index: 0;
     }
-    #toggle-follow.ui-glass-dynamic::before,
+    #toggle-follow:where(:not([data-ui-owner="reader"])).ui-glass-dynamic::before,
     .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])).ui-glass-dynamic::before,
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
@@ -1875,7 +1946,7 @@ body {
       .annotation-bubble, .youtube-video-player
     ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])).ui-glass-dynamic::before,
     .file-btn.ui-glass-dynamic::before,
-    .mini-toggle.ui-glass-dynamic::before {
+    .mini-toggle:where(:not([data-ui-owner="reader"])).ui-glass-dynamic::before {
       opacity: 0.72;
     }
     :where(
@@ -1885,7 +1956,7 @@ body {
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
     ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):hover,
-    #toggle-follow:hover, .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):hover {
+    #toggle-follow:where(:not([data-ui-owner="reader"])):hover, .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):hover {
       transform: translateY(-1px) scale(1.01);
       background: var(--glass-panel-bg-strong);
       border-color: rgba(255,255,255,0.68);
@@ -1898,7 +1969,7 @@ body {
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
     ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):active,
-    #toggle-follow:active, .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):active {
+    #toggle-follow:where(:not([data-ui-owner="reader"])):active, .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):active {
       transform: translateY(0) scale(0.985);
       background: rgba(226,232,242,0.52);
       box-shadow: inset 0 1px 2px rgba(0,0,0,0.18), 0 1px 3px rgba(0,0,0,0.12);
@@ -1910,7 +1981,7 @@ body {
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
     ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):focus-visible,
-    #toggle-follow:focus-visible, .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):focus-visible, .file-btn:focus-visible {
+    #toggle-follow:where(:not([data-ui-owner="reader"])):focus-visible, .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):focus-visible, .file-btn:focus-visible {
       outline: 2px solid rgba(10, 132, 255, 0.78);
       outline-offset: 2px;
     }
@@ -1931,7 +2002,7 @@ body {
       border-color: rgba(34, 197, 94, 0.32);
     }
     /* 婵€娲荤姸鎬?*/
-    #toggle-follow.on, .speed-button-active, #highlight-mode-btn.active, #toggle-sidebar-btn.active, #toggle-chunk-btn.active, #btn-chunk-focus.active {
+    #toggle-follow:where(:not([data-ui-owner="reader"])).on, .speed-button-active:where(:not([data-ui-owner="reader"])), #highlight-mode-btn:where(:not([data-ui-owner="reader"])).active, #toggle-sidebar-btn.active, #toggle-chunk-btn:where(:not([data-ui-owner="reader"])).active, #btn-chunk-focus:where(:not([data-ui-owner="reader"])).active {
       background: linear-gradient(180deg, rgba(10,132,255,0.24), rgba(10,132,255,0.18)) !important;
       border-color: rgba(10,132,255,0.35);
       color: #0a84ff !important;
@@ -1953,7 +2024,7 @@ body {
       backdrop-filter: var(--glass-blur-sm);
       -webkit-backdrop-filter: var(--glass-blur-sm);
     }
-    .mini-toggle {
+    .mini-toggle:where(:not([data-ui-owner="reader"])) {
       padding: 3px 8px;
       border: 1px solid var(--glass-border);
       background: var(--glass-button-bg);
@@ -1975,7 +2046,7 @@ body {
       isolation: isolate;
       overflow: hidden;
     }
-    .mini-toggle.active {
+    .mini-toggle:where(:not([data-ui-owner="reader"])).active {
       background: linear-gradient(180deg, rgba(10,132,255,0.24), rgba(10,132,255,0.18)) !important;
       border-color: rgba(10,132,255,0.35);
       color: #0a84ff !important;
@@ -2053,8 +2124,8 @@ body {
       from { opacity: 0; transform: translateY(-3px) scale(0.98); }
       to { opacity: 1; transform: translateY(0) scale(1); }
     }
-    .speed-controls .speed-btn { min-width: 64px; font-weight: 600; min-height: 28px; }
-    #btn-chunk-style, #open-style-editor {
+    .speed-controls .speed-btn:where(:not([data-ui-owner="reader"])) { min-width: 64px; font-weight: 600; min-height: 28px; }
+    #btn-chunk-style:where(:not([data-ui-owner="reader"])), #open-style-editor {
       min-width: 30px;
       height: 26px;
       padding: 0 7px !important;
@@ -2158,7 +2229,7 @@ body {
       color: var(--text-main);
       cursor: pointer;
     }
-    [data-theme="dark"] #toggle-follow, [data-theme="dark"] .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])),
+    [data-theme="dark"] #toggle-follow:where(:not([data-ui-owner="reader"])), [data-theme="dark"] .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])),
     [data-theme="dark"] :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
       #style-editor-modal, #chunk-style-modal,
@@ -2166,7 +2237,7 @@ body {
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
     ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])),
-    [data-theme="dark"] .speed-controls button, [data-theme="dark"] .seek-controls button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])), [data-theme="dark"] #highlight-mode-btn, [data-theme="dark"] #toggle-chunk-btn {
+    [data-theme="dark"] .speed-controls button:where(:not([data-ui-owner="reader"])), [data-theme="dark"] .seek-controls button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])), [data-theme="dark"] #highlight-mode-btn:where(:not([data-ui-owner="reader"])), [data-theme="dark"] #toggle-chunk-btn:where(:not([data-ui-owner="reader"])) {
       border-color: rgba(255,255,255,0.2);
       background: var(--glass-button-bg);
       box-shadow: inset 1px 1px 0 var(--glass-highlight), var(--glass-shadow-sm);
@@ -2176,7 +2247,7 @@ body {
       background: var(--glass-button-bg);
       box-shadow: inset 1px 1px 0 var(--glass-highlight), var(--glass-shadow-sm);
     }
-    [data-theme="dark"] .mini-toggle {
+    [data-theme="dark"] .mini-toggle:where(:not([data-ui-owner="reader"])) {
       border-color: rgba(255,255,255,0.2);
       background: var(--glass-button-bg);
       box-shadow: inset 1px 1px 0 var(--glass-highlight), var(--glass-shadow-sm);
@@ -2185,7 +2256,7 @@ body {
       border-color: rgba(255,255,255,0.18);
       background: color-mix(in srgb, rgba(20,24,30,0.94) 92%, transparent);
     }
-    [data-theme="dark"] #toggle-follow.on, [data-theme="dark"] .speed-button-active, [data-theme="dark"] #highlight-mode-btn.active, [data-theme="dark"] #toggle-sidebar-btn.active, [data-theme="dark"] #toggle-chunk-btn.active, [data-theme="dark"] #btn-chunk-focus.active, [data-theme="dark"] .mini-toggle.active {
+    [data-theme="dark"] #toggle-follow:where(:not([data-ui-owner="reader"])).on, [data-theme="dark"] .speed-button-active:where(:not([data-ui-owner="reader"])), [data-theme="dark"] #highlight-mode-btn:where(:not([data-ui-owner="reader"])).active, [data-theme="dark"] #toggle-sidebar-btn.active, [data-theme="dark"] #toggle-chunk-btn:where(:not([data-ui-owner="reader"])).active, [data-theme="dark"] #btn-chunk-focus:where(:not([data-ui-owner="reader"])).active, [data-theme="dark"] .mini-toggle:where(:not([data-ui-owner="reader"])).active {
       color: #409cff !important;
       border-color: rgba(64,156,255,0.45);
       background: linear-gradient(180deg, rgba(64,156,255,0.26), rgba(64,156,255,0.18)) !important;

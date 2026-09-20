@@ -10,9 +10,33 @@
     <ChunkModeView />
     <Teleport to="#srs-review-entry-root">
       <span class="learning-entry-group">
-        <button class="small-btn" type="button" title="复习当前已到期的单词" @click="openSrsReview">今日复习</button>
-        <button class="small-btn" type="button" title="首次接触：一个主要义和一条可追溯真实短句" @click="openPassagePreview">待预习</button>
-        <button class="small-btn" type="button" title="设置每组固定的预习单词数量" @click="openPassagePreviewSettings">预习设置</button>
+        <Button
+          variant="outline"
+          size="sm"
+          data-ui-owner="reader"
+          class="learning-entry-button"
+          type="button"
+          title="复习当前已到期的单词"
+          @click="openSrsReview"
+        >今日复习</Button>
+        <Button
+          variant="outline"
+          size="sm"
+          data-ui-owner="reader"
+          class="learning-entry-button"
+          type="button"
+          title="首次接触：一个主要义和一条可追溯真实短句"
+          @click="openPassagePreview"
+        >待预习</Button>
+        <Button
+          variant="outline"
+          size="sm"
+          data-ui-owner="reader"
+          class="learning-entry-button"
+          type="button"
+          title="设置每组固定的预习单词数量"
+          @click="openPassagePreviewSettings"
+        >预习设置</Button>
         <input
           ref="passagePreviewFileInput"
           class="passage-preview-file-input"
@@ -81,6 +105,7 @@
 
 <script setup>
 import { defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { Button } from './components/ui/button/index.js'
 import ToastMessage from './components/ToastMessage.vue'
 import YouTubeWorkflowPanel from './components/YouTubeWorkflowPanel.vue'
 import VideoPlayerFloat from './components/VideoPlayerFloat.vue'

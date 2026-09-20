@@ -104,3 +104,31 @@
     transition: none;
   }
 }
+
+/* Reader toolbar state and layout exceptions. The business modules continue
+   to own these classes; this layer only gives the shared recipe a semantic
+   selected appearance and preserves the few compact widths that matter. */
+[data-ui-owner="reader"].speed-btn {
+  min-width: 64px;
+  font-weight: 600;
+}
+
+[data-ui-owner="reader"]#btn-chunk-style {
+  min-width: 30px;
+  margin-right: 2px;
+  font-family: 'Noto Serif SC', serif;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+[data-ui-owner="reader"]#btn-chunk-focus {
+  min-width: 30px;
+}
+
+[data-ui-owner="reader"]:is(.on, .active, .speed-button-active) {
+  background-color: var(--primary);
+  border-color: var(--ring);
+  color: var(--primary-foreground);
+  font-weight: 600;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ring) 34%, transparent);
+}

@@ -51,11 +51,11 @@
 
             <span class="deprecated-tool-label">旧工具:</span>
             <input type="file" id="import-marks-file" accept=".json" style="display: none;" />
-            <button id="import-marks-btn" class="small-btn">导标记</button>
-            <button id="export-json" class="small-btn">存JSON</button>
-            <button id="export-md-all" class="small-btn">存TXT</button>
-            <button id="toggle-chunk-btn">AI切分</button>
-            <button id="btn-chunk-style" title="调整切分模式样式" style="font-family:serif; font-weight:bold; padding: 3px 8px; margin-right: 2px;">T</button>
+            <button id="import-marks-btn" data-ui-owner="reader">导标记</button>
+            <button id="export-json" data-ui-owner="reader">存JSON</button>
+            <button id="export-md-all" data-ui-owner="reader">存TXT</button>
+            <button id="toggle-chunk-btn" data-ui-owner="reader">AI切分</button>
+            <button id="btn-chunk-style" data-ui-owner="reader" title="调整切分模式样式">T</button>
           </div>
         </details>
         <div id="youtube-reader-controls-root"></div>
@@ -67,19 +67,19 @@
         <div class="control-group seek-controls">
           <button id="btn-prev-sentence" data-ui-owner="reader">上一句</button>
           <input id="hotkey-backward-input" class="hotkey-input-wide" type="text" value="ArrowLeft" title="设置后退快捷键" />
-          <button id="btn-next-sentence">下一句</button>
+          <button id="btn-next-sentence" data-ui-owner="reader">下一句</button>
           <input id="hotkey-forward-input" class="hotkey-input-wide" type="text" value="ArrowRight" title="设置前进快捷键" />
         </div>
         <div class="control-group speed-controls">
-          <button class="speed-btn" data-speed="0.85">0.85x</button>
-          <button class="speed-btn speed-button-active" data-speed="1.0">1.0x</button>
-          <button class="speed-btn" data-speed="1.25">1.25x</button>
+          <button class="speed-btn" data-speed="0.85" data-ui-owner="reader">0.85x</button>
+          <button class="speed-btn speed-button-active" data-speed="1.0" data-ui-owner="reader">1.0x</button>
+          <button class="speed-btn" data-speed="1.25" data-ui-owner="reader">1.25x</button>
         </div>
       </div>
 
       <div class="transcript-header">
         <div class="transcript-actions">
-          <button id="toggle-follow" class="on">跟随:开</button>
+          <button id="toggle-follow" class="on" data-ui-owner="reader">跟随:开</button>
           
           <span class="hotkey-box">
             标记 <input id="hotkey-input" class="hotkey-input" type="text" maxlength="1" value="m" />
@@ -89,7 +89,7 @@
             泡 <input id="hotkey-annotation-bubble-input" class="hotkey-input" type="text" maxlength="1" value="b" />
           </span>
           
-          <button id="highlight-mode-btn">高亮:句</button>
+          <button id="highlight-mode-btn" data-ui-owner="reader">高亮:句</button>
           
           <span class="hotkey-box" title="句子高亮底色">
             句<input type="color" id="sentence-color-input" class="color-input" value="#e5e7eb">
@@ -100,18 +100,18 @@
 
           <span id="annotation-mark-count" class="small-btn mark-count-badge" role="status" aria-live="polite" data-count="0" title="当前文章已标记 0 个重点词">已标记 0</span>
           <input type="file" id="import-annotation-lightweight-file" accept=".json" style="display: none;" />
-          <button id="btn-annotation-backfill-ai" class="small-btn" type="button" title="自动导出轻回填模板、请求 Gemini 并导入解释结果">AI解释标注</button>
-          <button id="btn-preview-vocabulary" class="small-btn" type="button" title="扫描当前文章的预习生词">预习生词</button>
-          <button id="btn-toggle-preview-vocabulary" class="small-btn" type="button" title="显示或隐藏已解释的预习词">显示预习词</button>
-          <button id="btn-settle-article-vocabulary" class="small-btn" type="button" title="确认本文已学完后，整理本篇生词到 SRS">已学完本篇</button>
+          <button id="btn-annotation-backfill-ai" type="button" data-ui-owner="reader" title="自动导出轻回填模板、请求 Gemini 并导入解释结果">AI解释标注</button>
+          <button id="btn-preview-vocabulary" type="button" data-ui-owner="reader" title="扫描当前文章的预习生词">预习生词</button>
+          <button id="btn-toggle-preview-vocabulary" type="button" data-ui-owner="reader" title="显示或隐藏已解释的预习词">显示预习词</button>
+          <button id="btn-settle-article-vocabulary" type="button" data-ui-owner="reader" title="确认本文已学完后，整理本篇生词到 SRS">已学完本篇</button>
           <div id="srs-review-entry-root"></div>
 
           <span class="hotkey-box">
             中<input id="hotkey-chunk-cn-input" class="hotkey-input" type="text" maxlength="1" value="c" title="AI切分模式下开关中文" />
-            <button id="btn-chunk-cn-hold" class="mini-toggle active" title="切换：按住快捷键才显示中文">按住</button>
+            <button id="btn-chunk-cn-hold" class="active" data-ui-owner="reader" title="切换：按住快捷键才显示中文">按住</button>
           </span>
 
-          <button id="btn-chunk-focus" class="small-btn active" title="切换中文显示模式：全局/聚焦" style="padding: 3px 10px; min-width:30px;">聚焦</button>
+          <button id="btn-chunk-focus" class="active" data-ui-owner="reader" title="切换中文显示模式：全局/聚焦">聚焦</button>
           
           <span class="hotkey-box" title="AI切分模式下开关高亮背景（阴影）">
             影<input id="hotkey-chunk-shadow-input" class="hotkey-input" type="text" maxlength="1" value="s" />
