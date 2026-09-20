@@ -1,6 +1,8 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import App from './App.vue'
+import './styles/workflow-ui.css'
+import { applyNativeControlStyles } from './lib/native-control-styles.js'
 import { flushPendingUiNotifications } from './composables/ui-facades.js'
 import { initializeWindowsOwnerReaderSessionComposition } from './services/windows-owner-reader-session-composition.js'
 import { initializeWindowsOwnerDomainCutoverComposition } from './services/windows-owner-domain-cutover.js'
@@ -69,6 +71,12 @@ if (window.__clozeState && typeof window.__clozeState.bindPiniaStore === 'functi
 console.log('[vue] runtime adapters bound to Pinia')
 
 themeStore.init()
+
+applyNativeControlStyles(document.getElementById('btn-prev-sentence'), {
+  owner: 'reader',
+  variant: 'outline',
+  size: 'sm',
+})
 
 // Host-backed domains are optional until the Host explicitly reports a
 // per-domain authoritative checkpoint.  A degraded/pre-cutover Host leaves

@@ -7,7 +7,7 @@
 
 @source "../components/ui";
 @source "../components/YouTubeWorkflowPanel.vue";
-@source "../lib";
+@source "../lib/native-control-styles.js";
 
 @theme inline {
   --color-background: var(--background);
@@ -47,8 +47,31 @@
   --ring: var(--pru-info);
 }
 
+/* Native reader controls use the same Button recipe without inheriting the
+   workflow palette. Keep the mapping on the owner so custom theme colors
+   continue to flow from the existing reader variables. */
+[data-ui-owner="reader"],
+[data-ui-owner="style-controls"] {
+  --background: var(--btn-bg);
+  --foreground: var(--btn-text);
+  --primary: var(--btn-active-bg);
+  --primary-foreground: var(--btn-text);
+  --secondary: var(--btn-active-bg);
+  --secondary-foreground: var(--btn-text);
+  --muted: var(--btn-bg);
+  --muted-foreground: var(--text-sub);
+  --accent: var(--btn-hover);
+  --accent-foreground: var(--text-main);
+  --destructive: var(--pru-danger);
+  --border: var(--border-color);
+  --input: var(--input-bg);
+  --ring: var(--btn-active-border);
+}
+
 @layer base {
-  [data-ui-owner="workflow"] {
+  [data-ui-owner="workflow"],
+  [data-ui-owner="reader"],
+  [data-ui-owner="style-controls"] {
     appearance: none;
     box-sizing: border-box;
     margin: 0;
@@ -61,17 +84,23 @@
     font-family: var(--pru-ui-font);
   }
 
-  [data-ui-owner="workflow"]:is(input, textarea) {
+  [data-ui-owner="workflow"]:is(input, textarea),
+  [data-ui-owner="reader"]:is(input, textarea),
+  [data-ui-owner="style-controls"]:is(input, textarea) {
     cursor: text;
   }
 
-  [data-ui-owner="workflow"]:is(button, [role="button"]):not(:disabled) {
+  [data-ui-owner="workflow"]:is(button, [role="button"]):not(:disabled),
+  [data-ui-owner="reader"]:is(button, [role="button"]):not(:disabled),
+  [data-ui-owner="style-controls"]:is(button, [role="button"]):not(:disabled) {
     cursor: pointer;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-ui-owner="workflow"] {
+  [data-ui-owner="workflow"],
+  [data-ui-owner="reader"],
+  [data-ui-owner="style-controls"] {
     transition: none;
   }
 }

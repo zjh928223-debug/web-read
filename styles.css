@@ -1406,7 +1406,7 @@ body {
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
-    ) .glass-button:where(:not([data-ui-owner="workflow"])) {
+    ) .glass-button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])) {
       position: relative;
       overflow: hidden;
       isolation: isolate;
@@ -1417,7 +1417,7 @@ body {
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
-    ) .glass-button:where(:not([data-ui-owner="workflow"]))::before {
+    ) .glass-button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]))::before {
       content: "";
       position: absolute;
       inset: 0;
@@ -1438,7 +1438,7 @@ body {
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
-    ) .glass-button:where(:not([data-ui-owner="workflow"])) > * {
+    ) .glass-button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])) > * {
       position: relative;
       z-index: 1;
     }
@@ -1448,7 +1448,7 @@ body {
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
-    ) .ui-glass-dynamic.glass-button:where(:not([data-ui-owner="workflow"]))::before {
+    ) .ui-glass-dynamic.glass-button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]))::before {
       opacity: 0.78;
     }
 
@@ -1780,6 +1780,12 @@ body {
       box-shadow: inset 1px 1px 0 rgba(255,255,255,0.38);
     }
 
+    /* Reserve the shared sm button content height before the module CSS
+       arrives, so the native pilot does not move the transcript header. */
+    .seek-controls {
+      min-height: var(--pru-control-h-sm, 32px);
+    }
+
     .transcript-header {
       display: flex;
       align-items: center;
@@ -1806,15 +1812,15 @@ body {
     }
 
     /* 鎸夐挳閫氱敤鏍峰紡 */
-    #toggle-follow, .small-btn:where(:not([data-ui-owner="workflow"])),
+    #toggle-follow, .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])),
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
       #style-editor-modal, #chunk-style-modal,
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
-    ) button:where(:not([data-ui-owner="workflow"])),
-    .speed-controls button, .seek-controls button, #highlight-mode-btn, #toggle-chunk-btn {
+    ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])),
+    .speed-controls button, .seek-controls button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])), #highlight-mode-btn, #toggle-chunk-btn {
       padding: 5px 12px;
       border: 1px solid var(--glass-border);
       background: var(--glass-button-bg);
@@ -1840,15 +1846,15 @@ body {
       isolation: isolate;
       overflow: hidden;
     }
-    #toggle-follow::before, .small-btn:where(:not([data-ui-owner="workflow"]))::before,
+    #toggle-follow::before, .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]))::before,
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
       #style-editor-modal, #chunk-style-modal,
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
-    ) button:where(:not([data-ui-owner="workflow"]))::before,
-    .speed-controls button::before, .seek-controls button::before, #highlight-mode-btn::before, #toggle-chunk-btn::before, .file-btn::before, .mini-toggle::before {
+    ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]))::before,
+    .speed-controls button::before, .seek-controls button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]))::before, #highlight-mode-btn::before, #toggle-chunk-btn::before, .file-btn::before, .mini-toggle::before {
       content: "";
       position: absolute;
       inset: 0;
@@ -1860,14 +1866,14 @@ body {
       z-index: 0;
     }
     #toggle-follow.ui-glass-dynamic::before,
-    .small-btn:where(:not([data-ui-owner="workflow"])).ui-glass-dynamic::before,
+    .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])).ui-glass-dynamic::before,
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
       #style-editor-modal, #chunk-style-modal,
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
-    ) button:where(:not([data-ui-owner="workflow"])).ui-glass-dynamic::before,
+    ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])).ui-glass-dynamic::before,
     .file-btn.ui-glass-dynamic::before,
     .mini-toggle.ui-glass-dynamic::before {
       opacity: 0.72;
@@ -1878,8 +1884,8 @@ body {
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
-    ) button:where(:not([data-ui-owner="workflow"])):hover,
-    #toggle-follow:hover, .small-btn:where(:not([data-ui-owner="workflow"])):hover {
+    ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):hover,
+    #toggle-follow:hover, .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):hover {
       transform: translateY(-1px) scale(1.01);
       background: var(--glass-panel-bg-strong);
       border-color: rgba(255,255,255,0.68);
@@ -1891,8 +1897,8 @@ body {
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
-    ) button:where(:not([data-ui-owner="workflow"])):active,
-    #toggle-follow:active, .small-btn:where(:not([data-ui-owner="workflow"])):active {
+    ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):active,
+    #toggle-follow:active, .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):active {
       transform: translateY(0) scale(0.985);
       background: rgba(226,232,242,0.52);
       box-shadow: inset 0 1px 2px rgba(0,0,0,0.18), 0 1px 3px rgba(0,0,0,0.12);
@@ -1903,8 +1909,8 @@ body {
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
-    ) button:where(:not([data-ui-owner="workflow"])):focus-visible,
-    #toggle-follow:focus-visible, .small-btn:where(:not([data-ui-owner="workflow"])):focus-visible, .file-btn:focus-visible {
+    ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):focus-visible,
+    #toggle-follow:focus-visible, .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):focus-visible, .file-btn:focus-visible {
       outline: 2px solid rgba(10, 132, 255, 0.78);
       outline-offset: 2px;
     }
@@ -2152,15 +2158,15 @@ body {
       color: var(--text-main);
       cursor: pointer;
     }
-    [data-theme="dark"] #toggle-follow, [data-theme="dark"] .small-btn:where(:not([data-ui-owner="workflow"])),
+    [data-theme="dark"] #toggle-follow, [data-theme="dark"] .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])),
     [data-theme="dark"] :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
       #style-editor-modal, #chunk-style-modal,
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
-    ) button:where(:not([data-ui-owner="workflow"])),
-    [data-theme="dark"] .speed-controls button, [data-theme="dark"] .seek-controls button, [data-theme="dark"] #highlight-mode-btn, [data-theme="dark"] #toggle-chunk-btn {
+    ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])),
+    [data-theme="dark"] .speed-controls button, [data-theme="dark"] .seek-controls button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])), [data-theme="dark"] #highlight-mode-btn, [data-theme="dark"] #toggle-chunk-btn {
       border-color: rgba(255,255,255,0.2);
       background: var(--glass-button-bg);
       box-shadow: inset 1px 1px 0 var(--glass-highlight), var(--glass-shadow-sm);

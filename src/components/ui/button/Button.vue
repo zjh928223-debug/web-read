@@ -1,7 +1,7 @@
 <script setup>
 import { Primitive } from "reka-ui";
 import { cn } from "@/lib/utils";
-import { buttonVariants } from ".";
+import { buttonVariants } from "./button-variants.js";
 
 const props = defineProps({
   variant: { type: null, required: false },

@@ -597,7 +597,6 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import '../styles/workflow-ui.css'
 import { Button } from './ui/button/index.js'
 import { Input } from './ui/input/index.js'
 import { Textarea } from './ui/textarea/index.js'
