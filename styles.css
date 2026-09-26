@@ -204,12 +204,6 @@
   height: calc(100vh - 28px);
   max-height: calc(100vh - 28px);
   grid-template-rows: auto auto minmax(0, 1fr);
-  border: 1px solid var(--glass-border);
-  border-radius: 22px;
-  background: var(--pru-shell-surface);
-  box-shadow: var(--glass-shadow-lg);
-  backdrop-filter: var(--glass-blur-md);
-  -webkit-backdrop-filter: var(--glass-blur-md);
   font-family: var(--pru-ui-font);
 }
 
@@ -4172,7 +4166,6 @@ body {
       overflow: hidden;
       display: grid;
       grid-template-rows: auto auto minmax(0, 1fr);
-      background: color-mix(in srgb, var(--pru-shell-bg) 88%, var(--pru-reader-bg));
     }
 
     .youtube-workflow .youtube-workflow-header {
@@ -4561,12 +4554,13 @@ body {
   height: calc(100vh - 28px);
   max-height: calc(100vh - 28px);
   grid-template-rows: auto auto minmax(0, 1fr);
-  border: 1px solid var(--glass-border);
+  border: 1px solid var(--pru-shell-border);
   border-radius: 22px;
   background: var(--pru-shell-surface);
-  box-shadow: var(--glass-shadow-lg);
-  backdrop-filter: var(--glass-blur-md);
-  -webkit-backdrop-filter: var(--glass-blur-md);
+  color: var(--pru-shell-text);
+  box-shadow: var(--pru-shadow-shell);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   font-family: var(--pru-ui-font);
 }
 
@@ -4616,7 +4610,7 @@ body {
     max-height: 100vh;
     border: 0;
     border-radius: 0;
-    background: var(--bg-color);
+    background: var(--pru-shell-surface);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
@@ -4769,12 +4763,10 @@ body {
 }
 
 .youtube-quality-backdrop .youtube-quality-card {
-  background: color-mix(in srgb, var(--bg-color) 92%, transparent);
-  border-color: var(--glass-border);
+  background: var(--pru-shell-surface);
+  border-color: var(--pru-shell-border);
   border-radius: 18px;
-  box-shadow: var(--glass-shadow-lg);
-  backdrop-filter: var(--glass-blur-md);
-  -webkit-backdrop-filter: var(--glass-blur-md);
+  color: var(--pru-shell-text);
 }
 
 .youtube-workflow .youtube-job-progress span,
