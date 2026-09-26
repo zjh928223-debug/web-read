@@ -491,23 +491,6 @@
   font-weight: 650;
 }
 
-.passage-preview-learning-settings-input input:where(:not([data-ui-owner="learning"])) {
-  width: 82px;
-  padding: 8px 10px;
-  border: 1px solid rgba(111, 128, 153, .4);
-  border-radius: 8px;
-  background: #fff;
-  color: #34445d;
-  font: inherit;
-  text-align: center;
-}
-
-.passage-preview-learning-settings-input input:where(:not([data-ui-owner="learning"])):focus-visible {
-  border-color: #5270a0;
-  outline: 2px solid rgba(82, 112, 160, .18);
-  outline-offset: 2px;
-}
-
 .passage-preview-learning-settings-input input[data-ui-owner="learning"] {
   width: 82px;
   flex: 0 0 82px;
@@ -582,26 +565,6 @@
   font-weight: 700;
 }
 
-.passage-preview-translation-shortcut:where(:not([data-ui-owner="learning"])) {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  padding: 6px 8px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: transparent;
-  color: #708096;
-  cursor: pointer;
-}
-
-.passage-preview-translation-shortcut:where(:not([data-ui-owner="learning"])):hover,
-.passage-preview-translation-shortcut:where(:not([data-ui-owner="learning"])):focus-visible,
-.passage-preview-translation-shortcut:where(:not([data-ui-owner="learning"])).is-editing {
-  border-color: rgba(82, 112, 160, .35);
-  background: rgba(235, 241, 250, .74);
-  outline: none;
-}
-
 .passage-preview-shortcut-record[data-ui-owner="learning"] {
   height: auto;
   min-height: 40px;
@@ -651,26 +614,6 @@
   border-bottom: 1px solid rgba(132, 149, 176, .2);
   color: #2f3b50;
   font-size: 14px;
-}
-
-.passage-preview-shortcut-row > button:where(:not([data-ui-owner="learning"])) {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  padding: 6px 8px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: transparent;
-  color: #708096;
-  cursor: pointer;
-}
-
-.passage-preview-shortcut-row > button:where(:not([data-ui-owner="learning"])):hover,
-.passage-preview-shortcut-row > button:where(:not([data-ui-owner="learning"])):focus-visible,
-.passage-preview-shortcut-row > button:where(:not([data-ui-owner="learning"])).is-editing {
-  border-color: rgba(82, 112, 160, .35);
-  background: rgba(235, 241, 250, .74);
-  outline: none;
 }
 
 .passage-preview-shortcut-row kbd {
