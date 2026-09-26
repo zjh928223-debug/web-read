@@ -15,6 +15,7 @@
 @source "../features/srs-review";
 @source "../features/passage-preview";
 @source "../features/learning-ui";
+@source "../composables/annotation-backfill-ai-module.js";
 
 @theme inline {
   --color-background: var(--background);

@@ -23,6 +23,165 @@ class FakeButton {
   }
 }
 
+class FakeElement {
+  constructor(documentObject, tagName) {
+    this.ownerDocument = documentObject;
+    this.tagName = String(tagName || '').toUpperCase();
+    this.children = [];
+    this.parentNode = null;
+    this.attributes = new Map();
+    this.listeners = new Map();
+    this.dataset = {};
+    this.disabled = false;
+    this.hidden = false;
+    this.value = '';
+    this._textContent = '';
+    this._className = '';
+    this.classList = {
+      add: (...tokens) => {
+        const classes = new Set(this.className.split(/\s+/).filter(Boolean));
+        tokens.forEach((token) => classes.add(token));
+        this.className = [...classes].join(' ');
+      },
+      contains: (token) => this.className.split(/\s+/).includes(token),
+    };
+  }
+
+  get className() {
+    return this._className;
+  }
+
+  set className(value) {
+    this._className = String(value || '');
+  }
+
+  get textContent() {
+    return this._textContent;
+  }
+
+  set textContent(value) {
+    this._textContent = String(value || '');
+    if (this._textContent === '') {
+      this.children.forEach((child) => { child.parentNode = null; });
+      this.children = [];
+    }
+  }
+
+  get isConnected() {
+    return this === this.ownerDocument.body || !!(this.parentNode && this.parentNode.isConnected);
+  }
+
+  append(...elements) {
+    elements.forEach((element) => {
+      if (!element) return;
+      element.parentNode = this;
+      this.children.push(element);
+    });
+  }
+
+  appendChild(element) {
+    this.append(element);
+    return element;
+  }
+
+  addEventListener(type, handler) {
+    if (!this.listeners.has(type)) this.listeners.set(type, []);
+    this.listeners.get(type).push(handler);
+  }
+
+  async dispatchEvent(type, event = {}) {
+    const nextEvent = {
+      target: this,
+      preventDefault() {
+        this.defaultPrevented = true;
+      },
+      ...event,
+    };
+    for (const handler of this.listeners.get(type) || []) await handler(nextEvent);
+    return !nextEvent.defaultPrevented;
+  }
+
+  click() {
+    this.focus();
+    return this.dispatchEvent('click');
+  }
+
+  focus() {
+    this.ownerDocument.activeElement = this;
+  }
+
+  setAttribute(name, value) {
+    this.attributes.set(String(name), String(value));
+  }
+
+  getAttribute(name) {
+    return this.attributes.has(String(name)) ? this.attributes.get(String(name)) : null;
+  }
+
+  removeAttribute(name) {
+    this.attributes.delete(String(name));
+  }
+
+  contains(target) {
+    if (target === this) return true;
+    return this.children.some((child) => child.contains(target));
+  }
+
+  querySelectorAll() {
+    const descendants = [];
+    const collect = (parent) => parent.children.forEach((child) => {
+      descendants.push(child);
+      collect(child);
+    });
+    collect(this);
+    return descendants.filter((element) => (
+      ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'].includes(element.tagName)
+      && !element.disabled
+    ));
+  }
+
+  findByClass(className) {
+    if (this.classList.contains(className)) return this;
+    for (const child of this.children) {
+      const match = child.findByClass(className);
+      if (match) return match;
+    }
+    return null;
+  }
+}
+
+class FakeDocument {
+  constructor() {
+    this.listeners = new Map();
+    this.body = new FakeElement(this, 'body');
+    this.activeElement = this.body;
+  }
+
+  createElement(tagName) {
+    return new FakeElement(this, tagName);
+  }
+
+  addEventListener(type, handler) {
+    if (!this.listeners.has(type)) this.listeners.set(type, []);
+    this.listeners.get(type).push(handler);
+  }
+
+  removeEventListener(type, handler) {
+    this.listeners.set(type, (this.listeners.get(type) || []).filter((entry) => entry !== handler));
+  }
+
+  async dispatchEvent(type, event = {}) {
+    const nextEvent = {
+      preventDefault() {
+        this.defaultPrevented = true;
+      },
+      stopPropagation() {},
+      ...event,
+    };
+    for (const handler of this.listeners.get(type) || []) await handler(nextEvent);
+  }
+}
+
 class FakeStorage {
   constructor(seed = {}) {
     this.values = new Map(Object.entries(seed));
@@ -45,6 +204,7 @@ function createWindowObject(options = {}) {
   return {
     localStorage: options.localStorage || new FakeStorage(),
     confirm: typeof options.confirm === 'function' ? options.confirm : () => true,
+    document: options.documentObject || null,
   };
 }
 
@@ -55,11 +215,17 @@ async function importModule(filePath) {
   const tempDir = fs.mkdtempSync(path.join(tempRoot, `${process.pid}-`));
   try {
     const tempComposables = path.join(tempDir, 'src', 'composables');
+    const tempLib = path.join(tempDir, 'src', 'lib');
+    const tempButton = path.join(tempDir, 'src', 'components', 'ui', 'button');
+    const tempInput = path.join(tempDir, 'src', 'components', 'ui', 'input');
     const tempVocabulary = path.join(tempDir, 'src', 'services', 'vocabulary');
     const tempPersonalization = path.join(tempVocabulary, 'personalization');
     const tempReviewFeatures = path.join(tempDir, 'src', 'features', 'srs-review');
     const tempRuntime = path.join(tempDir, 'src', 'services', 'runtime');
     fs.mkdirSync(tempComposables, { recursive: true });
+    fs.mkdirSync(tempLib, { recursive: true });
+    fs.mkdirSync(tempButton, { recursive: true });
+    fs.mkdirSync(tempInput, { recursive: true });
     fs.mkdirSync(tempVocabulary, { recursive: true });
     fs.mkdirSync(tempPersonalization, { recursive: true });
     fs.mkdirSync(tempReviewFeatures, { recursive: true });
@@ -70,6 +236,8 @@ async function importModule(filePath) {
     );
     const rewriteSource = (source) => source
       .replace(/from '\.\.\/services\/vocabulary\/([^']+)\.js'/g, "from '../services/vocabulary/$1.mjs'")
+      .replace(/from '\.\.\/components\/([^']+)\.js'/g, "from '../components/$1.mjs'")
+      .replace(/from '\.\.\/lib\/([^']+)\.js'/g, "from '../lib/$1.mjs'")
       .replace(/from '\.\/([^']+)\.js'/g, "from './$1.mjs'")
       .replace(/from \"\.\/([^\"]+)\.js\"/g, 'from "./$1.mjs"')
       .replace(/from ['"]\.\.\/\.\.\/\.\.\/config\/ielts-learning-pools\.json['"]/g, "from './ielts-learning-pools-config.mjs'")
@@ -78,6 +246,20 @@ async function importModule(filePath) {
     fs.writeFileSync(
       path.join(tempComposables, 'annotation-backfill-ai-module.mjs'),
       rewriteSource(fs.readFileSync(filePath, 'utf8'))
+    );
+    ['native-control-styles.js', 'native-input-styles.js', 'utils.js'].forEach((file) => {
+      fs.writeFileSync(
+        path.join(tempLib, file.replace(/\.js$/, '.mjs')),
+        rewriteSource(fs.readFileSync(path.join(repoRoot, 'src', 'lib', file), 'utf8')),
+      );
+    });
+    fs.writeFileSync(
+      path.join(tempButton, 'button-variants.mjs'),
+      rewriteSource(fs.readFileSync(path.join(repoRoot, 'src', 'components', 'ui', 'button', 'button-variants.js'), 'utf8')),
+    );
+    fs.writeFileSync(
+      path.join(tempInput, 'input-styles.mjs'),
+      rewriteSource(fs.readFileSync(path.join(repoRoot, 'src', 'components', 'ui', 'input', 'input-styles.js'), 'utf8')),
     );
     ['vocabulary-models.js', 'vocabulary-repository.js', 'vocabulary-persistence.js', 'srs-candidates.js', 'srs-pending-candidates.js', 'preview-scan.js', 'article-srs-settlement.js', 'article-srs-settlement-progress.js', 'settlement-meaning-refinement.js', 'srs-scheduler.js', 'ielts-learning-pools.js', 'vocabulary-learning-models.js', 'vocabulary-acquisition-repository.js', 'vocabulary-context-evidence.js', 'vocabulary-learning-events.js', 'legacy-vocabulary-audit.js', 'vocabulary-learning-uow.js', 'vocabulary-acquisition-service.js', 'srs-review-session-ledger.js', 'srs-review-service-v2.js', 'exam-vocabulary-importer.js', 'exam-vocabulary-context-matcher.js', 'legacy-vocabulary-reassessment.js', 'legacy-vocabulary-migration.js', 'vocabulary-service.js', 'index.js'].forEach((file) => {
       const sourcePath = path.join(repoRoot, 'src', 'services', 'vocabulary', file);
@@ -288,6 +470,7 @@ async function readJsonFileLike(file) {
 
 function createController(api, overrides = {}) {
   const button = overrides.button || new FakeButton();
+  const windowObject = overrides.windowObject || createWindowObject({ documentObject: overrides.documentObject });
   const state = overrides.state || {
     currentAudioMeta: { source: 'youtube-workflow', jobId: 'job-1' },
     currentAudioKey: 'audio-1',
@@ -328,7 +511,8 @@ function createController(api, overrides = {}) {
     refreshAfterImport: overrides.refreshAfterImport || (() => {}),
     showToast: (message, type) => notices.push({ message, type }),
     showError: (code, message) => notices.push({ code, message, type: 'error' }),
-    windowObject: overrides.windowObject || createWindowObject(),
+    windowObject,
+    documentObject: overrides.documentObject || windowObject.document,
     vocabularyService: overrides.vocabularyService,
     srsPendingRepository: overrides.srsPendingRepository,
     enableInlineSrs: overrides.enableInlineSrs,
@@ -341,6 +525,9 @@ async function main() {
   const modulePath = path.join(repoRoot, 'src', 'composables', 'annotation-backfill-ai-module.js');
   const source = fs.readFileSync(modulePath, 'utf8');
   const api = await importModule(modulePath);
+  const learningCss = fs.readFileSync(path.join(repoRoot, 'src', 'features', 'learning-ui', 'learning-ui.css'), 'utf8');
+  const workflowCss = fs.readFileSync(path.join(repoRoot, 'src', 'styles', 'workflow-ui.css'), 'utf8');
+  const stylesCss = fs.readFileSync(path.join(repoRoot, 'styles.css'), 'utf8');
   assert.equal(typeof api.createAnnotationBackfillAiController, 'function');
   assert.ok(source.includes('function createAnnotationBackfillDialog'), 'AI annotation backfill should provide a configuration/progress dialog');
   assert.ok(source.includes('annotation-backfill-dialog'), 'AI annotation backfill dialog should have scoped CSS hooks');
@@ -353,6 +540,76 @@ async function main() {
   assert.ok(source.includes('ANNOTATION_BACKFILL_MODEL_STORAGE_KEY'), 'AI annotation model should persist in localStorage');
   assert.ok(source.includes('mergeWithLatest'), 'incremental AI backfill should ask the backend to merge new items with latest saved result');
   assert.ok(source.includes('addSrsCandidates'), 'AI annotation backfill should expose SRS candidate actions');
+  assert.ok(source.includes('applyNativeControlStyles'), 'AI annotation actions should use the shared native button recipe');
+  assert.ok(source.includes('applyNativeInputStyles'), 'AI annotation fields should use the shared native input recipe');
+  assert.ok(source.includes("interaction: 'text'"), 'model and API key fields should retain text selection interaction');
+  assert.ok(learningCss.includes('.annotation-backfill-dialog[data-ui-theme=\"light\"]'), 'the learning palette should scope to the fixed-light dialog');
+  assert.ok(workflowCss.includes('@source \"../composables/annotation-backfill-ai-module.js\";'), 'Tailwind should scan the dynamic dialog module');
+  assert.match(stylesCss, /\.annotation-backfill-dialog\s*\{[^}]*--text-main:\s*var\(--learning-foreground\)[^}]*background:\s*var\(--learning-background\)/s, 'the dialog should map legacy text and surface to learning tokens');
+
+  {
+    const documentObject = new FakeDocument();
+    const button = documentObject.createElement('button');
+    documentObject.body.appendChild(button);
+    button.focus();
+    const windowObject = createWindowObject({ documentObject });
+    const historyClient = {
+      getConfig: async () => ({ model: 'gemini-ui-test' }),
+      credentialStatus: async () => ({ stored: true }),
+      maintenance: async () => ({ jobStatuses: {} }),
+      getAnnotationBackfillResult: async () => ({
+        result: createResult(['target-1']),
+        history: [
+          { runId: 'run-current', model: 'gemini-current', itemCount: 1, generatedAt: '2026-09-26', current: true },
+          { runId: 'run-previous', model: 'gemini-previous', itemCount: 1, generatedAt: '2026-09-25' },
+        ],
+      }),
+      getAnnotationBackfillRunResult: async () => ({ result: createResult(['target-1']) }),
+      runAnnotationBackfill: async (_jobId, payload) => {
+        calls.push({ jobId: 'job-1', payload });
+        return { result: createResult(['target-1']) };
+      },
+    };
+    const { controller, calls } = createController(api, { documentObject, windowObject, button, client: historyClient });
+    await controller.openDialog();
+    await Promise.resolve();
+    const root = documentObject.body.findByClass('annotation-backfill-dialog');
+    const modelInput = root.findByClass('annotation-backfill-dialog__input');
+    const closeButton = root.findByClass('annotation-backfill-dialog__close');
+    const controls = root.children.flatMap((element) => element.querySelectorAll());
+    const cancelButton = controls.find((element) => element.textContent === '取消');
+    const startButton = controls.find((element) => element.textContent === '开始解释');
+    assert.equal(root.getAttribute('data-ui-theme'), 'light');
+    assert.equal(root.getAttribute('data-ui-owner'), null, 'dialog root should own the fixed-light palette without becoming a control owner');
+    assert.equal(documentObject.activeElement, modelInput, 'the actual dialog module should focus the model field on open');
+    assert.equal(modelInput.getAttribute('data-ui-owner'), 'learning');
+    assert.equal(modelInput.type, 'text');
+    assert.equal(modelInput.autocomplete, 'off');
+    assert.equal(modelInput.spellcheck, false);
+    assert.ok(modelInput.classList.contains('rw:h-9'));
+    assert.ok(modelInput.classList.contains('rw:cursor-text'));
+    assert.equal(closeButton.getAttribute('data-ui-owner'), 'learning');
+    assert.ok(closeButton.classList.contains('rw:size-8'));
+    assert.equal(cancelButton.getAttribute('data-ui-owner'), 'learning');
+    assert.ok(cancelButton.classList.contains('rw:border'));
+    assert.equal(startButton.getAttribute('data-ui-owner'), 'learning');
+    assert.ok(startButton.classList.contains('rw:bg-primary'));
+    const recordRows = root.querySelectorAll().filter((element) => element.classList.contains('annotation-backfill-dialog__record-tab'));
+    assert.equal(recordRows.length, 2, 'the dialog should retain both saved explanation records');
+    assert.equal(recordRows[0].getAttribute('data-ui-owner'), 'learning');
+    assert.equal(recordRows[0].dataset.current, 'true');
+    assert.equal(root.findByClass('annotation-backfill-dialog__srs').hidden, true, 'the inline SRS area should remain hidden by default');
+    button.focus();
+    await controller.openDialog();
+    const rerenderedRows = root.querySelectorAll().filter((element) => element.classList.contains('annotation-backfill-dialog__record-tab'));
+    assert.equal(rerenderedRows.length, 2, 'refreshing the dialog should not duplicate history rows');
+    assert.ok(rerenderedRows[0].classList.contains('annotation-backfill-dialog__record-tab'));
+    await controller.closeDialog();
+    await Promise.resolve();
+    assert.equal(documentObject.activeElement, button, 'closing should restore focus to the original trigger');
+    assert.equal(calls.length, 0, 'opening and closing must not submit an AI request');
+    controller.dispose();
+  }
 
   {
     const { button, controller } = createController(api);

@@ -9,6 +9,8 @@ import {
 } from '../services/vocabulary/index.js';
 import { getWindowsOwnerVocabularySrsIntegration } from '../services/vocabulary/windows-owner-vocabulary-srs.js';
 import { createDialogController } from '../services/runtime/dialog-controller.js';
+import { applyNativeControlStyles } from '../lib/native-control-styles.js';
+import { applyNativeInputStyles } from '../lib/native-input-styles.js';
 
 const DEFAULT_BUTTON_TEXT = 'AI解释标注';
 const RECOMMENDED_ANNOTATION_MODEL = 'gemini-3.1-flash-lite';
@@ -566,6 +568,7 @@ function createAnnotationBackfillDialog(options = {}) {
 
     rootEl = createElement(documentObject, 'section', 'annotation-backfill-dialog');
     rootEl.hidden = true;
+    rootEl.setAttribute('data-ui-theme', 'light');
     rootEl.setAttribute('role', 'dialog');
     rootEl.setAttribute('aria-modal', 'true');
     rootEl.setAttribute('aria-label', 'AI解释标注');
@@ -577,6 +580,7 @@ function createAnnotationBackfillDialog(options = {}) {
     titleWrap.append(title, subtitle);
     closeButton = createElement(documentObject, 'button', 'annotation-backfill-dialog__close', '×');
     closeButton.type = 'button';
+    applyNativeControlStyles(closeButton, { owner: 'learning', variant: 'ghost', size: 'icon-sm' });
     closeButton.setAttribute('aria-label', '关闭 AI解释标注');
     header.append(titleWrap, closeButton);
 
@@ -589,6 +593,7 @@ function createAnnotationBackfillDialog(options = {}) {
     modelInput.spellcheck = false;
     modelInput.value = latestValues.model;
     modelInput.placeholder = DEFAULT_GEMINI_MODEL;
+    applyNativeInputStyles(modelInput, { owner: 'learning', size: 'default', interaction: 'text' });
     modelLabel.append(modelLabelText, modelInput);
 
     const keyLabel = createElement(documentObject, 'label', 'annotation-backfill-dialog__field');
@@ -597,6 +602,7 @@ function createAnnotationBackfillDialog(options = {}) {
     apiKeyInput.type = 'password';
     apiKeyInput.autocomplete = 'off';
     apiKeyInput.placeholder = '留空则使用后端保存的 key';
+    applyNativeInputStyles(apiKeyInput, { owner: 'learning', size: 'default', interaction: 'text' });
     keyLabel.append(keyLabelText, apiKeyInput);
 
     const progress = createElement(documentObject, 'div', 'annotation-backfill-dialog__progress');
@@ -626,12 +632,16 @@ function createAnnotationBackfillDialog(options = {}) {
     const srsActions = createElement(documentObject, 'div', 'annotation-backfill-dialog__srs-actions');
     srsAddAllButton = createElement(documentObject, 'button', 'annotation-backfill-dialog__button annotation-backfill-dialog__button--primary', '加入单词和短语');
     srsAddAllButton.type = 'button';
+    applyNativeControlStyles(srsAddAllButton, { owner: 'learning', variant: 'default', size: 'sm' });
     srsAddWordsButton = createElement(documentObject, 'button', 'annotation-backfill-dialog__button annotation-backfill-dialog__button--secondary', '只加入单词');
     srsAddWordsButton.type = 'button';
+    applyNativeControlStyles(srsAddWordsButton, { owner: 'learning', variant: 'outline', size: 'sm' });
     srsSkipButton = createElement(documentObject, 'button', 'annotation-backfill-dialog__button annotation-backfill-dialog__button--secondary', '本次不加入');
     srsSkipButton.type = 'button';
+    applyNativeControlStyles(srsSkipButton, { owner: 'learning', variant: 'outline', size: 'sm' });
     srsBuildExistingButton = createElement(documentObject, 'button', 'annotation-backfill-dialog__button annotation-backfill-dialog__button--secondary', '从已有解释生成候选');
     srsBuildExistingButton.type = 'button';
+    applyNativeControlStyles(srsBuildExistingButton, { owner: 'learning', variant: 'outline', size: 'sm' });
     srsActions.append(srsAddAllButton, srsAddWordsButton, srsSkipButton, srsBuildExistingButton);
     srsPanelEl.append(srsTitle, srsStatsEl, srsActions);
     renderSrsSummary();
@@ -639,8 +649,10 @@ function createAnnotationBackfillDialog(options = {}) {
     const footer = createElement(documentObject, 'div', 'annotation-backfill-dialog__footer');
     cancelButton = createElement(documentObject, 'button', 'annotation-backfill-dialog__button annotation-backfill-dialog__button--secondary', '取消');
     cancelButton.type = 'button';
+    applyNativeControlStyles(cancelButton, { owner: 'learning', variant: 'outline', size: 'sm' });
     startButton = createElement(documentObject, 'button', 'annotation-backfill-dialog__button annotation-backfill-dialog__button--primary', '开始解释');
     startButton.type = 'submit';
+    applyNativeControlStyles(startButton, { owner: 'learning', variant: 'default', size: 'sm' });
     footer.append(cancelButton, startButton);
 
     form.append(modelLabel, keyLabel, recordsSection, srsPanelEl, progress, statusEl, footer);
@@ -824,6 +836,7 @@ function createAnnotationBackfillDialog(options = {}) {
     annotationSummary.records.forEach((record, index) => {
       const row = createElement(documentObject, 'button', 'annotation-backfill-dialog__record annotation-backfill-dialog__record-tab');
       row.type = 'button';
+      row.setAttribute('data-ui-owner', 'learning');
       row.disabled = busy;
       row.dataset.runId = record.runId || '';
       row.dataset.current = record.current ? 'true' : 'false';

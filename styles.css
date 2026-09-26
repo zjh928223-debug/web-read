@@ -1410,7 +1410,7 @@ body {
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
-    ) .glass-button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])) {
+    ) .glass-button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]):not([data-ui-owner="learning"])) {
       position: relative;
       overflow: hidden;
       isolation: isolate;
@@ -1421,7 +1421,7 @@ body {
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
-    ) .glass-button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]))::before {
+    ) .glass-button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]):not([data-ui-owner="learning"]))::before {
       content: "";
       position: absolute;
       inset: 0;
@@ -1442,7 +1442,7 @@ body {
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
-    ) .glass-button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])) > * {
+    ) .glass-button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]):not([data-ui-owner="learning"])) > * {
       position: relative;
       z-index: 1;
     }
@@ -1452,7 +1452,7 @@ body {
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
-    ) .ui-glass-dynamic.glass-button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]))::before {
+    ) .ui-glass-dynamic.glass-button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]):not([data-ui-owner="learning"]))::before {
       opacity: 0.78;
     }
 
@@ -1867,14 +1867,14 @@ body {
     }
 
     /* 鎸夐挳閫氱敤鏍峰紡 */
-    .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])),
+    .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]):not([data-ui-owner="learning"])),
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
       #style-editor-modal, #chunk-style-modal,
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
-    ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])) {
+    ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]):not([data-ui-owner="learning"])) {
       padding: 5px 12px;
       border: 1px solid var(--glass-border);
       background: var(--glass-button-bg);
@@ -1900,14 +1900,14 @@ body {
       isolation: isolate;
       overflow: hidden;
     }
-    .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]))::before,
+    .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]):not([data-ui-owner="learning"]))::before,
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
       #style-editor-modal, #chunk-style-modal,
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
-    ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]))::before,
+    ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]):not([data-ui-owner="learning"]))::before,
     .file-btn::before {
       content: "";
       position: absolute;
@@ -1919,14 +1919,14 @@ body {
       transition: opacity var(--glass-duration-fast) var(--glass-ease);
       z-index: 0;
     }
-    .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])).ui-glass-dynamic::before,
+    .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]):not([data-ui-owner="learning"])).ui-glass-dynamic::before,
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
       #style-editor-modal, #chunk-style-modal,
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
-    ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])).ui-glass-dynamic::before,
+    ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]):not([data-ui-owner="learning"])).ui-glass-dynamic::before,
     .file-btn.ui-glass-dynamic::before {
       opacity: 0.72;
     }
@@ -1936,8 +1936,8 @@ body {
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
-    ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):hover,
-    .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):hover {
+    ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]):not([data-ui-owner="learning"])):hover,
+    .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]):not([data-ui-owner="learning"])):hover {
       transform: translateY(-1px) scale(1.01);
       background: var(--glass-panel-bg-strong);
       border-color: rgba(255,255,255,0.68);
@@ -1949,8 +1949,8 @@ body {
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
-    ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):active,
-    .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):active {
+    ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]):not([data-ui-owner="learning"])):active,
+    .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]):not([data-ui-owner="learning"])):active {
       transform: translateY(0) scale(0.985);
       background: rgba(226,232,242,0.52);
       box-shadow: inset 0 1px 2px rgba(0,0,0,0.18), 0 1px 3px rgba(0,0,0,0.12);
@@ -1961,8 +1961,8 @@ body {
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
-    ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):focus-visible,
-    .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):focus-visible, .file-btn:focus-visible {
+    ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]):not([data-ui-owner="learning"])):focus-visible,
+    .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]):not([data-ui-owner="learning"])):focus-visible, .file-btn:focus-visible {
       outline: 2px solid rgba(10, 132, 255, 0.78);
       outline-offset: 2px;
     }
@@ -2108,14 +2108,14 @@ body {
       color: var(--text-main);
       cursor: pointer;
     }
-    [data-theme="dark"] .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])),
+    [data-theme="dark"] .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]):not([data-ui-owner="learning"])),
     [data-theme="dark"] :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
       #style-editor-modal, #chunk-style-modal,
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
-    ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])) {
+    ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]):not([data-ui-owner="learning"])) {
       border-color: rgba(255,255,255,0.2);
       background: var(--glass-button-bg);
       box-shadow: inset 1px 1px 0 var(--glass-highlight), var(--glass-shadow-sm);
@@ -3291,10 +3291,11 @@ body {
       top: 50%;
       width: min(440px, calc(100vw - 32px));
       transform: translate(-50%, -50%);
-      border: 1px solid rgba(203,213,225,0.72);
+      --text-main: var(--learning-foreground);
+      border: 1px solid var(--learning-border);
       border-radius: 18px;
-      background: rgba(248,251,255,0.92);
-      color: var(--text-main);
+      background: var(--learning-background);
+      color: var(--learning-foreground);
       box-shadow:
         0 24px 70px rgba(15,23,42,0.18),
         0 8px 24px rgba(15,23,42,0.10),
@@ -3330,18 +3331,7 @@ body {
     }
 
     .annotation-backfill-dialog__close {
-      width: 34px;
-      height: 34px;
       flex: 0 0 auto;
-      padding: 0;
-      border: 1px solid rgba(203,213,225,0.72);
-      border-radius: 999px;
-      background: rgba(255,255,255,0.74);
-      color: var(--text-main);
-      font-size: 22px;
-      line-height: 1;
-      font-weight: 800;
-      box-shadow: 0 6px 18px rgba(15,23,42,0.10);
     }
 
     .annotation-backfill-dialog__form {
@@ -3364,24 +3354,7 @@ body {
 
     .annotation-backfill-dialog__input {
       width: 100%;
-      height: 38px;
-      padding: 0 12px;
-      border: 1px solid rgba(203,213,225,0.82);
-      border-radius: 10px;
-      background: rgba(255,255,255,0.74);
-      color: var(--text-main);
-      font-size: 14px;
-      line-height: 1.4;
-      outline: none;
-    }
-
-    .annotation-backfill-dialog__input:focus {
-      border-color: rgba(99,102,241,0.62);
-      box-shadow: 0 0 0 3px rgba(99,102,241,0.14);
-    }
-
-    .annotation-backfill-dialog__input:disabled {
-      opacity: 0.68;
+      min-width: 0;
     }
 
     .annotation-backfill-dialog__records {
@@ -3563,6 +3536,7 @@ body {
     }
 
     .annotation-backfill-dialog__status {
+      min-width: 0;
       min-height: 22px;
       padding: 8px 10px;
       border-radius: 10px;
@@ -3571,6 +3545,7 @@ body {
       font-size: 13px;
       line-height: 1.45;
       font-weight: 650;
+      overflow-wrap: anywhere;
     }
 
     .annotation-backfill-dialog__status[data-state="working"] {
@@ -3598,28 +3573,6 @@ body {
       justify-content: flex-end;
       gap: 10px;
       padding-top: 2px;
-    }
-
-    .annotation-backfill-dialog__button {
-      height: 36px;
-      padding: 0 14px;
-      border-radius: 10px;
-      font-size: 14px;
-      line-height: 1;
-      font-weight: 800;
-    }
-
-    .annotation-backfill-dialog__button--secondary {
-      border: 1px solid rgba(203,213,225,0.82);
-      background: rgba(255,255,255,0.64);
-      color: rgba(51,65,85,0.94);
-    }
-
-    .annotation-backfill-dialog__button--primary {
-      border: 1px solid rgba(79,70,229,0.68);
-      background: #4f46e5;
-      color: #fff;
-      box-shadow: 0 8px 18px rgba(79,70,229,0.20);
     }
 
     /* Vocabulary preview / article settlement dialogs */
