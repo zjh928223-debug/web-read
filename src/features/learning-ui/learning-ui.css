@@ -1,6 +1,7 @@
 /* Learning pages stay light even when the reader shell is in dark mode. These
    values intentionally come from the SRS palette rather than reader tokens. */
-.srs-review-page[data-ui-theme="light"] {
+.srs-review-page[data-ui-theme="light"],
+.passage-preview-learning-settings-dialog[data-ui-theme="light"] {
   color-scheme: light;
   --learning-background: #f7f8fb;
   --learning-foreground: #17233a;
@@ -37,7 +38,7 @@
    and focus-ring utilities. This low-priority layer only supplies the native
    control baseline for explicitly migrated learning controls. */
 @layer components {
-  .srs-review-page[data-ui-theme="light"] [data-ui-owner="learning"] {
+  :is(.srs-review-page, .passage-preview-learning-settings-dialog)[data-ui-theme="light"] [data-ui-owner="learning"] {
     appearance: none;
     box-sizing: border-box;
     margin: 0;
@@ -47,7 +48,7 @@
     font-family: Arial, sans-serif;
   }
 
-  .srs-review-page[data-ui-theme="light"] [data-ui-owner="learning"]:is(button, [role="button"]):not(:disabled) {
+  :is(.srs-review-page, .passage-preview-learning-settings-dialog)[data-ui-theme="light"] [data-ui-owner="learning"]:is(button, [role="button"]):not(:disabled) {
     cursor: pointer;
   }
 }

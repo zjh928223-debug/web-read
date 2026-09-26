@@ -369,13 +369,17 @@
 }
 
 .passage-preview-shortcut-dialog {
-  --srs-text: #17233a; /* 此弹窗可能直接挂到 body，不能依赖学习页根变量。 */
+  --srs-text: var(--learning-foreground, #17233a); /* 弹窗可挂到 body；未接入学习主题的调用方使用固定浅色回退值。 */
   width: min(480px, 100%);
   padding: 28px;
   border: 1px solid rgba(132, 149, 176, .32);
   border-radius: 18px;
   background: rgba(252, 253, 255, .98);
   box-shadow: 0 24px 70px rgba(38, 52, 76, .18);
+}
+
+.passage-preview-learning-settings-dialog {
+  box-sizing: border-box;
 }
 
 .passage-preview-shortcut-dialog > header {
@@ -390,13 +394,13 @@
   margin: 0;
 }
 
-:where(.passage-preview-shortcut-dialog) button:focus-visible {
+:where(.passage-preview-shortcut-dialog) button:where(:not([data-ui-owner="learning"])):focus-visible {
   outline: 3px solid rgba(36, 84, 198, .35);
   outline-offset: 3px;
 }
 
-/* 预习设置按钮过去依赖 styles.css 裸 button 的排版与盒模型；只在弹窗自身补回基础属性。 */
-:where(.passage-preview-shortcut-dialog) button {
+/* Keep the native shortcut-window button baseline; migrated learning buttons use Button utilities. */
+:where(.passage-preview-shortcut-dialog) button:where(:not([data-ui-owner="learning"])) {
   box-sizing: border-box;
   font-size: 13px;
   line-height: 1.2;
@@ -417,7 +421,12 @@
   font-size: 23px;
 }
 
-.passage-preview-shortcut-dialog > header > button {
+.passage-preview-shortcut-close[data-ui-owner="learning"] {
+  font-size: 23px;
+  line-height: 1;
+}
+
+.passage-preview-shortcut-dialog > header > button:where(:not([data-ui-owner="learning"])) {
   width: 34px;
   height: 34px;
   padding: 0;
@@ -430,8 +439,8 @@
   cursor: pointer;
 }
 
-.passage-preview-shortcut-dialog > header > button:hover,
-.passage-preview-shortcut-dialog > header > button:focus-visible {
+.passage-preview-shortcut-dialog > header > button:where(:not([data-ui-owner="learning"])):hover,
+.passage-preview-shortcut-dialog > header > button:where(:not([data-ui-owner="learning"])):focus-visible {
   background: #edf1f7;
   color: #315897;
   outline: none;
@@ -482,7 +491,7 @@
   font-weight: 650;
 }
 
-.passage-preview-learning-settings-input input {
+.passage-preview-learning-settings-input input:where(:not([data-ui-owner="learning"])) {
   width: 82px;
   padding: 8px 10px;
   border: 1px solid rgba(111, 128, 153, .4);
@@ -493,10 +502,16 @@
   text-align: center;
 }
 
-.passage-preview-learning-settings-input input:focus-visible {
+.passage-preview-learning-settings-input input:where(:not([data-ui-owner="learning"])):focus-visible {
   border-color: #5270a0;
   outline: 2px solid rgba(82, 112, 160, .18);
   outline-offset: 2px;
+}
+
+.passage-preview-learning-settings-input input[data-ui-owner="learning"] {
+  width: 82px;
+  flex: 0 0 82px;
+  text-align: center;
 }
 
 .passage-preview-translation-mode-row {
