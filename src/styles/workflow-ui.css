@@ -16,6 +16,7 @@
 @source "../features/passage-preview";
 @source "../features/learning-ui";
 @source "../composables/annotation-backfill-ai-module.js";
+@source "../composables/vocabulary-preview-module.js";
 
 @theme inline {
   --color-background: var(--background);

@@ -12,6 +12,8 @@ const read = (...parts) => fs.readFileSync(path.join(repoRoot, ...parts), 'utf8'
 
 const previewSource = read('src', 'composables', 'vocabulary-preview-module.js');
 const previewStyles = read('styles.css');
+const learningStyles = read('src', 'features', 'learning-ui', 'learning-ui.css');
+const workflowStyles = read('src', 'styles', 'workflow-ui.css');
 const pronunciationSource = read('src', 'services', 'pronunciation', 'aria-american-pronunciation.js');
 const videoSource = read('src', 'components', 'VideoPlayerFloat.vue');
 const videoModuleSource = read('src', 'composables', 'media-source-module.js');
@@ -20,6 +22,14 @@ const transcriptComponentSource = read('src', 'components', 'TranscriptContainer
 const chunkComponentSource = read('src', 'components', 'ChunkModeView.vue');
 
 assert.match(previewSource, /previewButton\.addEventListener\('click', scanPreview\)/);
+assert.match(previewSource, /applyNativeControlStyles\(closeButton, \{ owner: 'learning', variant: 'ghost', size: 'icon-sm' \}\)/);
+assert.match(previewSource, /applyNativeInputStyles\(modelInput, \{ owner: 'learning', size: 'default', interaction: 'text'/);
+assert.match(previewSource, /applyNativeInputStyles\(apiKeyInput, \{ owner: 'learning', size: 'default', interaction: 'text'/);
+assert.match(previewSource, /root\.dataset\.uiTheme = 'light'/);
+assert.match(previewSource, /previewFocusReturnTarget = documentObject\.activeElement/);
+assert.match(previewSource, /previewDialog\.open\(latestPreviewScan, previewFocusReturnTarget\)/);
+assert.match(previewSource, /settlementDialog\.openLoading\('正在整理本篇生词…', restoreFocusTarget\)/);
+assert.match(previewSource, /settlementDialog\.open\(settlement, restoreFocusTarget\)/);
 assert.match(
   previewSource,
   /ownerIntegration\s*\?\s*createVocabularyService\(\{\s*ownerIntegration,\s*acquisitionEnabled:\s*true\s*\}\)/,
@@ -43,10 +53,14 @@ assert.match(pronunciationSource, /waitForAudioReady/);
 assert.match(previewStyles, /\.vocabulary-preview-dialog\s*\{[\s\S]*?grid-template-rows: auto minmax\(0, 1fr\)/);
 assert.match(previewStyles, /\.vocabulary-preview-dialog__form\s*\{[\s\S]*?overflow: hidden/);
 assert.match(previewStyles, /\.vocabulary-preview-dialog__list\s*\{[\s\S]*?max-height: none/);
+assert.match(learningStyles, /\.vocabulary-preview-dialog\[data-ui-theme="light"\]/);
+assert.match(workflowStyles, /@source "\.\.\/composables\/vocabulary-preview-module\.js"/);
+assert.match(previewStyles, /\.vocabulary-preview-dialog--settlement \.vocabulary-preview-dialog__footer\s*\{[\s\S]*?flex-wrap: wrap/);
+assert.match(previewStyles, /\.vocabulary-preview-dialog--settlement \.vocabulary-preview-dialog__button\s*\{[\s\S]*?white-space: normal/);
 assert.match(
   previewStyles,
-  /\.vocabulary-preview-dialog__button:disabled\s*\{[\s\S]*?background:\s*#e2e8f0[\s\S]*?cursor:\s*not-allowed/,
-  'completed settlement actions should have an unmistakable gray disabled state',
+  /\.vocabulary-preview-dialog__button\[data-ui-owner="learning"\]:disabled\s*\{[\s\S]*?background:\s*color-mix\([\s\S]*?cursor:\s*not-allowed[\s\S]*?opacity:\s*1/,
+  'completed settlement actions should have a distinct semantic disabled state without reduced opacity',
 );
 assert.match(videoSource, /avoidReaderControls/);
 assert.match(videoModuleSource, /previous default was top-right/);

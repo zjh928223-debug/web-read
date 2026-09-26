@@ -19,6 +19,8 @@ import {
 } from '../services/vocabulary/index.js';
 import { getWindowsOwnerVocabularySrsIntegration } from '../services/vocabulary/windows-owner-vocabulary-srs.js';
 import { createDialogController } from '../services/runtime/dialog-controller.js';
+import { applyNativeControlStyles } from '../lib/native-control-styles.js';
+import { applyNativeInputStyles } from '../lib/native-input-styles.js';
 import {
   getAnnotationGenerationScope,
   scheduleGeneratedAnnotationIndexRefresh,
@@ -264,6 +266,7 @@ function createPreviewDialog(options = {}) {
     backdrop = createElement(documentObject, 'div', 'vocabulary-preview-dialog-backdrop');
     backdrop.hidden = true;
     root = createElement(documentObject, 'section', 'vocabulary-preview-dialog');
+    root.dataset.uiTheme = 'light';
     root.hidden = true;
     root.setAttribute('role', 'dialog');
     root.setAttribute('aria-modal', 'true');
@@ -277,15 +280,18 @@ function createPreviewDialog(options = {}) {
     );
     closeButton = createElement(documentObject, 'button', 'vocabulary-preview-dialog__close', '×');
     closeButton.type = 'button';
+    applyNativeControlStyles(closeButton, { owner: 'learning', variant: 'ghost', size: 'icon-sm' });
     header.append(titleWrap, closeButton);
 
     const form = createElement(documentObject, 'form', 'vocabulary-preview-dialog__form');
     modelInput = createElement(documentObject, 'input', 'vocabulary-preview-dialog__input');
     modelInput.type = 'text';
+    applyNativeInputStyles(modelInput, { owner: 'learning', size: 'default', interaction: 'text', className: 'rw:text-foreground' });
     modelInput.value = initialModel;
     modelInput.placeholder = DEFAULT_MODEL;
     apiKeyInput = createElement(documentObject, 'input', 'vocabulary-preview-dialog__input');
     apiKeyInput.type = 'password';
+    applyNativeInputStyles(apiKeyInput, { owner: 'learning', size: 'default', interaction: 'text', className: 'rw:text-foreground' });
     apiKeyInput.placeholder = '留空则使用后端保存的 key';
     const modelLabel = createElement(documentObject, 'label', 'vocabulary-preview-dialog__field');
     modelLabel.append(createElement(documentObject, 'span', 'vocabulary-preview-dialog__label', 'Gemini 模型'), modelInput);
@@ -304,10 +310,12 @@ function createPreviewDialog(options = {}) {
     );
     listEl = createElement(documentObject, 'div', 'vocabulary-preview-dialog__list');
     const footer = createElement(documentObject, 'div', 'vocabulary-preview-dialog__footer');
-    const cancelButton = createElement(documentObject, 'button', 'vocabulary-preview-dialog__button vocabulary-preview-dialog__button--secondary', '取消');
+    const cancelButton = createElement(documentObject, 'button', 'vocabulary-preview-dialog__button', '取消');
     cancelButton.type = 'button';
-    runButton = createElement(documentObject, 'button', 'vocabulary-preview-dialog__button vocabulary-preview-dialog__button--primary', '生成 AI 解释');
+    applyNativeControlStyles(cancelButton, { owner: 'learning', variant: 'outline', size: 'sm' });
+    runButton = createElement(documentObject, 'button', 'vocabulary-preview-dialog__button', '生成 AI 解释');
     runButton.type = 'submit';
+    applyNativeControlStyles(runButton, { owner: 'learning', variant: 'default', size: 'sm' });
     footer.append(cancelButton, runButton);
     form.append(modelLabel, keyLabel, statusEl, dictionaryHint, listEl, footer);
     root.append(header, form);
@@ -349,7 +357,7 @@ function createPreviewDialog(options = {}) {
     statusEl.dataset.state = state;
   }
 
-  function open(scan) {
+  function open(scan, restoreFocusTarget) {
     ensureMounted();
     latestScan = scan || null;
     const sharedApiKey = normalizeText(getSharedApiKey());
@@ -361,6 +369,7 @@ function createPreviewDialog(options = {}) {
     root.hidden = false;
     backdrop.hidden = false;
     dialogController.open(root, {
+      restoreFocusTarget,
       initialFocus: modelInput,
       statusElement: statusEl,
       isPending: () => busy,
@@ -661,6 +670,7 @@ function createSettlementDialog(options = {}) {
     backdrop = createElement(documentObject, 'div', 'vocabulary-preview-dialog-backdrop');
     backdrop.hidden = true;
     root = createElement(documentObject, 'section', 'vocabulary-preview-dialog vocabulary-preview-dialog--settlement');
+    root.dataset.uiTheme = 'light';
     root.hidden = true;
     root.setAttribute('role', 'dialog');
     root.setAttribute('aria-modal', 'true');
@@ -674,6 +684,7 @@ function createSettlementDialog(options = {}) {
     );
     closeButton = createElement(documentObject, 'button', 'vocabulary-preview-dialog__close', '×');
     closeButton.type = 'button';
+    applyNativeControlStyles(closeButton, { owner: 'learning', variant: 'ghost', size: 'icon-sm' });
     header.append(titleWrap, closeButton);
     statusEl = createElement(documentObject, 'div', 'vocabulary-preview-dialog__status');
     statusEl.setAttribute('role', 'status');
@@ -681,14 +692,18 @@ function createSettlementDialog(options = {}) {
     statusEl.setAttribute('aria-atomic', 'true');
     listEl = createElement(documentObject, 'div', 'vocabulary-preview-dialog__list');
     const footer = createElement(documentObject, 'div', 'vocabulary-preview-dialog__footer');
-    refineButton = createElement(documentObject, 'button', 'vocabulary-preview-dialog__button vocabulary-preview-dialog__button--secondary', 'AI 精简释义');
+    refineButton = createElement(documentObject, 'button', 'vocabulary-preview-dialog__button', 'AI 精简释义');
     refineButton.type = 'button';
-    const skipButton = createElement(documentObject, 'button', 'vocabulary-preview-dialog__button vocabulary-preview-dialog__button--secondary', '本篇不加入');
+    applyNativeControlStyles(refineButton, { owner: 'learning', variant: 'outline', size: 'sm' });
+    const skipButton = createElement(documentObject, 'button', 'vocabulary-preview-dialog__button', '本篇不加入');
     skipButton.type = 'button';
-    addWordsButton = createElement(documentObject, 'button', 'vocabulary-preview-dialog__button vocabulary-preview-dialog__button--secondary', '只加入单词');
+    applyNativeControlStyles(skipButton, { owner: 'learning', variant: 'outline', size: 'sm' });
+    addWordsButton = createElement(documentObject, 'button', 'vocabulary-preview-dialog__button', '只加入单词');
     addWordsButton.type = 'button';
-    addAllButton = createElement(documentObject, 'button', 'vocabulary-preview-dialog__button vocabulary-preview-dialog__button--primary', '加入单词和短语');
+    applyNativeControlStyles(addWordsButton, { owner: 'learning', variant: 'outline', size: 'sm' });
+    addAllButton = createElement(documentObject, 'button', 'vocabulary-preview-dialog__button', '加入单词和短语');
     addAllButton.type = 'button';
+    applyNativeControlStyles(addAllButton, { owner: 'learning', variant: 'default', size: 'sm' });
     const resizeHandle = createElement(documentObject, 'div', 'vocabulary-preview-dialog__resize-handle');
     resizeHandle.setAttribute('aria-hidden', 'true');
     footer.append(refineButton, skipButton, addWordsButton, addAllButton);
@@ -823,7 +838,7 @@ function createSettlementDialog(options = {}) {
     }
   }
 
-  function openLoading(message = '正在整理本篇生词…') {
+  function openLoading(message = '正在整理本篇生词…', restoreFocusTarget) {
     ensureMounted();
     pronunciationRequestId += 1;
     pronunciation.stop();
@@ -840,6 +855,7 @@ function createSettlementDialog(options = {}) {
     root.hidden = false;
     backdrop.hidden = false;
     dialogController.open(root, {
+      restoreFocusTarget,
       initialFocus: closeButton,
       statusElement: statusEl,
       isPending: () => busy,
@@ -847,7 +863,7 @@ function createSettlementDialog(options = {}) {
     });
   }
 
-  function open(nextSettlement) {
+  function open(nextSettlement, restoreFocusTarget) {
     ensureMounted();
     pronunciationRequestId += 1;
     pronunciation.stop();
@@ -862,6 +878,7 @@ function createSettlementDialog(options = {}) {
     root.hidden = false;
     backdrop.hidden = false;
     dialogController.open(root, {
+      restoreFocusTarget,
       initialFocus: closeButton,
       statusElement: statusEl,
       isPending: () => busy,
@@ -1023,6 +1040,7 @@ export function createVocabularyPreviewController(deps = {}) {
   let previewScanInFlight = null;
   let previewScanInFlightIdentityKey = '';
   let previewScanRequestId = 0;
+  let previewFocusReturnTarget = null;
   const previewDialog = createPreviewDialog({
     documentObject,
     initialModel: getStoredModel(windowObject) || DEFAULT_MODEL,
@@ -1037,6 +1055,7 @@ export function createVocabularyPreviewController(deps = {}) {
   const settlementDialog = createSettlementDialog({
     documentObject,
     windowObject,
+    pronunciationService: deps.pronunciationService,
     onApply: applySettlement,
     onSkip: skipSettlement,
     onToggleRemove: setSettlementCandidateRemoved,
@@ -1181,7 +1200,8 @@ export function createVocabularyPreviewController(deps = {}) {
         ...previewScan,
         candidates: enrichedCandidates,
       };
-      previewDialog.open(latestPreviewScan);
+      previewDialog.open(latestPreviewScan, previewFocusReturnTarget);
+      previewFocusReturnTarget = null;
       return latestPreviewScan;
     } catch (error) {
       const currentIdentity = getCurrentIdentity(state);
@@ -1201,12 +1221,14 @@ export function createVocabularyPreviewController(deps = {}) {
     }
     const identityKey = `${identity.jobId}::${identity.audioKey}`;
     if (previewScanInFlight && previewScanInFlightIdentityKey === identityKey) return previewScanInFlight;
+    previewFocusReturnTarget = documentObject.activeElement;
     const requestId = ++previewScanRequestId;
     let trackedTask;
     trackedTask = performPreviewScan(identityKey, requestId).finally(() => {
       if (previewScanInFlight !== trackedTask) return;
       previewScanInFlight = null;
       previewScanInFlightIdentityKey = '';
+      previewFocusReturnTarget = null;
       refreshAvailability();
     });
     previewScanInFlight = trackedTask;
@@ -1285,6 +1307,7 @@ export function createVocabularyPreviewController(deps = {}) {
 
   async function openSettlement() {
     if (settlementOpening) return null;
+    const restoreFocusTarget = documentObject.activeElement;
     settlementOpening = true;
     try {
       const identity = getCurrentIdentity(state);
@@ -1297,7 +1320,7 @@ export function createVocabularyPreviewController(deps = {}) {
         settleButton.textContent = '正在整理本篇…';
         settleButton.title = '正在整理本篇生词，请稍候';
       }
-      settlementDialog.openLoading('正在整理本篇生词…');
+      settlementDialog.openLoading('正在整理本篇生词…', restoreFocusTarget);
       const { scope, bundle } = await loadCurrentAnnotationBundle(windowObject);
       const sourceInfo = getSourceInfo(state, scope);
       const generatedItems = getGeneratedItemsFromBundle(bundle);
@@ -1350,7 +1373,7 @@ export function createVocabularyPreviewController(deps = {}) {
       } else if (settlement.summary && settlement.summary.processed > 0) {
         updateSettlementProgressBadge('processed');
       }
-      settlementDialog.open(settlement);
+      settlementDialog.open(settlement, restoreFocusTarget);
       return settlement;
     } catch (error) {
       showError('VOCABULARY_SETTLEMENT', error && error.message ? error.message : '整理本篇生词失败');
