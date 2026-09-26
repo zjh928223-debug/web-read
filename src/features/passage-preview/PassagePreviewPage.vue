@@ -165,7 +165,16 @@
             <p>首次接触</p>
             <h2 id="passage-preview-shortcut-title">快捷键设置</h2>
           </div>
-          <button ref="shortcutDialogInitialFocus" type="button" aria-label="关闭快捷键设置" @click="closeShortcutSettings">×</button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            data-ui-owner="learning"
+            data-shortcut-dialog-initial-focus
+            class="passage-preview-shortcut-close"
+            type="button"
+            aria-label="关闭快捷键设置"
+            @click="closeShortcutSettings"
+          >×</Button>
         </header>
         <p class="passage-preview-shortcut-intro">点击修改，再按下新的单键。</p>
         <div class="passage-preview-translation-mode-row">
@@ -185,22 +194,29 @@
               <span :class="{ 'is-active': translationDisplayMode === TRANSLATION_DISPLAY_MODES.HOLD }">按住展示</span>
               <span :class="{ 'is-active': translationDisplayMode === TRANSLATION_DISPLAY_MODES.PERSISTENT }">持续展示</span>
             </button>
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
+              data-ui-owner="learning"
               type="button"
-              class="passage-preview-translation-shortcut"
+              class="passage-preview-translation-shortcut passage-preview-shortcut-record"
               :class="{ 'is-editing': shortcutEditingAction === 'translation' }"
               :aria-label="shortcutEditingAction === 'translation' ? '正在设置句子中文快捷键' : '修改句子中文快捷键'"
               @click="beginShortcutCapture('translation')"
             >
               <kbd>{{ shortcutEditingAction === 'translation' ? '…' : formatShortcut(shortcuts.translation) }}</kbd>
               <small>{{ shortcutEditingAction === 'translation' ? '请按键' : '修改' }}</small>
-            </button>
+            </Button>
           </div>
         </div>
         <div class="passage-preview-shortcut-list">
           <div v-for="action in shortcutActionsWithoutTranslation" :key="action.id" class="passage-preview-shortcut-row">
             <span>{{ action.label }}</span>
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
+              data-ui-owner="learning"
+              class="passage-preview-shortcut-record"
               type="button"
               :class="{ 'is-editing': shortcutEditingAction === action.id }"
               :aria-label="shortcutEditingAction === action.id ? `正在设置${action.label}` : `修改${action.label}快捷键`"
@@ -208,13 +224,13 @@
             >
               <kbd>{{ shortcutEditingAction === action.id ? '…' : formatShortcut(shortcuts[action.id]) }}</kbd>
               <small>{{ shortcutEditingAction === action.id ? '请按键' : '修改' }}</small>
-            </button>
+            </Button>
           </div>
         </div>
         <p class="passage-preview-shortcut-notice" aria-live="polite">{{ shortcutNotice }}</p>
         <footer>
-          <button type="button" @click="restoreDefaultShortcuts">恢复默认</button>
-          <button type="button" class="is-primary" @click="closeShortcutSettings">完成</button>
+          <Button variant="outline" size="sm" data-ui-owner="learning" type="button" @click="restoreDefaultShortcuts">恢复默认</Button>
+          <Button variant="default" size="sm" data-ui-owner="learning" type="button" @click="closeShortcutSettings">完成</Button>
         </footer>
       </section>
     </div>
@@ -223,6 +239,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { Button } from '../../components/ui/button/index.js'
 import { createDialogController } from '../../services/runtime/dialog-controller.js'
 import { createAriaAmericanPronunciationService } from '../../services/pronunciation/aria-american-pronunciation.js'
 import {
@@ -279,7 +296,6 @@ const sentenceTranslationVisible = ref(translationDisplayMode.value === TRANSLAT
 const translationHoldActive = ref(false)
 const shortcutSettingsOpen = ref(false)
 const shortcutDialogRoot = ref(null)
-const shortcutDialogInitialFocus = ref(null)
 const shortcutDialogController = createDialogController()
 const shortcutEditingAction = ref('')
 const shortcutNotice = ref('')
@@ -457,6 +473,7 @@ function toggleTranslationDisplayMode() {
 function handleShortcutKeydown(event) {
   if (shortcutSettingsOpen.value) {
     if (!shortcutEditingAction.value) {
+      if (event.key === 'Tab') return
       event.stopPropagation()
       if (event.key === 'Escape') {
         event.preventDefault()
@@ -696,7 +713,7 @@ watch(shortcutSettingsOpen, async (open) => {
   await nextTick()
   if (!shortcutDialogRoot.value) return
   shortcutDialogController.open(shortcutDialogRoot.value, {
-    initialFocus: shortcutDialogInitialFocus.value,
+    initialFocus: shortcutDialogRoot.value.querySelector('[data-shortcut-dialog-initial-focus]'),
     onRequestClose: closeShortcutSettings,
   })
 })
