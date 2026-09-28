@@ -76,6 +76,7 @@
     "verify:windows-owner-c2": "npm run verify:windows-owner-c2a && node scripts/windows-owner-c2-cutover-check.mjs",
     "verify:windows-owner-c2b": "node scripts/windows-owner-c2b-browser-adapters-check.mjs && node scripts/windows-owner-c2b-cutover-check.mjs && npm run verify:windows-owner-passage-preview && npm run verify:windows-owner-annotation",
     "verify:windows-owner-vocabulary-srs": "node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_vocabulary_srs_owner",
+    "verify:windows-owner-vocabulary-srs-conflict": "node scripts/windows-owner-vocabulary-srs-conflict-check.mjs",
     "verify:windows-owner-c2c": "node scripts/windows-owner-c2c-vocabulary-srs-check.mjs",
     "verify:windows-owner-passage-preview": "node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_passage_preview_owner",
     "verify:windows-owner-annotation": "node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_annotation_owner",

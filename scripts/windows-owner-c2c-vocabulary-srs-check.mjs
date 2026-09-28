@@ -981,9 +981,18 @@ async function runBrowserCoreJourney(origin) {
             commitStatus: 'committed',
             revision: 1,
             receipt: {
+              domain: 'vocabulary-srs',
               operation: recoveryCommand.operation,
               idempotencyKey: recoveryCommand.idempotencyKey,
               expectedRevision: recoveryCommand.expectedRevision,
+              requestFingerprint: `sha256:${sha256Utf8(canonicalJson({
+                domain: 'vocabulary-srs',
+                operation: recoveryCommand.operation,
+                capability: 'vocabulary-srs.learning-command',
+                expectedRevision: recoveryCommand.expectedRevision,
+                payload: { records: Object.fromEntries(Object.entries(recoveryCommand.payload.records)
+                  .map(([id, row]) => [id, { ...row, checksum: `sha256:${sha256Utf8(canonicalJson(row.content))}` }])) },
+              }))}`,
               revision: 1,
               commitStatus: 'committed',
               recordChecksums: [`sha256:${sha256Utf8(canonicalJson(record.content))}`],

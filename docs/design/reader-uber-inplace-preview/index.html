@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Read-Web 原位控件换肤独立预览" />
+    <title>Read-Web · 原位换肤预览</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="./preview.css" />
+  </head>
+  <body data-preview-style="original">
+    <div class="preview-frame">
+      <div class="preview-toolbar" role="group" aria-label="预览比较控制">
+        <span class="preview-toolbar-label">控件换肤预览</span>
+        <button type="button" class="preview-switch is-selected" data-preview-mode="original" aria-pressed="true">原样</button>
+        <button type="button" class="preview-switch" data-preview-mode="restyled" aria-pressed="false">换肤</button>
+        <span class="preview-toolbar-divider" aria-hidden="true"></span>
+        <button type="button" class="preview-switch" data-preview-action="toggle-theme" aria-label="切换预览主题">浅色</button>
+      </div>
+
+      <main class="reader-viewport" id="reader-preview" aria-label="Read-Web 阅读器原位预览">
+        <div id="theme-controls">
+          <button id="theme-toggle" class="reader-button" data-ui-owner="reader" type="button" title="切换浅色/深色预览" aria-label="切换深色预览">☀</button>
+        </div>
+
+        <div id="main-app-area">
+          <div class="container">
+            <div class="controls">
+              <details class="deprecated-file-entry">
+                <summary>过时入口</summary>
+                <div class="deprecated-file-entry-actions">
+                  <label>音频:</label>
+                  <label for="audio-file" class="file-btn" data-ui-owner="reader" id="lbl-audio">选择音频</label>
+                  <input type="file" id="audio-file" accept="audio/*" />
+                  <label>字幕:</label>
+                  <label for="transcript-file" class="file-btn" data-ui-owner="reader" id="lbl-transcript">选择字幕</label>
+                  <input type="file" id="transcript-file" accept=".json" />
+                  <span class="deprecated-tool-label">旧工具:</span>
+                  <button id="import-marks-btn" class="reader-button" data-ui-owner="reader" type="button">导标记</button>
+                  <button id="export-json" class="reader-button" data-ui-owner="reader" type="button">存JSON</button>
+                  <button id="export-md-all" class="reader-button" data-ui-owner="reader" type="button">存TXT</button>
+                  <button id="toggle-chunk-btn" class="reader-button" data-ui-owner="reader" type="button">AI切分</button>
+                  <button id="btn-chunk-style" class="reader-button compact-button" data-ui-owner="reader" type="button" title="调整切分模式样式">T</button>
+                </div>
+              </details>
+              <div id="youtube-reader-controls-root">
+                <div class="youtube-reader-controls">
+                  <button id="material-entry" class="reader-button material-entry" data-ui-owner="workflow" type="button">素材处理</button>
+                </div>
+              </div>
+            </div>
+
+            <audio id="audio-player" controls preload="none" aria-label="原生音频播放器"></audio>
+
+            <div class="extra-controls">
+              <div class="control-group seek-controls" aria-label="跳句控制">
+                <button id="btn-prev-sentence" class="reader-button" data-ui-owner="reader" type="button" disabled>上一句</button>
+                <input id="hotkey-backward-input" class="hotkey-input-wide" data-ui-owner="reader" type="text" value="ArrowLeft" aria-label="上一句快捷键" title="设置后退快捷键" />
+                <button id="btn-next-sentence" class="reader-button" data-ui-owner="reader" type="button">下一句</button>
+                <input id="hotkey-forward-input" class="hotkey-input-wide" data-ui-owner="reader" type="text" value="ArrowRight" aria-label="下一句快捷键" title="设置前进快捷键" />
+              </div>
+              <div class="control-group speed-controls" aria-label="播放倍速">
+                <button class="reader-button speed-btn" data-speed="0.85" data-ui-owner="reader" type="button">0.85x</button>
+                <button class="reader-button speed-btn speed-button-active" data-speed="1.0" data-ui-owner="reader" type="button" aria-pressed="true">1.0x</button>
+                <button class="reader-button speed-btn" data-speed="1.25" data-ui-owner="reader" type="button">1.25x</button>
+              </div>
+            </div>
+
+            <div class="transcript-header">
+              <div class="transcript-actions" aria-label="阅读工具栏">
+                <button id="toggle-follow" class="reader-button on" data-ui-owner="reader" type="button" aria-pressed="true">跟随:开</button>
+
+                <span class="hotkey-box">
+                  标记 <input id="hotkey-input" class="hotkey-input" data-ui-owner="reader" type="text" maxlength="1" value="m" aria-label="标记快捷键" />
+                </span>
+                <span class="hotkey-box" title="开关独立标注释义泡泡">
+                  泡 <input id="hotkey-annotation-bubble-input" class="hotkey-input" data-ui-owner="reader" type="text" maxlength="1" value="b" aria-label="泡泡快捷键" />
+                </span>
+
+                <button id="highlight-mode-btn" class="reader-button" data-ui-owner="reader" type="button">高亮:句</button>
+                <span class="hotkey-box" title="句子高亮底色">
+                  句<input type="color" id="sentence-color-input" class="color-input" value="#e5e7eb" aria-label="句子高亮底色" />
+                </span>
+                <span class="hotkey-box" title="单词高亮底色">
+                  词<input type="color" id="highlight-color-input" class="color-input" value="#ffeb3b" aria-label="单词高亮底色" />
+                </span>
+
+                <span id="annotation-mark-count" class="mark-count-badge" role="status" aria-live="polite" data-count="0">已标记 0</span>
+                <button id="btn-annotation-backfill-ai" class="reader-button" data-ui-owner="reader" type="button">AI解释标注</button>
+                <button id="btn-preview-vocabulary" class="reader-button" data-ui-owner="reader" type="button">预习生词</button>
+                <button id="btn-toggle-preview-vocabulary" class="reader-button" data-ui-owner="reader" type="button">显示预习词</button>
+                <button id="btn-settle-article-vocabulary" class="reader-button" data-ui-owner="reader" type="button">已学完本篇</button>
+
+                <div id="srs-review-entry-root">
+                  <span class="learning-entry-group">
+                    <button class="reader-button learning-entry-button" data-ui-owner="reader" type="button">今日复习</button>
+                    <button class="reader-button learning-entry-button" data-ui-owner="reader" type="button">待预习</button>
+                    <button class="reader-button learning-entry-button" data-ui-owner="reader" type="button">预习设置</button>
+                  </span>
+                </div>
+
+                <span class="hotkey-box">
+                  中<input id="hotkey-chunk-cn-input" class="hotkey-input" data-ui-owner="reader" type="text" maxlength="1" value="c" aria-label="中文快捷键" />
+                  <button id="btn-chunk-cn-hold" class="reader-button compact-button active" data-ui-owner="reader" type="button" aria-pressed="true">按住</button>
+                </span>
+                <button id="btn-chunk-focus" class="reader-button active" data-ui-owner="reader" type="button" aria-pressed="true">聚焦</button>
+                <span class="hotkey-box" title="AI切分模式下开关高亮背景（阴影）">
+                  影<input id="hotkey-chunk-shadow-input" class="hotkey-input" data-ui-owner="reader" type="text" maxlength="1" value="s" aria-label="阴影快捷键" />
+                </span>
+              </div>
+            </div>
+
+            <div class="reading-shell">
+              <div id="transcript-container" style="display: none">请按顺序加载文件...</div>
+              <div id="vue-root">
+                <div id="transcript-vue-container" class="reading-area" aria-label="示例正文">
+                  <div class="transcript-line sentence-active" data-sentence-index="0" aria-current="true">
+                    <span>Most days, we move through the world without really noticing it.</span>
+                  </div>
+                  <div class="transcript-line" data-sentence-index="1">
+                    <span>But every so often, something </span><span class="marked" data-word-index="9">ordinary</span><span> asks us to slow down and pay attention.</span>
+                  </div>
+                  <div class="transcript-line" data-sentence-index="2">
+                    <span>A familiar voice. The light across a kitchen table.</span>
+                  </div>
+                  <div class="transcript-line" data-sentence-index="3">
+                    <span>The quiet </span><span class="preview-vocabulary-word" data-word-index="24">rhythm</span><span> of a place we know by heart.</span>
+                  </div>
+                  <div class="transcript-line" data-sentence-index="4">
+                    <span>These moments do not ask us to do more.</span>
+                  </div>
+                  <div class="transcript-line" data-sentence-index="5">
+                    <span>They simply ask us to be here, one small detail at a time.</span>
+                  </div>
+                  <div class="transcript-line" data-sentence-index="6">
+                    <span>Listening is a way of making room for the world.</span>
+                  </div>
+                  <div class="transcript-line" data-sentence-index="7">
+                    <span>And perhaps that is where understanding begins.</span>
+                    <details class="grok-box has-content">
+                      <summary class="grok-summary" aria-label="展开示例译文"></summary>
+                      <div class="grok-content">也许理解正是这样开始的：从决定认真留意的那一刻起。</div>
+                    </details>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <p class="preview-toast" id="preview-toast" role="status" aria-live="polite" hidden></p>
+    </div>
+
+    <script type="module" src="./preview.js"></script>
+  </body>
+</html>

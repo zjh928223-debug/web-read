@@ -4,13 +4,13 @@
   "scope": "Package verification/test/release commands, executable Node scripts under scripts/, and Python gates under tools/subtitle-workflow/scripts/.",
   "categories": {
     "architecture": 115,
-    "behavior": 128,
+    "behavior": 129,
     "browser": 34,
     "performance": 19,
     "release": 17
   },
-  "packageScriptCount": 286,
-  "executableScriptCount": 313,
+  "packageScriptCount": 287,
+  "executableScriptCount": 314,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -2965,6 +2965,7 @@
       "command": "node scripts/vocabulary-preview-ui-check.cjs",
       "category": "browser",
       "layers": [
+        "architecture",
         "browser",
         "behavior"
       ],
@@ -3482,6 +3483,18 @@
       "owner": "package.json#scripts.verify:windows-owner-vocabulary-srs"
     },
     {
+      "name": "verify:windows-owner-vocabulary-srs-conflict",
+      "command": "node scripts/windows-owner-vocabulary-srs-conflict-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/windows-owner-vocabulary-srs-conflict-check.mjs"
+      ],
+      "owner": "package.json#scripts.verify:windows-owner-vocabulary-srs-conflict"
+    },
+    {
       "name": "verify:windows-owner-workflow",
       "command": "node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_workflow_owner",
       "category": "behavior",
@@ -3623,6 +3636,7 @@
       "command": "node scripts/youtube-workflow-panel-v3-browser-check.cjs",
       "category": "browser",
       "layers": [
+        "architecture",
         "browser",
         "behavior"
       ],
@@ -10559,6 +10573,7 @@
       "path": "scripts/vocabulary-preview-ui-check.cjs",
       "category": "browser",
       "layers": [
+        "architecture",
         "browser",
         "behavior"
       ],
@@ -10570,7 +10585,9 @@
       ],
       "invocation": "direct",
       "evidence": {
-        "sourceShape": [],
+        "sourceShape": [
+          "asserts-source-text"
+        ],
         "sourceRead": true,
         "browser": true,
         "performance": false,
@@ -11577,6 +11594,30 @@
       }
     },
     {
+      "path": "scripts/windows-owner-vocabulary-srs-conflict-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:windows-owner-vocabulary-srs-conflict",
+      "owners": [
+        "package.json#scripts.verify:windows-owner-vocabulary-srs-conflict"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": false
+      }
+    },
+    {
       "path": "scripts/windows-owner-workflow-c2c-check.mjs",
       "category": "behavior",
       "layers": [
@@ -11896,6 +11937,7 @@
       "path": "scripts/youtube-workflow-panel-v3-browser-check.cjs",
       "category": "browser",
       "layers": [
+        "architecture",
         "browser",
         "behavior"
       ],
@@ -11907,7 +11949,9 @@
       ],
       "invocation": "direct",
       "evidence": {
-        "sourceShape": [],
+        "sourceShape": [
+          "asserts-source-text"
+        ],
         "sourceRead": false,
         "browser": true,
         "performance": false,

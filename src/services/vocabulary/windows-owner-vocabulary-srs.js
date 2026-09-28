@@ -106,6 +106,7 @@ function ownerRevision(response) {
 function ownerCommandError(response, operation) {
   const error = ownerResponseError(response, DOMAIN, operation)
   if (error.code === 'conflict') error.code = 'REVISION_CONFLICT'
+  error.message += ` (${error.code})`
   return error
 }
 
@@ -134,15 +135,35 @@ function expectedRecordChecksums(records) {
   return [...new Set(Object.values(records || {}).map(recordChecksum))].sort()
 }
 
+function requestFingerprint(operation, records, expectedRevision) {
+  const capability = ['entry-upsert', 'acquisition-command'].includes(operation)
+    ? 'vocabulary-srs.entry-command'
+    : operation === 'review-attempt'
+      ? 'vocabulary-srs.review-command'
+      : 'vocabulary-srs.learning-command'
+  return `sha256:${sha256Utf8(canonicalJson({
+    domain: DOMAIN,
+    operation,
+    capability,
+    expectedRevision,
+    // VocabularySrsOwner adds each row checksum before binding the request receipt.
+    payload: { records: Object.fromEntries(Object.entries(records).map(([id, record]) => (
+      [id, { ...record, checksum: recordChecksum(record) }]
+    ))) },
+  }))}`
+}
+
 function matchesCommittedReceipt(response, operation, idempotencyKey, records, expectedRevision) {
   const receipt = response?.receipt
   if (response?.outcome !== 'committed'
     || response?.commitStatus !== 'committed'
     || !receipt
     || receipt.commitStatus !== 'committed'
+    || receipt.domain !== DOMAIN
     || receipt.operation !== operation
     || receipt.idempotencyKey !== idempotencyKey
     || receipt.expectedRevision !== expectedRevision
+    || receipt.requestFingerprint !== requestFingerprint(operation, records, expectedRevision)
     || !Number.isSafeInteger(receipt.revision)
     || receipt.revision !== response.revision
     || !Array.isArray(receipt.recordChecksums)) return false
@@ -617,45 +638,70 @@ function createLegacyMigrationFacade(acquisitionRepository) {
 }
 
 function createOwnerLearningRunner(owner, now) {
-  async function run(dependencies, rawCommand, execute) {
-    const selected = await querySnapshot(owner)
-    const runner = createInMemoryVocabularyLearningUnitOfWorkRunner({
-      rows: rowsFromOwnerRecords(selected.records, now),
-      now,
-    })
-    const result = await runner.run(dependencies, rawCommand, execute)
-    await commitChangedRows(owner, selected, runner.snapshot(), rawCommand)
-    return result
+  function stableClock(clock) {
+    let timestamp
+    return () => (timestamp ??= clock())
   }
 
-  async function runBatchSession(dependencies, executeSession) {
-    const selected = await querySnapshot(owner)
-    const runner = createInMemoryVocabularyLearningUnitOfWorkRunner({
-      rows: rowsFromOwnerRecords(selected.records, now),
-      now,
-    })
-    const result = await runner.runBatchSession(dependencies, executeSession)
-    await commitChangedRows(owner, selected, runner.snapshot(), {
-      command_id: 'batch',
-      command_type: 'batch',
-    })
-    return result
+  function run(dependencies, rawCommand, execute) {
+    const commandNow = stableClock(dependencies?.now ?? now)
+    return recompute((runner) => runner.run(
+      { ...dependencies, now: commandNow }, rawCommand, execute,
+    ), rawCommand, commandNow)
   }
 
-  async function commitChangedRows(currentOwner, selected, rows, command) {
-    const changed = changedRows(selected.records, rows)
-    if (!changed.length) return null
-    return commitRecords(
-      currentOwner,
-      'learning-unit-of-work',
-      Object.fromEntries(changed.map((row) => [row.id, recordForCommand(row.id, row.content)])),
-      selected.revision,
-      {
+  function runBatchSession(dependencies, executeSession) {
+    const clocks = new Map()
+    const batchNow = stableClock(dependencies?.now ?? now)
+    return recompute((runner) => runner.runBatchSession(dependencies, (runCommand) => (
+      executeSession((commandDependencies, rawCommand, execute) => {
+        const id = rawCommand?.command_id
+        if (!clocks.has(id)) clocks.set(id, stableClock(commandDependencies?.now ?? batchNow))
+        return runCommand({ ...commandDependencies, now: clocks.get(id) }, rawCommand, execute)
+      })
+    )), { command_id: 'batch', command_type: 'batch' }, batchNow)
+  }
+
+  async function recompute(executeAttempt, command, clock) {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const selected = await querySnapshot(owner)
+      const runner = createInMemoryVocabularyLearningUnitOfWorkRunner({
+        rows: rowsFromOwnerRecords(selected.records, clock),
+        now: clock,
+      })
+      // Callbacks must only compute/stage transaction data; replay never wraps external writes.
+      const result = await executeAttempt(runner)
+      const changed = changedRows(selected.records, runner.snapshot())
+      if (!changed.length) return result
+      const records = Object.fromEntries(changed.map((row) => [row.id, recordForCommand(row.id, row.content)]))
+      const operation = 'learning-unit-of-work'
+      const fingerprint = requestFingerprint(operation, records, selected.revision)
+      const identity = {
         commandId: command?.command_id || 'unknown',
         commandType: command?.command_type || 'unknown',
-        changedRecordIds: changed.map((row) => row.id).sort(),
-      },
-    )
+        requestFingerprint: fingerprint,
+      }
+      try {
+        await commitRecords(owner, operation, records, selected.revision, identity)
+        return result
+      } catch (error) {
+        const response = error?.response
+        const receipt = response?.receipt
+        // A key collision or an unknown result is not evidence of an uncommitted CAS attempt.
+        const confirmedConflict = response?.outcome === 'conflict'
+          && response.commitStatus === 'conflict'
+          && receipt?.commitStatus === 'conflict'
+          && receipt.domain === DOMAIN
+          && receipt.operation === operation
+          && receipt.idempotencyKey === stableOwnerIdempotencyKey(`vocabulary-${operation}`, identity)
+          && receipt.requestFingerprint === fingerprint
+          && receipt.expectedRevision === selected.revision
+          && Number.isSafeInteger(receipt.revision)
+          && receipt.revision === response.revision
+          && receipt.revision > selected.revision
+        if (!confirmedConflict || attempt === 2) throw error
+      }
+    }
   }
 
   return { run, runBatchSession }

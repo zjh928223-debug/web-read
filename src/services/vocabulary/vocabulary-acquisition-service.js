@@ -251,6 +251,10 @@ function graduationFailure(eligibility) {
 }
 
 export function createVocabularyAcquisitionService(options = {}) {
+  return createAcquisitionService(options);
+}
+
+function createAcquisitionService(options, batchCommandTimes = null) {
   if (!isPlainObject(options)) fail('INVALID_FIELD_TYPE', 'Service options must be an object', { field: 'options' });
   const enabled = options.enabled ?? false;
   const hasCustomUnitOfWork = Object.prototype.hasOwnProperty.call(options, 'runUnitOfWork');
@@ -269,9 +273,10 @@ export function createVocabularyAcquisitionService(options = {}) {
   async function run(rawCommand, commandType, callback) {
     if (!enabled) throw featureFlagError();
     const command = normalizeServiceCommand(rawCommand, commandType);
-    let commandTimestamp;
+    let commandTimestamp = batchCommandTimes?.get(command.command_id);
     const commandNow = () => {
       commandTimestamp ??= now();
+      batchCommandTimes?.set(command.command_id, commandTimestamp);
       return commandTimestamp;
     };
     return runUnitOfWork(
@@ -791,14 +796,15 @@ export function createVocabularyAcquisitionService(options = {}) {
     service.runBatch = function runBatch(work) {
       if (!enabled) return Promise.reject(featureFlagError());
       if (typeof work !== 'function') return Promise.reject(contractError('INVALID_FIELD_TYPE', 'Batch work must be a function', { field: 'work' }));
+      const commandTimes = new Map();
       return runBatchSession({ now }, async (runCommand) => {
-        const batchService = createVocabularyAcquisitionService({
+        const batchService = createAcquisitionService({
           enabled,
           now,
           runUnitOfWork(commandDependencies, rawCommand, execute) {
             return runCommand(commandDependencies, rawCommand, execute);
           },
-        });
+        }, commandTimes);
         return work(batchService);
       });
     };

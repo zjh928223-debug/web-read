@@ -706,6 +706,7 @@ export function createSrsReviewServiceV2(options = {}) {
           ledger,
         };
       }
+      const recordedAt = timestamp(now(), 'recorded_at');
       const result = await runUnitOfWork(
         { indexedDBApi: options.indexedDBApi, now },
         {
@@ -777,7 +778,6 @@ export function createSrsReviewServiceV2(options = {}) {
               };
             }
           }
-          const recordedAt = timestamp(now(), 'recorded_at');
           const firstResult = {
             schema_version: 'review-attempt-result.v1',
             service_version: SRS_REVIEW_SERVICE_V2_VERSION,

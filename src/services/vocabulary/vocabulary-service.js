@@ -365,7 +365,7 @@ export function createVocabularyService(options = {}) {
       const targetSenseKey = deriveTargetSenseKey(createTargetSense(input, normalized));
       const matchingPair = acquisitionPairByWordAndSense.get(`${word.id}::${targetSenseKey}`) || null;
       const existingPair = matchingPair?.learning_unit?.archived_at === null ? matchingPair : null;
-      return { index, input, word, existingPair };
+      return { index, input: { ...input, createdAt: normalized.createdAt }, word, existingPair };
     });
     const results = new Array(candidates.length);
     const pendingTasks = [];

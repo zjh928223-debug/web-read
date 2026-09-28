@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Read · 阅读器视觉预览</title>
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M12 5v16M3 4c4-1 7 0 9 2 2-2 5-3 9-2v15c-4-1-7 0-9 2-2-2-5-3-9-2Z"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h5l3 3h6a2 2 0 0 1 2 2v11H3Z"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z"/></symbol>
+    <symbol id="i-repeat" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4M21 6H7a4 4 0 0 0-4 4m4 12-4-4 4-4m-4 4h14a4 4 0 0 0 4-4"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h7m4 0h5M4 17h3m4 0h9M11 4v6M7 14v6"/></symbol>
+    <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 15h10"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.5 14a9 9 0 0 1-10.5-10.5A9 9 0 1 0 20.5 14Z"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m8 10 4 4 4-4"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-prev" viewBox="0 0 24 24"><path d="M5 5v14m14-14-10 7 10 7Z"/></symbol>
+    <symbol id="i-next" viewBox="0 0 24 24"><path d="M19 5v14M5 5l10 7-10 7Z"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 4 12 8-12 8Z"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+    <symbol id="i-volume" viewBox="0 0 24 24"><path d="m11 4-6 5H2v6h3l6 5Zm4 4a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></symbol>
+  </defs></svg>
+
+  <header class="app-header">
+    <a class="brand" href="#reader" aria-label="阅读正文"><svg><use href="#i-book"/></svg><span>Read<span class="brand-dot">.</span></span></a>
+    <span class="header-divider"></span><span class="page-label">阅读</span><span class="preview-badge">视觉样稿</span>
+    <nav class="global-nav" aria-label="全局入口">
+      <button data-demo="素材窗口将在主阅读页方向确定后设计。"><svg><use href="#i-folder"/></svg>素材</button>
+      <button data-demo="待预习入口保留；样稿不读取学习队列。">待预习</button>
+      <button data-demo="今日复习入口保留；样稿不连接评分服务。"><svg><use href="#i-repeat"/></svg>今日复习</button>
+      <span class="header-divider"></span>
+      <button id="theme" class="icon-button" aria-label="切换深色" title="切换深色"><svg><use href="#i-moon"/></svg></button>
+    </nav>
+  </header>
+
+  <div class="reading-toolbar" role="region" aria-label="阅读工具栏">
+    <div class="toolbar-group mode-switch" role="group" aria-label="阅读模式">
+      <button id="mode-chunk" aria-pressed="true">AI 切分</button><button id="mode-sentence" aria-pressed="false">逐句</button>
+    </div>
+    <span class="toolbar-divider"></span>
+    <div class="toolbar-group">
+      <button id="follow" class="state-button" aria-pressed="true"><span class="state-dot"></span>跟随</button>
+      <label class="compact-select">中文<select id="translation" aria-label="中文显示方式"><option value="hold">按住 C</option><option value="show">常显</option><option value="hide">隐藏</option></select></label>
+      <button id="focus" class="state-button" aria-pressed="true"><span class="state-dot"></span>聚焦</button>
+    </div>
+    <span class="toolbar-divider optional-divider"></span>
+    <button id="appearance" class="appearance-button"><svg><use href="#i-sliders"/></svg>显示设置</button>
+    <button id="hotkeys" class="hotkeys-button"><svg><use href="#i-keyboard"/></svg>快捷键</button>
+    <div class="article-actions">
+      <button data-demo="预习生词：将扫描当前文章。样稿只展示入口，不执行扫描。">预习生词</button>
+      <button data-demo="AI 解释：将补充标记词释义。样稿不会发送 AI 请求。"><svg><use href="#i-spark"/></svg>AI 解释</button>
+    </div>
+  </div>
+
+  <main id="reader" tabindex="-1">
+    <div class="document-heading">
+      <div class="document-meta"><span class="eyebrow">LISTEN & READ</span><span class="meta-dot">·</span><span>示例文章</span><span class="meta-dot">·</span><span>02:12</span></div>
+      <div class="document-title-row"><h1>The art of paying attention</h1><span class="mark-summary"><span class="mark-dot"></span>已标记 2</span></div>
+    </div>
+
+    <section class="transcript" aria-label="示例字幕">
+      <article class="passage" data-start="0" data-index="0">
+        <button class="timestamp" aria-label="跳到第 1 句，00:00">00:00</button>
+        <div class="passage-content"><p class="english">Most days, we move through the world<br class="chunk-break"> without really noticing it.</p><p class="translation">大多数日子里，我们穿行于世界，却并未真正留意它。</p></div>
+      </article>
+      <article class="passage is-current" data-start="18" data-index="1" aria-current="true">
+        <button class="timestamp" aria-label="跳到第 2 句，00:18">00:18<span class="playing-marker" aria-hidden="true"><i></i><i></i><i></i></span></button>
+        <div class="passage-content"><p class="english">But every so often, something <button class="marked-word" data-word="ordinary">ordinary</button><br class="chunk-break"> asks us to slow down and pay attention.</p><p class="translation">但偶尔，一件平常的小事，会让我们慢下来，认真留意。</p></div>
+      </article>
+      <article class="passage" data-start="39" data-index="2">
+        <button class="timestamp" aria-label="跳到第 3 句，00:39">00:39</button>
+        <div class="passage-content"><p class="english">A familiar voice. The light across a kitchen table.<br class="chunk-break"> The quiet <button class="marked-word" data-word="rhythm">rhythm</button> of a place we know by heart.</p><p class="translation">一个熟悉的声音，洒在厨房桌上的光，还有熟悉之地静静的节奏。</p></div>
+      </article>
+      <article class="passage" data-start="61" data-index="3">
+        <button class="timestamp" aria-label="跳到第 4 句，01:01">01:01</button>
+        <div class="passage-content"><p class="english">These moments do not ask us to do more.<br class="chunk-break"> They simply ask us to be here.</p><p class="translation">这些瞬间不要求我们多做什么，只希望我们在场。</p></div>
+      </article>
+      <article class="passage" data-start="82" data-index="4">
+        <button class="timestamp" aria-label="跳到第 5 句，01:22">01:22</button>
+        <div class="passage-content"><p class="english">Listening is a way of making room for the world,<br class="chunk-break"> one small detail at a time.</p><p class="translation">倾听，是为世界留出空间，一次留意一个小小的细节。</p></div>
+      </article>
+      <article class="passage" data-start="107" data-index="5">
+        <button class="timestamp" aria-label="跳到第 6 句，01:47">01:47</button>
+        <div class="passage-content"><p class="english">And perhaps that is where understanding begins:<br class="chunk-break"> with the simple decision to notice.</p><p class="translation">也许理解正是这样开始的：从决定认真留意的那一刻起。</p></div>
+      </article>
+    </section>
+    <footer class="article-end"><span>读到这里，也是一次积累。</span><button data-demo="已学完本篇：正式界面将整理本篇生词到 SRS。样稿未修改学习记录。"><svg><use href="#i-check"/></svg>已学完本篇</button></footer>
+  </main>
+
+  <footer class="player-dock" aria-label="播放控制">
+    <div class="transport">
+      <button id="previous" title="上一句 · ArrowLeft" aria-label="上一句"><svg><use href="#i-prev"/></svg></button>
+      <button id="play" data-variant="default" aria-label="播放演示" title="播放 / 暂停 · Space"><svg><use href="#i-play"/></svg></button>
+      <button id="next" title="下一句 · ArrowRight" aria-label="下一句"><svg><use href="#i-next"/></svg></button>
+    </div>
+    <div class="progress-group"><div class="progress-label"><span><span class="simulation-label">模拟播放</span><span class="player-article">The art of paying attention</span></span><span class="time-display"><strong id="current-time">00:18</strong><span> / 02:12</span></span></div><input id="progress" type="range" min="0" max="132" value="18" step="1" aria-label="模拟播放进度"></div>
+    <div class="player-options"><label class="speed-select"><select id="speed" aria-label="播放倍速"><option value="0.85">0.85×</option><option value="1" selected>1.0×</option><option value="1.25">1.25×</option></select></label><button id="mute" class="icon-button" aria-label="静音演示" aria-pressed="false"><svg><use href="#i-volume"/></svg></button><div class="key-hints"><span><kbd id="backward-hint">←</kbd><kbd id="forward-hint">→</kbd> 跳句</span><span><kbd id="play-hint">Space</kbd> 播放</span></div></div>
+  </footer>
+
+  <dialog id="settings-dialog" aria-labelledby="settings-title">
+    <header class="dialog-header"><div><span class="eyebrow">READING PREFERENCES</span><h2 id="settings-title">阅读设置</h2></div><button class="icon-button" data-close aria-label="关闭设置"><svg><use href="#i-close"/></svg></button></header>
+    <div class="settings-tabs" role="group" aria-label="设置分类"><button id="tab-display" aria-pressed="true">显示</button><button id="tab-keys" aria-pressed="false">快捷键</button></div>
+    <section id="display-panel" class="settings-panel" aria-label="显示设置">
+      <div class="setting-row"><label for="font-size">英文字号<span>让长时间阅读更轻松</span></label><select id="font-size"><option value="19">19 px</option><option value="21" selected>21 px</option><option value="23">23 px</option></select></div>
+      <div class="setting-row"><label for="highlight">播放高亮</label><select id="highlight"><option value="sentence">整句</option><option value="none">仅侧边标记</option></select></div>
+      <div class="setting-row"><label for="show-vocab">显示预习词<span>用下划线区分于已标记词</span></label><button id="show-vocab" class="state-button" aria-pressed="false"><span class="state-dot"></span><span>关闭</span></button></div>
+      <div class="setting-row"><label for="sentence-color">句子底色</label><input type="color" id="sentence-color" value="#eaf1ec" aria-label="句子高亮颜色"></div>
+      <div class="setting-row"><label for="word-color">标记底色</label><input type="color" id="word-color" value="#f0dfa7" aria-label="标记词颜色"></div>
+      <p class="panel-note">示例设置只在此页生效，刷新即恢复。深浅色共用控件尺寸和状态表达。</p>
+    </section>
+    <section id="keys-panel" class="settings-panel" aria-label="快捷键设置" hidden>
+      <p class="panel-note key-instruction">点击按键框后按下新键；Esc 取消。具名按键完整显示。</p>
+      <div class="key-row"><label for="key-backward">上一句</label><input id="key-backward" data-key="backward" value="ArrowLeft" readonly aria-label="上一句快捷键"></div>
+      <div class="key-row"><label for="key-forward">下一句</label><input id="key-forward" data-key="forward" value="ArrowRight" readonly aria-label="下一句快捷键"></div>
+      <div class="key-row"><label for="key-play">播放 / 暂停</label><input id="key-play" data-key="play" value="Space" readonly aria-label="播放快捷键"></div>
+      <div class="key-row"><label for="key-translation">显示中文</label><input id="key-translation" data-key="translation" value="C" readonly aria-label="中文快捷键"></div>
+      <div class="reserved-keys"><span>其余现有快捷键在产品中保留</span><span>标记 <kbd>M</kbd>　释义泡泡 <kbd>B</kbd>　高亮底色 <kbd>S</kbd></span></div>
+    </section>
+    <footer class="dialog-footer"><button id="reset" data-variant="outline">恢复样稿默认值</button><button data-close data-variant="default">完成</button></footer>
+  </dialog>
+
+  <dialog id="word-dialog" aria-labelledby="word-title"><header class="dialog-header"><div><span class="eyebrow">已标记 · 示例释义</span><h2 id="word-title">ordinary</h2></div><button data-close class="icon-button" aria-label="关闭释义"><svg><use href="#i-close"/></svg></button></header><p id="word-definition"></p><p class="panel-note">只演示标记与释义的视觉层级，不连接词库或保存操作。</p></dialog>
+  <div id="toast" role="status" aria-live="polite" hidden></div>
+  <script type="module" src="./preview.js"></script>
+</body>
+</html>

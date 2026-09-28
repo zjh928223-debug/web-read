@@ -10,7 +10,7 @@
   },
   "dataRoot": "E:\\ReadWebData\\SubtitleWorkflow-Optimization",
   "python": {
-    "executable": "python"
+    "executable": "E:\\ReadWebRuntime\\optimization-python\\Scripts\\python.exe"
   },
   "tools": {
     "ytDlp": "yt-dlp",
