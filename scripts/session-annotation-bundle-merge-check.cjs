@@ -161,6 +161,21 @@ async function main() {
   assert.ok(merged.status.blocks['block-a']);
   assert.ok(merged.status.blocks['block-b']);
 
+  const oldMeaningItem = { targetId: 'target-a', markedText: 'Alpha', sourceSentence: 'Alpha sentence.', meaning: 'old explanation', simpleMeaning: '旧短义', simple_meaning: '旧别名' };
+  const meaningStorage = { ...storage, loadBundle: async () => ({ generated: { items: [oldMeaningItem] }, status: { blocks: {} } }) };
+  const importMeaning = (item) => api.buildManualLightweightImportedBundle({ items: [{ targetId: 'target-a', markedText: 'Alpha', ...item }] }, scope, meaningStorage, deps);
+  const retained = await importMeaning({ sourceSentence: 'Alpha sentence.', meaning: 'old explanation' });
+  assert.equal(retained.generated.items[0].simpleMeaning, '旧短义', 'unchanged legacy detail reuses its valid short');
+  const changed = await importMeaning({ sourceSentence: 'Alpha sentence.', meaning: 'new explanation' });
+  assert.equal(changed.generated.items[0].simpleMeaning, '', 'changed explanation cannot retain an old short');
+  assert.equal(changed.generated.items[0].simple_meaning, '', 'old alias cannot revive the stale short');
+  const changedContext = await importMeaning({ sourceSentence: 'Another Alpha sentence.', meaning: 'old explanation' });
+  assert.equal(changedContext.generated.items[0].simpleMeaning, '');
+  const joint = await importMeaning({ sourceSentence: 'Alpha sentence.', meaning: 'new explanation', simpleMeaning: '新短义' });
+  assert.equal(joint.generated.items[0].simpleMeaning, '新短义');
+  assert.equal(joint.generated.items[0].meaning, 'new explanation');
+  assert.equal(joint.generated.items[0].targetId, 'target-a');
+
   assert.throws(
     () => api.buildManualLightweightImportedBundle({ items: [] }, scope, storage, {}),
     /Missing annotation bundle merge dependency/

@@ -3,7 +3,7 @@
     <header class="srs-review-header">
       <Button
         variant="ghost"
-        size="sm"
+        size="default"
         data-ui-owner="learning"
         class="srs-review-back"
         type="button"
@@ -14,6 +14,12 @@
         返回
       </Button>
       <div class="srs-review-heading">
+        <h1 class="srs-review-title">
+          {{ props.standalone ? props.standaloneTitle : '今日复习' }}
+        </h1>
+        <p v-if="props.standalone && props.standaloneNotice" class="srs-review-standalone-marker">
+          {{ props.standaloneNotice }}
+        </p>
         <p class="srs-review-progress" aria-live="polite">
           {{ review.progress.value || '今日复习' }}
         </p>
@@ -21,7 +27,7 @@
       <div ref="historyContainer" class="srs-review-summary">
         <Button
           variant="ghost"
-          size="sm"
+          size="default"
           data-ui-owner="learning"
           class="srs-review-history-toggle"
           type="button"
@@ -86,6 +92,23 @@
     </header>
 
     <section
+      v-if="!review.loading.value && (review.queueSummary.value || props.standalone)"
+      class="srs-review-queue-banner"
+      aria-label="复习队列说明"
+    >
+      <div class="srs-review-queue-copy">
+        <strong>{{ review.queueSummary.value || '复习队列' }}</strong>
+        <p>
+          {{ review.sourceReasonLabel.value }}
+          <span v-if="review.currentEnqueueReasonLabel.value"> · {{ review.currentEnqueueReasonLabel.value }}</span>
+        </p>
+        <p v-if="props.standalone && props.standaloneNotice" class="is-standalone">
+          {{ props.standaloneNotice }}
+        </p>
+      </div>
+    </section>
+
+    <section
       v-if="props.legacyMigration && migrationStatus && migrationFailed"
       class="srs-review-migration-banner"
       aria-label="复习数据整理"
@@ -96,7 +119,7 @@
       </div>
       <Button
         variant="outline"
-        size="sm"
+        size="default"
         data-ui-owner="learning"
         type="button"
         class="srs-review-migration-button"
@@ -110,17 +133,56 @@
       </p>
     </section>
 
+    <section
+      v-if="review.saveSummary.value.hasActivity"
+      class="srs-review-save-status"
+      aria-label="评分保存状态"
+    >
+      <div class="srs-review-save-status-copy" role="status" aria-live="polite">
+        <strong>{{ review.saveSummary.value.message }}</strong>
+        <p v-if="review.saveError.value" class="srs-review-save-error" role="alert">
+          保存错误：{{ review.saveError.value }}
+        </p>
+        <p v-if="review.ratingBlocked.value">新的评分已暂停；请先处理下面的原评分状态。</p>
+        <p v-else-if="review.completionPendingSave.value">所有评分确认后，本批才会显示为完成。</p>
+      </div>
+      <ul class="srs-review-save-status-list">
+        <li v-for="item in review.saveItems.value.slice().reverse()" :key="item.itemId">
+          <span class="srs-review-save-item-copy">
+            <strong>{{ item.wordLabel }} · {{ item.ratingLabel }}</strong>
+            <small>{{ item.statusLabel }}</small>
+            <small v-if="item.errorMessage" class="srs-review-save-item-error">{{ item.errorMessage }}</small>
+          </span>
+          <Button
+            v-if="item.retryable && ['failed', 'unknown'].includes(item.status)"
+            variant="outline"
+            size="default"
+            data-ui-owner="learning"
+            type="button"
+            class="srs-review-save-retry"
+            @click="review.retryReviewSave(item.itemId)"
+          >重试原评分</Button>
+        </li>
+      </ul>
+    </section>
+
     <section v-if="review.loading.value" class="srs-review-state" aria-live="polite">
       <span class="srs-review-spinner" aria-hidden="true"></span>
-      <p>正在准备今日复习…</p>
+      <p>{{ props.standalone ? '正在准备样本演示…' : '正在准备今日复习…' }}</p>
+      <p v-if="props.standalone && props.standaloneNotice" class="srs-review-standalone-state-note">
+        {{ props.standaloneNotice }}
+      </p>
     </section>
 
     <section v-else-if="review.error.value && !review.current.value" class="srs-review-state" role="alert">
-      <h2>加载失败</h2>
+      <h2>{{ props.standalone ? '样本演示加载失败' : '加载失败' }}</h2>
+      <p v-if="props.standalone && props.standaloneNotice" class="srs-review-standalone-state-note">
+        {{ props.standaloneNotice }}
+      </p>
       <p>{{ review.error.value }}</p>
       <Button
         variant="outline"
-        size="sm"
+        size="default"
         data-ui-owner="learning"
         type="button"
         class="srs-review-retry"
@@ -129,11 +191,11 @@
     </section>
 
     <section v-else-if="review.empty.value" class="srs-review-state" aria-live="polite">
-      <h2>今日复习已完成</h2>
-      <p>当前没有需要复习的词。</p>
+      <h2>当前没有可复习项</h2>
+      <p>当前批次为空；不代表今日全部待处理已完成。</p>
       <Button
         variant="outline"
-        size="sm"
+        size="default"
         data-ui-owner="learning"
         type="button"
         class="srs-review-retry"
@@ -142,8 +204,8 @@
     </section>
 
     <section v-else-if="review.completed.value" class="srs-review-state" aria-live="polite">
-      <h2>今日复习已完成</h2>
-      <p>共完成 {{ sessionCompletedCount }} 张</p>
+      <h2>{{ review.completionPendingSave.value ? '本批已作答，等待保存确认' : '当前复习批已完成' }}</h2>
+      <p>本批共作答 {{ sessionCompletedCount }} 张；已确认 {{ review.saveSummary.value.confirmedCount }} 张</p>
       <p v-if="review.deferredRevisit.value">{{ review.currentEligibilityLabel.value }}，稍后回来即可继续。</p>
       <ul class="srs-review-completion-counts">
         <li>Again 忘记：{{ review.sessionRatingCounts.value.again }}</li>
@@ -153,7 +215,7 @@
       </ul>
       <Button
         variant="outline"
-        size="sm"
+        size="default"
         data-ui-owner="learning"
         type="button"
         class="srs-review-retry"
@@ -162,8 +224,13 @@
     </section>
 
     <template v-else-if="review.current.value">
-      <div :key="review.current.value.word.id" class="srs-review-content">
+      <div :key="review.currentCardKey.value" class="srs-review-content">
         <article class="srs-review-context" aria-label="原文语境">
+          <p
+            v-if="review.contextNotice.value"
+            class="srs-review-context-notice"
+            role="status"
+          >{{ review.contextNotice.value }}</p>
           <div
             v-if="review.contextCueLevel.value === 'none'"
             class="srs-review-context-gate"
@@ -172,7 +239,7 @@
             <p>当前为仅单词模式，原句尚未显示。</p>
             <Button
               variant="outline"
-              size="sm"
+              size="default"
               data-ui-owner="learning"
               type="button"
               :disabled="!hasTargetContext"
@@ -239,7 +306,7 @@
               <span>整句翻译暂时不可用</span>
               <Button
                 variant="outline"
-                size="sm"
+                size="default"
                 data-ui-owner="learning"
                 type="button"
                 @click="hydrateCurrentSentenceTranslation"
@@ -252,7 +319,7 @@
           >
             <Button
               variant="outline"
-              size="sm"
+              size="default"
               data-ui-owner="learning"
               type="button"
               @click="revealSurroundingContext"
@@ -272,7 +339,7 @@
               <p>{{ sourceAudioNotice }}</p>
               <Button
                 variant="outline"
-                size="sm"
+                size="default"
                 data-ui-owner="learning"
                 type="button"
                 @click="retrySourceAudio"
@@ -297,7 +364,7 @@
             <div ref="wordLine" class="srs-review-word-line">
               <Button
                 variant="outline"
-                size="icon-lg"
+                size="icon"
                 data-ui-owner="learning"
                 class="srs-review-speaker"
                 :class="{ 'is-playing': playbackPhase === 'word' }"
@@ -323,13 +390,20 @@
             </div>
             <div class="srs-review-answer-area">
               <p v-if="flowState.answerRevealed && word.phonetic" class="srs-review-phonetic">{{ word.phonetic }}</p>
+              <p v-if="!flowState.answerRevealed" class="srs-review-recall-prompt">
+                先回忆这个词在当前学习单元中的目标义；显示答案后再评价本次回忆。
+              </p>
               <div v-if="flowState.answerRevealed" class="srs-review-meanings">
                 <section v-if="generalMeaning" class="srs-review-meaning-group is-general">
                   <h3>常用释义</h3>
                   <p>{{ generalMeaning }}</p>
                 </section>
-                <section v-if="meaning" class="srs-review-meaning-group is-contextual">
-                  <h3>句中释义</h3>
+                <section v-if="targetSenseLabel" class="srs-review-meaning-group is-target">
+                  <h3>目标义</h3>
+                  <p>{{ targetSenseLabel }}</p>
+                </section>
+                <section v-if="meaning && meaning !== targetSenseLabel" class="srs-review-meaning-group is-contextual">
+                  <h3>当前句中释义</h3>
                   <p>{{ meaning }}</p>
                 </section>
                 <section
@@ -358,7 +432,7 @@
             <div class="srs-review-play-sequence-group">
             <Button
               variant="ghost"
-              size="sm"
+              size="default"
               data-ui-owner="learning"
               class="srs-review-play-sequence"
               type="button"
@@ -374,7 +448,7 @@
             </Button>
             <Button
               variant="ghost"
-              size="sm"
+              size="default"
               data-ui-owner="learning"
               class="srs-review-play-sequence"
               type="button"
@@ -391,7 +465,7 @@
             </div>
           <Button
             variant="ghost"
-            size="sm"
+            size="default"
             data-ui-owner="learning"
             class="srs-review-remove-word"
             type="button"
@@ -410,6 +484,12 @@
       </div>
 
       <p v-if="review.error.value" class="srs-review-inline-error" role="alert">{{ review.error.value }}</p>
+      <p v-else-if="review.removeError.value" class="srs-review-inline-error" role="alert">
+        移出失败：{{ review.removeError.value }}
+      </p>
+      <p v-else-if="review.ratingBlocked.value" class="srs-review-inline-error" role="alert">
+        {{ review.saveSummary.value.message }}
+      </p>
       <p
         v-else-if="review.currentEligibilityLabel.value"
         class="srs-review-inline-notice"
@@ -418,8 +498,11 @@
       <p v-else-if="flowNotice" class="srs-review-inline-notice" aria-live="polite">{{ flowNotice }}</p>
 
       <footer class="srs-review-actions" aria-label="复习评价">
-        <button
+        <Button
           v-if="!flowState.answerRevealed"
+          variant="default"
+          size="default"
+          data-ui-owner="learning"
           type="button"
           class="srs-review-reveal"
           aria-label="Space 显示答案"
@@ -427,40 +510,45 @@
           @click="revealAnswer"
         >
           <span>显示答案</span>
-        </button>
+        </Button>
         <template v-for="action in review.actions" :key="action.shortcut">
-          <button
+          <Button
           v-if="flowState.answerRevealed"
+          variant="outline"
+          size="default"
+          data-ui-owner="learning"
           type="button"
           :class="[`is-${action.tone}`, { 'is-pending': flowState.transitioning && flowState.pendingTone === action.tone }]"
           :aria-keyshortcuts="action.shortcut"
-          :disabled="review.pending.value || review.reviewingPast.value || !review.currentEligible.value || flowState.ratingCommitted || flowState.transitioning"
+          :aria-label="action.label"
+          :disabled="review.pending.value || review.ratingBlocked.value || review.reviewingPast.value || !review.currentEligible.value || flowState.ratingCommitted || flowState.transitioning"
           @click="handleRating(action)"
         >
           <span>{{ action.label }}</span>
-        </button>
+          <kbd>{{ action.shortcut }}</kbd>
+        </Button>
         </template>
+        <div v-if="flowState.answerRevealed" class="srs-review-rating-help" aria-label="四档评分说明">
+          <p v-for="action in review.actions" :key="`rating-help-${action.tone}`">
+            <strong>{{ action.label }}</strong>：{{ ratingExplanation(action) }}
+          </p>
+        </div>
       </footer>
     </template>
   </main>
 </template>
 
 <script setup>
+import { useSrsReviewMedia } from './use-srs-review-media.js'
+import { useSrsReviewAnswerTranslation } from './use-srs-review-answer-translation.js'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { Button } from '../../components/ui/button/index.js'
 import {
   buildReviewContext,
-  describeReviewSourceError,
-  markReviewTranslationText,
-  releaseReviewAudio,
   resolveReviewGeneralMeaning,
   resolveReviewMeaning,
-  resolveReviewSource,
 } from './srs-review-context.js'
-import {
-  sentenceTranslationKey,
-  translateSentenceBatches,
-} from '../passage-preview/sentence-translation.js'
+
 import { calculateSingleLineFontSize } from './srs-review-layout.js'
 import { hydrateReviewGeneralMeanings } from './srs-review-meanings.js'
 import { createSrsReviewFlow } from './srs-review-flow.js'
@@ -477,42 +565,30 @@ import {
 import {
   isReviewReplayKey,
   normalizeReviewReplayShortcut,
-  runReviewPlaybackSequence,
 } from './srs-review-playback.js'
-import {
-  prefetchAmericanPronunciations,
-  resolveAmericanPronunciationSequence,
-  shouldUseSystemPronunciationFallback,
-} from './srs-review-pronunciation.js'
+
 import { getReviewActionForShortcut, useSrsReview } from './useSrsReview.js'
 
 const props = defineProps({
   service: { type: Object, required: true },
   legacyMigration: { type: Object, default: null },
   standalone: { type: Boolean, default: false },
+  standaloneTitle: { type: String, default: '复习样本演示（不写正式学习记录）' },
+  standaloneNotice: { type: String, default: '' },
   dictionaryClient: { type: Object, default: null },
   active: { type: Boolean, default: true },
 })
 const emit = defineEmits(['close'])
 
-const review = useSrsReview(props.service)
+const review = useSrsReview(props.service, { allowRemove: !props.standalone })
 const audioElement = ref(null)
-const audioState = ref(null)
-const audioPlaybackRange = ref(null)
+
 const pronunciationAudio = ref(null)
-const pronunciationUrl = ref('')
-const pronunciationUrls = ref([])
-const pronunciationLoading = ref(false)
-const sourceLoading = ref(false)
-const sourceAudioNotice = ref('')
+
 const historyOpen = ref(false)
 const historyContainer = ref(null)
 const flowNotice = ref('')
-const sentenceTranslationZh = ref('')
-const sentenceTranslationParts = ref([])
-const sentenceTranslationVisible = ref(false)
-const sentenceTranslationLoading = ref(false)
-const sentenceTranslationUnavailable = ref(false)
+
 const migrationStatus = ref(null)
 const migrationBusy = ref(false)
 const migrationFailed = ref(false)
@@ -520,7 +596,7 @@ const migrationMessage = ref('')
 const wordShortcut = ref('r')
 const sentenceShortcut = ref('s')
 const shortcutEditingTarget = ref('')
-const playbackPhase = ref('')
+
 const wordLine = ref(null)
 const wordHeading = ref(null)
 const wordFontSize = ref(null)
@@ -528,20 +604,13 @@ const audioId = `srs-review-audio-${Math.random().toString(36).slice(2)}`
 const historyId = `srs-review-history-${Math.random().toString(36).slice(2)}`
 const wordShortcutStorageKey = 'srs.review.wordShortcut.v1'
 const sentenceShortcutStorageKey = 'srs.review.playbackShortcut.v1'
-let audioRequest = 0
-let cancelPronunciationWait = null
-let cancelSentenceReady = null
-let cancelTargetSentenceWait = null
+
 let wordResizeObserver = null
 let wordFitFrame = 0
 let wordFitKey = ''
-let sourceReadyPromise = Promise.resolve(null)
-let pronunciationReadyPromise = Promise.resolve([])
+
 let meaningAbortController = null
-let sequencePlaybackRequest = -1
-let playbackStatusRequest = 0
-let translationRequest = 0
-const sentenceTranslationCache = new Map()
+
 const flowState = reactive({
   answerRevealed: false,
   ratingCommitted: false,
@@ -566,6 +635,61 @@ const dictionaryAssistance = createSrsReviewDictionaryAssistance({
     Object.assign(dictionaryState, snapshot)
   },
 })
+const word = computed(() => review.current.value?.word || {})
+const viewContext = computed(() => buildReviewContext(review.current.value))
+const targetSense = computed(() => review.current.value?.learningUnit?.target_sense || null)
+const targetSenseLabel = computed(() => String(
+  targetSense.value?.gloss || targetSense.value?.definition || '',
+).trim())
+const meaning = computed(() => resolveReviewMeaning(
+  word.value,
+  viewContext.value?.raw,
+  targetSense.value,
+  { allowWordFallback: !review.current.value?.learningUnit || Boolean(targetSense.value) },
+))
+
+const media = useSrsReviewMedia({
+  currentCard: review.current, word, viewContext, meaning,
+  queue: review.queue, viewIndex: review.viewIndex, contextCueLevel: review.contextCueLevel,
+  getActive: () => props.active, audioElement, pronunciationAudio, fitWordHeading,
+})
+const {
+  audioState,
+  pronunciationUrl,
+  sourceLoading,
+  sourceAudioNotice,
+  playbackPhase,
+  canSpeak,
+  canPlaySentence,
+  prepareCurrentCardMedia,
+  retrySourceAudio,
+  stopAndReleaseAudio,
+  stopCurrentPlayback,
+  seekAudioStart,
+  stopAtAudioEnd,
+  canSeekParagraph,
+  playParagraph,
+  playParagraphWord,
+  speakWord,
+  playSentenceOnly,
+  playWordAndTargetSentence,
+  playTargetSentence,
+  handlePronunciationError,
+  handleSourceAudioError,
+} = media
+const translation = useSrsReviewAnswerTranslation({
+  currentCard: review.current, getAnswerRevealed: () => flowState.answerRevealed,
+  audioState, viewContext, meaning, media,
+})
+const {
+  sentenceTranslationZh,
+  sentenceTranslationParts,
+  sentenceTranslationVisible,
+  sentenceTranslationLoading,
+  sentenceTranslationUnavailable,
+  hydrateCurrentSentenceTranslation,
+} = translation
+
 const flow = createSrsReviewFlow({
   state: flowState,
   submitAction: (action, metadata) => review.submitAction(action, {
@@ -582,8 +706,6 @@ const flow = createSrsReviewFlow({
   },
 })
 
-const word = computed(() => review.current.value?.word || {})
-const viewContext = computed(() => buildReviewContext(review.current.value))
 const availableParagraphs = computed(() => (
   audioState.value?.paragraphs?.length
     ? audioState.value.paragraphs
@@ -595,7 +717,7 @@ const displayParagraphs = computed(() => visibleReviewParagraphs(
 ))
 const hasTargetContext = computed(() => availableParagraphs.value.some((paragraph) => paragraph?.target))
 const hasSurroundingContext = computed(() => hasSurroundingReviewContext(availableParagraphs.value))
-const meaning = computed(() => resolveReviewMeaning(word.value, viewContext.value?.raw))
+
 const generalMeaning = computed(() => resolveReviewGeneralMeaning(word.value))
 const dictionarySuggestionText = computed(() => formatDictionarySuggestion(
   dictionaryState.visibleResult,
@@ -605,23 +727,6 @@ const sessionCompletedCount = computed(() => Object.values(review.sessionRatingC
   .reduce((sum, count) => sum + Number(count || 0), 0))
 const wordShortcutDisplay = computed(() => wordShortcut.value.toLocaleUpperCase('en-US'))
 const sentenceShortcutDisplay = computed(() => sentenceShortcut.value.toLocaleUpperCase('en-US'))
-const canSpeak = computed(() => (
-  Boolean(word.value.word) && (
-    pronunciationLoading.value
-    ||
-    Boolean(pronunciationUrl.value)
-    || (
-      typeof window !== 'undefined'
-      && 'speechSynthesis' in window
-      && typeof window.SpeechSynthesisUtterance === 'function'
-    )
-  )
-))
-const canPlaySentence = computed(() => Boolean(
-  review.contextCueLevel.value !== 'none'
-  && review.current.value
-  && (sourceLoading.value || audioState.value?.url),
-))
 
 onMounted(async () => {
   wordShortcut.value = loadShortcut(wordShortcutStorageKey, 'r', 's')
@@ -640,11 +745,13 @@ onMounted(async () => {
   fitWordHeading()
 })
 function activateReviewPage() {
+  media.activate()
   review.refreshEligibility()
   window.addEventListener('keydown', handleReviewShortcut, true)
   document.addEventListener('pointerdown', handleHistoryOutsidePointer, true)
-  if (!audioState.value && review.current.value && !review.deferredRevisit.value) {
-    void loadReviewSourceForCurrentCard(++audioRequest)
+  if (review.current.value && !review.deferredRevisit.value) {
+    if (!audioState.value) void media.resumeCurrentCardMedia()
+    if (flowState.answerRevealed) void hydrateCurrentSentenceTranslation()
   }
 }
 
@@ -663,6 +770,8 @@ onBeforeUnmount(() => {
 })
 
 function deactivateReviewPage() {
+  media.deactivate()
+  translation.deactivate()
   window.removeEventListener('keydown', handleReviewShortcut, true)
   document.removeEventListener('pointerdown', handleHistoryOutsidePointer, true)
   historyOpen.value = false
@@ -722,36 +831,14 @@ async function startLegacyMigration() {
   }
 }
 
-watch(() => review.current.value?.word?.id, async (nextId, previousId) => {
-  const request = ++audioRequest
-  sequencePlaybackRequest = -1
-  playbackStatusRequest += 1
-  playbackPhase.value = ''
-  stopAndReleaseAudio({ resetMedia: false })
+watch(() => review.currentCardKey.value, async (cardKey) => {
+  const request = media.resetCard()
   flow.resetCard()
   flowNotice.value = ''
-  translationRequest += 1
-  sentenceTranslationZh.value = ''
-  sentenceTranslationParts.value = []
-  sentenceTranslationVisible.value = false
-  sentenceTranslationLoading.value = false
-  sentenceTranslationUnavailable.value = false
-  void dictionaryAssistance.setCard(nextId ? word.value.word : '')
-  if (!nextId || review.deferredRevisit.value) return
-  void prefetchUpcomingPronunciations()
-  const sourcePromise = loadReviewSourceForCurrentCard(request)
-  pronunciationLoading.value = true
-  const readyPromise = resolveAmericanPronunciationSequence(word.value.word)
-  pronunciationReadyPromise = readyPromise
-  const resolvedPronunciations = await readyPromise
-  if (request !== audioRequest) return
-  pronunciationLoading.value = false
-  pronunciationUrls.value = resolvedPronunciations
-  pronunciationUrl.value = resolvedPronunciations[0] || ''
-  await nextTick()
-  fitWordHeading()
-  if (sequencePlaybackRequest !== request) void playWordWithStatus(request)
-  if (!previousId) await sourcePromise
+  translation.resetCard()
+  void dictionaryAssistance.setCard(cardKey ? word.value.word : '')
+  if (!cardKey || review.deferredRevisit.value || !media.isCurrentMediaRequest(request)) return
+  await prepareCurrentCardMedia(request)
 })
 
 watch(() => word.value.word, async () => {
@@ -765,75 +852,8 @@ watch(() => flowState.answerRevealed, (revealed) => {
   if (revealed) void hydrateCurrentSentenceTranslation()
 })
 
-async function hydrateCurrentSentenceTranslation() {
-  if (!flowState.answerRevealed) return
-  sentenceTranslationVisible.value = true
-  const request = ++translationRequest
-  const cardId = review.current.value?.word?.id
-  sentenceTranslationLoading.value = true
-  sentenceTranslationUnavailable.value = false
-  await sourceReadyPromise.catch(() => null)
-  if (
-    request !== translationRequest
-    || !flowState.answerRevealed
-    || review.current.value?.word?.id !== cardId
-  ) return
-  const sentence = currentTranslationSentence()
-  if (!sentence) {
-    sentenceTranslationLoading.value = false
-    return
-  }
-  const embedded = String(
-    audioState.value?.translationZh
-    || viewContext.value?.translationZh
-    || '',
-  ).trim()
-  const key = sentenceTranslationKey(sentence)
-  const cached = embedded || sentenceTranslationCache.get(key)
-  if (cached) {
-    sentenceTranslationZh.value = cached
-    sentenceTranslationParts.value = embedded && Array.isArray(audioState.value?.translationParts)
-      && audioState.value.translationParts.length
-      ? audioState.value.translationParts
-      : markReviewTranslationText(cached, meaning.value)
-    sentenceTranslationLoading.value = false
-    sentenceTranslationUnavailable.value = false
-    if (embedded) sentenceTranslationCache.set(key, embedded)
-    return
-  }
-  try {
-    const translated = await translateSentenceBatches([{
-      id: `srs-review-${review.current.value?.word?.id || 'sentence'}`,
-      sentence,
-    }])
-    const translation = String(translated[0]?.translationZh || '').trim()
-    if (
-      request !== translationRequest
-      || !flowState.answerRevealed
-      || sentenceTranslationKey(currentTranslationSentence()) !== key
-    ) return
-    if (translation) {
-      sentenceTranslationCache.set(key, translation)
-      sentenceTranslationZh.value = translation
-      sentenceTranslationParts.value = markReviewTranslationText(translation, meaning.value)
-      sentenceTranslationUnavailable.value = false
-    } else {
-      sentenceTranslationUnavailable.value = true
-    }
-  } catch (_error) {
-    if (request === translationRequest) sentenceTranslationUnavailable.value = true
-  } finally {
-    if (request === translationRequest) sentenceTranslationLoading.value = false
-  }
-}
-
-function currentTranslationSentence() {
-  return String(audioState.value?.targetSentence || viewContext.value?.sentence || '').trim()
-}
-
 function close() {
-  historyOpen.value = false
-  stopAndReleaseAudio()
+  deactivateReviewPage()
   if (props.standalone) {
     window.location.assign('./index.html')
     return
@@ -869,8 +889,14 @@ function handleReviewShortcut(event) {
     || event.altKey
     || event.ctrlKey
     || event.metaKey
+    || event.isComposing
     || isTypingTarget(event.target)
   ) return
+  if (historyOpen.value && getReviewActionForShortcut(event.key)) {
+    event.preventDefault()
+    event.stopPropagation()
+    return
+  }
   if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
     event.preventDefault()
     event.stopPropagation()
@@ -913,7 +939,7 @@ function handleReviewShortcut(event) {
     || event.ctrlKey
     || event.metaKey
   ) return
-  if (review.pending.value || !review.current.value || review.reviewingPast.value) return
+  if (review.pending.value || review.ratingBlocked.value || !review.current.value || review.reviewingPast.value) return
   if (!flowState.answerRevealed) return
   const action = getReviewActionForShortcut(event.key)
   if (!action) return
@@ -922,8 +948,18 @@ function handleReviewShortcut(event) {
 }
 
 function handleRating(action) {
+  if (review.ratingBlocked.value) return false
   flowNotice.value = ''
   return flow.rate(action)
+}
+
+function ratingExplanation(action) {
+  return {
+    again: '本次未回忆出；更新复习状态并进入后续重学调度',
+    hard: '回忆费力；更新复习状态并影响后续复习间隔',
+    good: '正常回忆出；更新复习状态并按调度安排后续复习',
+    easy: '轻松回忆出；更新复习状态并按调度安排更晚复习',
+  }[action?.tone] || ''
 }
 
 function revealAnswer() {
@@ -947,15 +983,15 @@ function advanceReviewCard() {
 }
 
 async function removeCurrentWord() {
-  if (review.pending.value || !review.current.value) return
+  if (!review.current.value) return
   if (!review.canRemoveCurrent.value) {
     flowNotice.value = review.removeUnavailableReason.value
     return
   }
-  const label = String(word.value.word || '').trim()
-  if (!window.confirm(`确定从 SRS 中移除“${label}”吗？`)) return
-  stopAndReleaseAudio()
-  await review.removeCurrent()
+  const removed = await review.removeCurrent()
+  flowNotice.value = removed
+    ? '已从复习队列移出；词条、语境、学习单元和历史记录均保留。'
+    : ''
 }
 
 function isTypingTarget(target) {
@@ -982,81 +1018,6 @@ function saveShortcut(storageKey, shortcut) {
   } catch (_error) {}
 }
 
-function loadReviewSourceForCurrentCard(request = audioRequest) {
-  const context = viewContext.value?.raw
-  const hasSource = Boolean(context?.source_id || context?.sourceId)
-  sourceAudioNotice.value = ''
-  sourceLoading.value = hasSource
-  if (!context || !hasSource) {
-    sourceReadyPromise = Promise.resolve(null)
-    return sourceReadyPromise
-  }
-  const sourcePromise = Promise.resolve(resolveReviewSource(context, {
-    word: word.value.word,
-    meaning: meaning.value,
-    onError(error) {
-      handleReviewSourceError(error, request)
-    },
-  })).then((resolved) => {
-    if (request !== audioRequest) {
-      releaseReviewAudio(resolved)
-      return null
-    }
-    audioState.value = resolved
-    audioPlaybackRange.value = resolved
-      ? { start: resolved.start, end: resolved.end }
-      : null
-    sourceLoading.value = false
-    return resolved
-  })
-  sourceReadyPromise = sourcePromise
-  return sourcePromise
-}
-
-function handleReviewSourceError(error, request = audioRequest) {
-  if (request !== audioRequest) return
-  sourceAudioNotice.value = describeReviewSourceError(error)
-}
-
-async function retrySourceAudio() {
-  if (sourceLoading.value) return
-  if (audioElement.value) {
-    audioElement.value.pause()
-    audioElement.value.removeAttribute('src')
-    audioElement.value.load()
-  }
-  releaseReviewAudio(audioState.value)
-  audioState.value = null
-  audioPlaybackRange.value = null
-  await loadReviewSourceForCurrentCard(audioRequest)
-}
-
-function stopAndReleaseAudio({ resetMedia = true } = {}) {
-  sourceReadyPromise = Promise.resolve(null)
-  if (cancelSentenceReady) cancelSentenceReady()
-  if (cancelTargetSentenceWait) cancelTargetSentenceWait(false)
-  if (audioElement.value) {
-    audioElement.value.pause()
-    audioElement.value.removeAttribute('src')
-    if (resetMedia) audioElement.value.load()
-  }
-  releaseReviewAudio(audioState.value)
-  audioState.value = null
-  audioPlaybackRange.value = null
-  sourceLoading.value = false
-  sourceAudioNotice.value = ''
-  stopPronunciation()
-  pronunciationLoading.value = false
-  pronunciationUrl.value = ''
-  pronunciationUrls.value = []
-}
-
-function stopCurrentPlayback() {
-  if (cancelTargetSentenceWait) cancelTargetSentenceWait(false)
-  if (audioElement.value) audioElement.value.pause()
-  stopPronunciation()
-}
-
 function fitWordHeading() {
   const element = wordHeading.value
   if (!element) return
@@ -1078,298 +1039,4 @@ function fitWordHeading() {
   })
 }
 
-function seekAudioStart() {
-  if (!audioElement.value || !audioPlaybackRange.value) return
-  audioElement.value.currentTime = Math.max(0, Number(audioPlaybackRange.value.start || 0))
-}
-
-function stopAtAudioEnd() {
-  const range = audioPlaybackRange.value
-  if (!audioElement.value || !range || !Number.isFinite(range.end)) return
-  if (audioElement.value.currentTime >= range.end) {
-    audioElement.value.pause()
-    audioElement.value.currentTime = Math.max(0, Number(range.start || 0))
-    if (cancelTargetSentenceWait) cancelTargetSentenceWait(true)
-  }
-}
-
-function canSeekParagraph(paragraph) {
-  return Boolean(audioState.value?.url && Number.isFinite(paragraph?.start))
-}
-
-async function playParagraph(paragraph) {
-  if (!audioElement.value || !canSeekParagraph(paragraph)) return
-  beginManualPlayback()
-  audioPlaybackRange.value = { start: paragraph.start, end: paragraph.end }
-  audioElement.value.currentTime = Math.max(0, Number(paragraph.start || 0))
-  try {
-    await audioElement.value.play()
-  } catch (_error) {}
-}
-
-async function playParagraphWord(paragraph, part) {
-  if (!part?.word) return
-  beginManualPlayback()
-  if (
-    audioElement.value
-    && audioState.value?.url
-    && Number.isFinite(part.start)
-  ) {
-    await waitForSentenceMetadata(audioElement.value)
-    audioPlaybackRange.value = { start: part.start, end: paragraph.end }
-    audioElement.value.currentTime = Math.max(0, part.start)
-    try {
-      await audioElement.value.play()
-    } catch (_error) {}
-    return
-  }
-  await speakReviewText(part.remainingText)
-}
-
-function beginManualPlayback() {
-  stopCurrentPlayback()
-}
-
-async function speakWord() {
-  if (!canSpeak.value) return
-  const request = audioRequest
-  sequencePlaybackRequest = request
-  beginManualPlayback()
-  await pronunciationReadyPromise
-  if (request !== audioRequest) return
-  await playWordWithStatus(request)
-}
-
-async function playSentenceOnly({ maxDurationMs = 12000 } = {}) {
-  const request = audioRequest
-  const statusRequest = ++playbackStatusRequest
-  sequencePlaybackRequest = request
-  beginManualPlayback()
-  playbackPhase.value = 'sentence'
-  try {
-    return await playTargetSentence({ maxDurationMs })
-  } finally {
-    if (request === audioRequest && statusRequest === playbackStatusRequest) {
-      playbackPhase.value = ''
-    }
-  }
-}
-
-async function playWordAndTargetSentence({ maxDurationMs = 12000 } = {}) {
-  const request = audioRequest
-  const statusRequest = ++playbackStatusRequest
-  sequencePlaybackRequest = request
-  beginManualPlayback()
-  try {
-    playbackPhase.value = 'word'
-    await pronunciationReadyPromise
-    if (request !== audioRequest) return false
-    return await runReviewPlaybackSequence({
-      isCurrent: () => request === audioRequest,
-      playWord: playWordPronunciation,
-      playSentence: async () => {
-        playbackPhase.value = 'sentence'
-        await playTargetSentence({ maxDurationMs })
-      },
-    })
-  } finally {
-    if (statusRequest === playbackStatusRequest) playbackPhase.value = ''
-  }
-}
-
-async function playWordWithStatus(request = audioRequest) {
-  const statusRequest = ++playbackStatusRequest
-  playbackPhase.value = 'word'
-  try {
-    await playWordPronunciation()
-  } finally {
-    if (request === audioRequest && statusRequest === playbackStatusRequest) {
-      playbackPhase.value = ''
-    }
-  }
-}
-
-function prefetchUpcomingPronunciations() {
-  const start = Math.max(0, Number(review.viewIndex.value || 0) + 1)
-  return prefetchAmericanPronunciations(
-    review.queue.value
-      .slice(start, start + 20)
-      .map((entry) => entry?.word?.word)
-      .filter(Boolean),
-  )
-}
-
-async function playWordPronunciation() {
-  stopPronunciation()
-  const urls = pronunciationUrls.value.length
-    ? [...pronunciationUrls.value]
-    : (pronunciationUrl.value ? [pronunciationUrl.value] : [])
-  let played = false
-  if (urls.length && pronunciationAudio.value) {
-    for (const url of urls) {
-      pronunciationUrl.value = url
-      await nextTick()
-      pronunciationAudio.value.currentTime = 0
-      const completion = waitForPronunciationEnd(pronunciationAudio.value)
-      try {
-        await pronunciationAudio.value.play()
-        played = true
-        await completion
-      } catch (_error) {
-        if (cancelPronunciationWait) cancelPronunciationWait()
-      }
-    }
-    pronunciationUrl.value = urls[0] || ''
-    if (played) return
-  }
-  if (shouldUseSystemPronunciationFallback(word.value.word)) {
-    await speakWithSystemVoice()
-  }
-}
-
-function speakWithSystemVoice() {
-  return speakReviewText(word.value.word)
-}
-
-function speakReviewText(text) {
-  if (
-    typeof window === 'undefined'
-    || !('speechSynthesis' in window)
-    || typeof window.SpeechSynthesisUtterance !== 'function'
-  ) return Promise.resolve()
-  window.speechSynthesis.cancel()
-  const utterance = new window.SpeechSynthesisUtterance(String(text || '').trim())
-  utterance.lang = 'en-US'
-  utterance.rate = 0.95
-  const selectedVoice = selectAmericanVoice(window.speechSynthesis.getVoices())
-  if (selectedVoice) utterance.voice = selectedVoice
-  return new Promise((resolve) => {
-    let settled = false
-    const finish = () => {
-      if (settled) return
-      settled = true
-      cancelPronunciationWait = null
-      resolve()
-    }
-    utterance.onend = finish
-    utterance.onerror = finish
-    cancelPronunciationWait = finish
-    window.speechSynthesis.speak(utterance)
-  })
-}
-
-function waitForPronunciationEnd(element) {
-  return new Promise((resolve) => {
-    let settled = false
-    const timeout = window.setTimeout(finish, 12000)
-    function finish() {
-      if (settled) return
-      settled = true
-      window.clearTimeout(timeout)
-      element.removeEventListener('ended', finish)
-      element.removeEventListener('error', finish)
-      cancelPronunciationWait = null
-      resolve()
-    }
-    element.addEventListener('ended', finish)
-    element.addEventListener('error', finish)
-    cancelPronunciationWait = finish
-  })
-}
-
-async function playTargetSentence({ maxDurationMs = 12000 } = {}) {
-  const request = audioRequest
-  await sourceReadyPromise
-  await nextTick()
-  const element = audioElement.value
-  const source = audioState.value
-  if (request !== audioRequest || !element || !source?.url) return false
-  await waitForSentenceMetadata(element)
-  if (request !== audioRequest || element !== audioElement.value || source !== audioState.value) return false
-  stopCurrentPlayback()
-  const start = Math.max(0, Number(source.start || 0))
-  const durationLimit = Math.max(1, Number(maxDurationMs || 12000)) / 1000
-  const sourceEnd = Number(source.end)
-  const end = Number.isFinite(sourceEnd)
-    ? Math.min(sourceEnd, start + durationLimit)
-    : start + durationLimit
-  if (end <= start) return false
-  audioPlaybackRange.value = { start, end }
-  element.currentTime = start
-  return new Promise((resolve) => {
-    let settled = false
-    const timeout = window.setTimeout(() => finish(true), Math.max(1, Number(maxDurationMs || 12000)))
-    function finish(played) {
-      if (settled) return
-      settled = true
-      window.clearTimeout(timeout)
-      element.removeEventListener('ended', handleEnded)
-      element.removeEventListener('error', handleError)
-      if (cancelTargetSentenceWait === finish) cancelTargetSentenceWait = null
-      element.pause()
-      if (element === audioElement.value) element.currentTime = start
-      resolve(Boolean(played))
-    }
-    const handleEnded = () => finish(true)
-    const handleError = () => finish(false)
-    element.addEventListener('ended', handleEnded)
-    element.addEventListener('error', handleError)
-    cancelTargetSentenceWait = finish
-    element.play().catch(() => finish(false))
-  })
-}
-
-function waitForSentenceMetadata(element) {
-  if (element.readyState >= 1) return Promise.resolve()
-  return new Promise((resolve) => {
-    let settled = false
-    const timeout = window.setTimeout(finish, 5000)
-    function finish() {
-      if (settled) return
-      settled = true
-      window.clearTimeout(timeout)
-      element.removeEventListener('loadedmetadata', finish)
-      element.removeEventListener('error', finish)
-      cancelSentenceReady = null
-      resolve()
-    }
-    element.addEventListener('loadedmetadata', finish)
-    element.addEventListener('error', finish)
-    cancelSentenceReady = finish
-  })
-}
-
-function selectAmericanVoice(voices) {
-  return [...(voices || [])]
-    .filter((voice) => /^en-US\b/i.test(voice.lang))
-    .sort((left, right) => voiceScore(right) - voiceScore(left))[0] || null
-}
-
-function voiceScore(voice) {
-  const name = String(voice?.name || '')
-  return (/natural|online/i.test(name) ? 20 : 0)
-    + (/aria|jenny|guy|google us english/i.test(name) ? 10 : 0)
-    + (voice?.localService ? 0 : 2)
-}
-
-function stopPronunciation() {
-  if (cancelPronunciationWait) cancelPronunciationWait()
-  if (pronunciationAudio.value) {
-    pronunciationAudio.value.pause()
-    pronunciationAudio.value.currentTime = 0
-  }
-  if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-    window.speechSynthesis.cancel()
-  }
-}
-
-function handlePronunciationError() {
-  pronunciationUrl.value = ''
-}
-
-function handleSourceAudioError() {
-  if (!audioState.value) return
-  audioState.value = { ...audioState.value, url: '' }
-  sourceAudioNotice.value = '原文音频文件加载失败，请重试。'
-}
 </script>

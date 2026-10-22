@@ -46,9 +46,6 @@ assert.equal(
   'main-app-area',
   'import-marks-btn',
   'export-json',
-  'import-annotation-lightweight-file',
-  'btn-preview-vocabulary',
-  'btn-toggle-preview-vocabulary',
   'btn-settle-article-vocabulary'
 ].forEach((id) => {
   assert.equal(
@@ -64,6 +61,7 @@ assert.equal(
 
 [
   'btn-export-annotation-lightweight',
+  'import-annotation-lightweight-file',
   'btn-import-annotation-lightweight'
 ].forEach((id) => {
   assert.equal(indexSource.includes(`id="${id}"`), false, `index should not render retired lightweight button: ${id}`);

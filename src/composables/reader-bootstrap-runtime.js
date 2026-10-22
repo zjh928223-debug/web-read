@@ -11,7 +11,6 @@ export function initReaderBootstrapRuntime(deps = {}) {
 
   var transcriptState = globalObject.__transcriptState;
   var chunkState = globalObject.__chunkState;
-  var clozeState = globalObject.__clozeState;
   var playbackState = globalObject.__playbackState;
   var audioStore = requirePiniaRuntimeStores().audio;
 
@@ -33,7 +32,8 @@ export function initReaderBootstrapRuntime(deps = {}) {
     getCurrentAudioFilenameBase: runtimeDeps.getCurrentAudioFilenameBase,
     buildCurrentSentenceDocId: runtimeDeps.buildCurrentSentenceDocId,
     getSegments: function () { return transcriptState.segments; },
-    onCurrentAudioMetaChange: function () {
+    onCurrentAudioMetaChange: function (meta) {
+      audioStore.currentAudioMeta = meta;
       var controller = globalObject.__annotationBackfillAiController;
       if (controller && typeof controller.refreshAvailability === 'function') {
         controller.refreshAvailability();
@@ -47,14 +47,12 @@ export function initReaderBootstrapRuntime(deps = {}) {
 
   var bridgeToPinia = initPiniaBridge({
     transcriptState: transcriptState,
-    chunkState: chunkState,
-    clozeState: clozeState
+    chunkState: chunkState
   });
 
   return {
     transcriptState: transcriptState,
     chunkState: chunkState,
-    clozeState: clozeState,
     playbackState: playbackState,
     saveToDB: saveToDB,
     loadFromDB: loadFromDB,

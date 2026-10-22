@@ -107,11 +107,9 @@ export default {
     function wordClasses(word) {
       var idx = word.globalIndex
       var classes = {}
+      classes['annotation-word-selected'] = idx === ts.selectedAnnotationWordIndex
       if (isMarkedWord(idx)) {
         classes.marked = true
-      }
-      if (idx != null && ts.previewVocabularyWordIndexSet.has(idx)) {
-        classes['preview-vocabulary-word'] = true
       }
       return classes
     }

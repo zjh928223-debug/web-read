@@ -18,14 +18,8 @@ async function pathExists(filename) {
   }
 }
 
-const helperSource = await readFile(new URL('../src/features/passage-preview/passage-preview-learning-launch.js', import.meta.url), 'utf8')
-const helperUrl = `data:text/javascript;base64,${Buffer.from(helperSource).toString('base64')}`
-const { isPassagePreviewLearningLaunch } = await import(helperUrl)
-
-assert.equal(isPassagePreviewLearningLaunch({ search: '?learning=preview' }), true)
-assert.equal(isPassagePreviewLearningLaunch('http://127.0.0.1:5173/?learning=preview'), true)
-assert.equal(isPassagePreviewLearningLaunch({ search: '?learning=review' }), false)
-assert.equal(isPassagePreviewLearningLaunch({ search: '' }), false)
+assert.equal(await pathExists(fileURLToPath(new URL('../src/features/passage-preview/passage-preview-learning-launch.js', import.meta.url))), false, 'unused query launch helper must stay retired')
+assert.equal(await pathExists(fileURLToPath(new URL('../src/features/passage-preview/translation-generation-queue.js', import.meta.url))), false, 'unused translation queue must stay retired')
 
 const appSource = await readFile(new URL('../src/App.vue', import.meta.url), 'utf8')
 const composableSource = await readFile(

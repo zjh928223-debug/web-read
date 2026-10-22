@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { shallowRef } from 'vue'
 
 const DB_NAME = 'SeekPlayerDB'
 const DB_VERSION = 1
@@ -6,6 +7,15 @@ const STORE_NAME = 'files'
 let _db = null
 
 export const useAudioStore = defineStore('audio', () => {
+  // UI projection of the runtime identity; persistence keeps its existing owner.
+  const currentAudioMeta = shallowRef(null)
+  const localTranscriptTitles = shallowRef({})
+  const lastLocalImport = shallowRef(null)
+  function notifyLocalImport() { lastLocalImport.value = {} }
+  function setLocalTranscriptTitle(docId, name) {
+    if (docId && name) localTranscriptTitles.value = { ...localTranscriptTitles.value, [docId]: name }
+    notifyLocalImport()
+  }
   function getDb() { return _db }
 
   function initDB() {
@@ -100,5 +110,5 @@ export const useAudioStore = defineStore('audio', () => {
     })
   }
 
-  return { getDb, initDB, saveToDB, loadFromDB, deleteFromDB, clearDBStore }
+  return { currentAudioMeta, localTranscriptTitles, lastLocalImport, notifyLocalImport, setLocalTranscriptTitle, getDb, initDB, saveToDB, loadFromDB, deleteFromDB, clearDBStore }
 })

@@ -1,7 +1,9 @@
 import copy
 import json
+import os
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from youtube_workflow.durable_json import DurableJsonRepository
@@ -505,6 +507,73 @@ class VocabularySrsOwnerTests(unittest.TestCase):
 
         self.assertFalse(owner.snapshot_path.exists())
         self.assertFalse(owner.receipts.receipt_path.exists())
+
+    def test_repeated_reads_remain_independent_and_observe_peer_updates(self):
+        owner = self.make_owner()
+        key = "vocabulary.srs.store.v1"
+        original = self.row(key, self.srs_content("hello"))
+        self.assertEqual(self.command(owner, "entry-upsert", key, original, 0, request_key="initial")["outcome"], "committed")
+        first = owner.query("entry", **self.ids("first"))
+        first["payload"]["records"][key]["content"]["words"][0]["word"] = "local mutation"
+        current = owner.query("entry", **self.ids("independent"))
+        self.assertEqual(current["payload"]["records"][key]["content"]["words"][0]["word"], "hello")
+        peer = self.make_owner(instance_id="instance-2")
+        newer = self.row(key, self.srs_content("world"))
+        self.assertEqual(self.command(peer, "entry-upsert", key, newer, 1, request_key="peer")["outcome"], "committed")
+        fresh = owner.query("entry", **self.ids("fresh"))
+        self.assertEqual(fresh["revision"], 2)
+        self.assertEqual(fresh["payload"]["records"][key]["content"]["words"][0]["word"], "world")
+        stale = self.command(owner, "entry-upsert", key, original, 1, request_key="stale")
+        self.assertEqual(stale["outcome"], "conflict")
+
+    def test_same_revision_size_mtime_and_claimed_checksum_cannot_hide_corruption(self):
+        owner = self.make_owner()
+        key = "vocabulary.srs.store.v1"
+        row = self.row(key, self.srs_content("hello"))
+        self.assertEqual(self.command(owner, "entry-upsert", key, row, 0, request_key="initial")["outcome"], "committed")
+        owner.query("entry", **self.ids("warm"))
+        stat = owner.snapshot_path.stat()
+        raw = owner.snapshot_path.read_bytes()
+        damaged = raw.replace(b'"hello"', b'"jello"')
+        self.assertNotEqual(raw, damaged)
+        self.assertEqual(len(raw), len(damaged))
+        owner.snapshot_path.write_bytes(damaged)
+        os.utime(owner.snapshot_path, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+        result = owner.query("entry", **self.ids("corrupt"))
+        self.assertEqual(result["error"]["code"], "corrupt")
+        self.assertFalse(result["payload"].get("records"))
+
+    def test_concurrent_domain_reads_keep_document_and_normalization_together(self):
+        owner = self.make_owner()
+        key = "vocabulary.srs.store.v1"
+        old = self.row(key, self.srs_content("hello"))
+        new = self.row(key, self.srs_content("world"))
+        self.assertEqual(self.command(owner, "entry-upsert", key, old, 0, request_key="initial")["outcome"], "committed")
+        peer = self.make_owner(instance_id="instance-2")
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            readers = [pool.submit(owner.query, "entry", **self.ids(f"concurrent-{i}")) for i in range(20)]
+            writer = pool.submit(self.command, peer, "entry-upsert", key, new, 1, request_key="peer")
+            self.assertEqual(writer.result()["outcome"], "committed")
+            for reader in readers:
+                result = reader.result()
+                self.assertIsNone(result["error"])
+                self.assertEqual(result["payload"]["records"][key]["content"]["words"][0]["word"],
+                                 {1: "hello", 2: "world"}[result["revision"]])
+        self.assertEqual(owner.query("entry", **self.ids("final"))["revision"], 2)
+
+    def test_missing_record_checksum_normalization_survives_repeated_reads(self):
+        owner = self.make_owner()
+        key = "vocabulary.srs.store.v1"
+        row = self.row(key, self.srs_content())
+        self.assertEqual(self.command(owner, "entry-upsert", key, row, 0, request_key="initial")["outcome"], "committed")
+        document = json.loads(owner.snapshot_path.read_text(encoding="utf-8"))
+        expected = document["records"][key].pop("checksum")
+        owner.snapshot_path.write_text(json.dumps(document), encoding="utf-8")
+        for name in ("normalized", "repeat"):
+            result = owner.query("entry", **self.ids(name))
+            self.assertIsNone(result["error"])
+            self.assertEqual(result["payload"]["records"][key]["checksum"], expected)
+        self.assertNotIn("checksum", json.loads(owner.snapshot_path.read_text(encoding="utf-8"))["records"][key])
 
     def test_failed_replace_keeps_the_old_canonical_value(self):
         fail_replace = False

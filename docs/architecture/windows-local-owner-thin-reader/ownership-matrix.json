@@ -123,7 +123,7 @@
         { "file": "src/features/srs-review/SrsReviewPage.vue", "lines": "850-930", "symbols": ["review/remove actions"], "access": "command", "boundary": "SRS UI" },
         { "file": "src/features/passage-preview/passage-preview-acquisition.js", "lines": "11-20,46-248", "symbols": ["savePassagePreviewAcquisitionRecords", "createPassagePreviewAcquisitionCoordinator"], "access": "write", "boundary": "preview-to-vocabulary acquisition" },
         { "file": "src/composables/annotation-backfill-ai-module.js", "lines": "963-1192", "symbols": ["storeSrsCandidatesForRun", "addSrsCandidates", "applySrsCandidatesToVocabulary"], "access": "write/command", "boundary": "annotation backfill to vocabulary/SRS" },
-        { "file": "src/composables/vocabulary-preview-module.js", "lines": "1009-1012,1305-1555", "symbols": ["settlementProgressRepository", "applySettlement"], "access": "write/command", "boundary": "preview settlement progress and vocabulary application" }
+        { "file": "src/composables/vocabulary-preview-module.js", "lines": "777-778,1093-1177", "symbols": ["settlementProgressRepository", "applySettlement"], "access": "write/command", "boundary": "preview settlement progress and vocabulary application" }
       ],
       "browserDirectWritersRef": ["vocabulary.idb-repositories", "vocabulary.learning-uow", "vocabulary.review-session-ledger", "vocabulary.context-evidence", "vocabulary.learning-events", "vocabulary.personalization-shadow", "vocabulary.pending-candidates", "vocabulary.settlement-progress", "vocabulary.legacy-migration", "vocabulary.srs-ui", "vocabulary.preview-acquisition", "vocabulary.annotation-backfill", "vocabulary.preview-settlement"],
       "backupAdapter": "IndexedDB vocabulary-srs prefix adapter",
@@ -197,10 +197,10 @@
         { "file": "src/composables/session-annotation-lightweight-io.js", "lines": "1-220", "symbols": ["import/export lightweight annotations"], "access": "write/import", "boundary": "session annotation facade" },
         { "file": "src/composables/annotation-lightweight-module.js", "lines": "1-120", "symbols": ["importManualLightweightAnnotations", "export"], "access": "write/import", "boundary": "window compatibility module" },
         { "file": "src/composables/annotation-backfill-ai-module.js", "lines": "1-220", "symbols": ["backfill run/import"], "access": "command", "boundary": "workflow client and annotation storage" },
-        { "file": "src/composables/vocabulary-preview-module.js", "lines": "148-184,1200-1245", "symbols": ["savePreviewGeneratedItems", "loadCurrentAnnotationBundle"], "access": "write/merge", "boundary": "preview AI result into annotation bundle" },
+        { "file": "src/composables/vocabulary-preview-module.js", "lines": "130-138,906-908", "symbols": ["loadCurrentAnnotationBundle"], "access": "read", "boundary": "N1 scan producer retired; settlement historical bundle read retained; N1 independent PASS in redefined scope" },
         { "file": "tools/subtitle-workflow/youtube_workflow/service.py", "lines": "3950-3970", "symbols": ["annotation-backfill routes"], "access": "write/produce", "boundary": "workflow backfill output" }
       ],
-      "browserDirectWritersRef": ["annotation.storage", "annotation.lightweight-import", "annotation.backfill-import", "annotation.vocabulary-preview"],
+      "browserDirectWritersRef": ["annotation.storage", "annotation.lightweight-import", "annotation.backfill-import"],
       "backupAdapter": "localStorage annotation prefix adapter; audio-folder path requires explicit runtime adapter evidence",
       "revisionSource": "Host annotation-owner.json envelope revision is the command CAS/receipt authority; annotation.bundle.v2 inner revision/commitId is an imported subrecord monotonic guard; generated/status retain schemaVersion 1 and scope",
       "mediaReferences": "audioKey/documentId scope and occurrence/source references only; ECDICT suggestions are transient",

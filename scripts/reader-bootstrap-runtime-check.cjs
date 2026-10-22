@@ -86,7 +86,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   [
     'transcriptState: bootstrap.transcriptState',
     'chunkState: bootstrap.chunkState',
-    'clozeState: bootstrap.clozeState',
     'playbackState: bootstrap.playbackState',
     'hotkeyStateApi: bootstrap.hotkeyStateApi',
     'marksStateApi: bootstrap.marksStateApi'
@@ -102,7 +101,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'export function initReaderBootstrapRuntime',
     'var transcriptState = globalObject.__transcriptState;',
     'var chunkState = globalObject.__chunkState;',
-    'var clozeState = globalObject.__clozeState;',
     'var playbackState = globalObject.__playbackState;',
     'return audioStore.saveToDB(id, data);',
     'return audioStore.loadFromDB(id);',
@@ -125,11 +123,13 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'applyCurrentAudioMeta(audioMeta);',
     'deps.processTranscript(transcriptData);',
     'deps.processChunkData(chunkData);',
-    'windowObject.toggleChunkMode(true);',
     'deps.bridgeToPinia();'
   ].forEach((pattern) => {
     assert.ok(sessionInitSource.includes(pattern), `session-init contract should remain intact: ${pattern}`);
   });
+  const startupSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-startup-runtime.js'), 'utf8');
+  assert.equal(startupSource.includes('deps.restoreSession('), false, 'normal startup must leave saved articles unopened');
+  assert.equal(startupSource.includes('toggleChunkMode('), false, 'normal startup must not restore the previous article mode');
 
   const testableSource = moduleSource
     .replace(
@@ -183,7 +183,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   const fakeWindow = {
     __transcriptState: { segments: [{ id: 's1' }] },
     __chunkState: { chunkItems: [] },
-    __clozeState: { clozeItems: [] },
     __playbackState: { autoFollow: true }
   };
   const api = initReaderBootstrapRuntime({
@@ -192,7 +191,9 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
 
   assert.equal(api.transcriptState, fakeWindow.__transcriptState);
   assert.equal(api.chunkState, fakeWindow.__chunkState);
-  assert.equal(api.clozeState, fakeWindow.__clozeState);
+  assert.equal(Object.hasOwn(api, 'clozeState'), false);
+  assert.deepEqual(Object.keys(globalThis.__bridgeInput).sort(), ['chunkState', 'transcriptState']);
+  assert.doesNotMatch(moduleSource, /clozeState|__clozeState/);
   assert.equal(api.playbackState, fakeWindow.__playbackState);
   assert.equal(api.saveToDB('marks', [1]), 'saved');
   assert.equal(api.loadFromDB('marks'), 'loaded');
@@ -217,8 +218,12 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
       calls.push(['refresh-vocabulary-preview']);
     }
   };
-  globalThis.__audioIdentityInput.onCurrentAudioMetaChange();
+  const projectedMeta = { name: 'Material.audio', jobId: 'material' };
+  globalThis.__audioIdentityInput.onCurrentAudioMetaChange(projectedMeta);
+  assert.equal(globalThis.__runtimeStores.audio.currentAudioMeta, projectedMeta, 'reader title should observe the existing audio identity');
   assert.deepEqual(calls.slice(-2), [['refresh-annotation-backfill'], ['refresh-vocabulary-preview']]);
+  globalThis.__audioIdentityInput.onCurrentAudioMetaChange(null);
+  assert.equal(globalThis.__runtimeStores.audio.currentAudioMeta, null, 'clearing the identity should clear its title projection');
 
   console.log('reader bootstrap runtime check passed');
 }

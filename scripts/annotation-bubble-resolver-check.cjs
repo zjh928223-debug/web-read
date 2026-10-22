@@ -88,6 +88,7 @@ async function runBehaviorChecks() {
     setAnnotation(annotation) { calls.push(['set', annotation]); },
     show() { calls.push('show'); },
     clearAnnotation() { calls.push('clear'); },
+    setStatus(message) { calls.push(['status', message]); },
     hide() { calls.push('hide'); }
   };
   const api = await importResolverWithStubs(resolverSource, bubble);
@@ -100,7 +101,7 @@ async function runBehaviorChecks() {
   const handled = resolver.notifyAnnotationBubbleWordClick(span);
 
   assert.equal(handled, false, 'non-annotation word click should still fall through to normal audio seeking');
-  assert.equal(calls.includes('clear'), false, 'non-annotation word click should keep the current annotation content');
+  assert.ok(calls.some(entry => Array.isArray(entry) && entry[0] === 'status' && entry[1] === 'ordinary：暂无释义'), 'N2 empty target must replace stale annotation content with its own empty state');
   assert.equal(calls.includes('hide'), false, 'non-annotation word click should not hide an already visible annotation bubble');
 
   const clickResolverSource = fs.readFileSync(

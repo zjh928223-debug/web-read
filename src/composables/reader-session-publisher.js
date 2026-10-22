@@ -9,7 +9,7 @@ function cloneValue(value) {
 const STATE_FIELDS = [
   'segments', 'words', 'wordStarts', 'currentWordIndex',
   'chunkItems', 'hasAiChunkData', 'isChunkMode', 'chunkCnVisible',
-  'chunkCnHoldMode', 'isChunkShadowOn', 'chunkCnMode', 'manualChunkStates',
+  'chunkCnHoldMode', 'isChunkShadowOn', 'chunkCnMode',
   'lastActiveChunkIndex', 'lastAiPrevTapChunkIndex', 'lastAiPrevTapAt',
 ]
 

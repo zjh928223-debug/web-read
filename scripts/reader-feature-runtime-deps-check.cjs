@@ -16,5 +16,7 @@ assert.equal((assembly.match(/domRefs\./g) || []).length, 0, 'top-level assembly
 assert.equal((assembly.match(/runtimeDeps\./g) || []).length, 0, 'top-level assembly must not know feature helper leaves')
 assert.equal(source.includes('forceUpdateUI: forceUpdateUI'), false, 'retired early undefined import dependency must stay removed')
 assert.equal(source.includes('window.'), false)
+assert.equal(source.includes('importAnnotationLightweightInput'), false)
+assert.equal(source.includes('importAnnotationLightweightBtn'), false)
 assert.equal(source.includes('document.'), false)
 console.log('reader feature runtime deps check passed')

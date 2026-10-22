@@ -6,6 +6,8 @@
     "src/composables/session-startup-cleanup.js",
     "src/composables/session-startup-runtime.js",
     "src/composables/session-ui-settings-restore.js",
+    "src/composables/use-reader-session-persistence.js",
+    "src/composables/use-workflow-library.js",
     "src/composables/youtube-workflow-client.js",
     "src/composables/youtube-workflow-loader.js",
     "src/services/annotation/storage.js",
@@ -25,7 +27,6 @@
     "reader-outbox-activity-keepalive-settle",
     "reader-outbox-marks-keepalive-settle",
     "reader-outbox-startup-replay",
-    "session-manual-chunk-state-restore",
     "session-startup-setting-cleanup",
     "session-ui-settings-restore",
     "workflow-error-body-parse"

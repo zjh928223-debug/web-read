@@ -1,24 +1,28 @@
-/* Learning pages stay light even when the reader shell is in dark mode. These
-   values intentionally come from the SRS palette rather than reader tokens. */
+/* This CSS chunk loads before the reader bundle in production. Establish the
+   shared order before Tailwind or reader-footprint creates any named layer. */
+@layer reader-footprint, properties, theme, base, components, utilities;
+
+/* Learning pages stay light even when the reader shell is in dark mode. */
 .srs-review-page[data-ui-theme="light"],
 .passage-preview-learning-settings-dialog[data-ui-theme="light"],
+.learning-page-load-notice[data-ui-theme="light"],
 .annotation-backfill-dialog[data-ui-theme="light"],
 .vocabulary-preview-dialog[data-ui-theme="light"] {
   color-scheme: light;
-  --learning-background: #f7f8fb;
-  --learning-foreground: #17233a;
-  --learning-primary: #3158c8;
-  --learning-primary-foreground: #ffffff;
-  --learning-secondary: #eef3ff;
-  --learning-secondary-foreground: #17233a;
-  --learning-muted: #f6f8fc;
-  --learning-muted-foreground: #6f7b90;
-  --learning-accent: #eef3ff;
-  --learning-accent-foreground: #2454c6;
-  --learning-destructive: #b4232b;
-  --learning-border: #dfe4ed;
-  --learning-input: #dfe4ed;
-  --learning-ring: #3158c8;
+  --learning-background: var(--rw-ui-light-background);
+  --learning-foreground: var(--rw-ui-light-foreground);
+  --learning-primary: var(--rw-ui-light-primary);
+  --learning-primary-foreground: var(--rw-ui-light-primary-foreground);
+  --learning-secondary: var(--rw-ui-light-secondary);
+  --learning-secondary-foreground: var(--rw-ui-light-secondary-foreground);
+  --learning-muted: var(--rw-ui-light-muted);
+  --learning-muted-foreground: var(--rw-ui-light-muted-foreground);
+  --learning-accent: var(--rw-ui-light-accent);
+  --learning-accent-foreground: var(--rw-ui-light-accent-foreground);
+  --learning-destructive: var(--rw-ui-light-destructive);
+  --learning-border: var(--rw-ui-light-border);
+  --learning-input: var(--rw-ui-light-input);
+  --learning-ring: var(--rw-ui-light-ring);
 
   --background: var(--learning-background);
   --foreground: var(--learning-foreground);
@@ -36,11 +40,8 @@
   --ring: var(--learning-ring);
 }
 
-/* Keep the shared Button recipe in charge of height, padding, radius, hover,
-   and focus-ring utilities. This low-priority layer only supplies the native
-   control baseline for explicitly migrated learning controls. */
 @layer components {
-  :is(.srs-review-page, .passage-preview-learning-settings-dialog, .annotation-backfill-dialog, .vocabulary-preview-dialog)[data-ui-theme="light"] [data-ui-owner="learning"] {
+  :is(.srs-review-page, .passage-preview-learning-settings-dialog, .learning-page-load-notice, .annotation-backfill-dialog, .vocabulary-preview-dialog)[data-ui-theme="light"] [data-ui-owner="learning"] {
     appearance: none;
     box-sizing: border-box;
     margin: 0;
@@ -50,7 +51,7 @@
     font-family: Arial, sans-serif;
   }
 
-  :is(.srs-review-page, .passage-preview-learning-settings-dialog, .annotation-backfill-dialog, .vocabulary-preview-dialog)[data-ui-theme="light"] [data-ui-owner="learning"]:is(button, [role="button"]):not(:disabled) {
+  :is(.srs-review-page, .passage-preview-learning-settings-dialog, .learning-page-load-notice, .annotation-backfill-dialog, .vocabulary-preview-dialog)[data-ui-theme="light"] [data-ui-owner="learning"]:is(button, [role="button"]):not(:disabled) {
     cursor: pointer;
   }
 }

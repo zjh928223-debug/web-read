@@ -14,9 +14,20 @@ import {
   planReviewSession,
 } from '../../features/srs-review/srs-session-planner.js';
 import { normalizeReviewSessionLedger } from './srs-review-session-ledger.js';
+import {
+  createSrsReviewExclusionMarker,
+  isSrsReviewParticipationExcluded,
+  normalizeSrsReviewParticipation,
+  SRS_REVIEW_PARTICIPATION_FIELD,
+} from './vocabulary-models.js';
 
 export const SRS_REVIEW_SERVICE_V2_VERSION = 'srs-review-service.v2';
 export const SRS_REVIEW_ATTEMPT_COMMAND_TYPE = 'record_review_attempt.v2';
+export const SRS_REVIEW_REMOVAL_COMMAND_TYPE = 'remove_srs_review_word.v1';
+
+const SRS_REVIEW_EXCLUDED_WORD_IDS_EXTENSION = 'srs_review_excluded_word_ids';
+const SRS_REVIEW_EXCLUDED_LEDGER_ITEM_IDS_EXTENSION = 'srs_review_excluded_ledger_item_ids';
+const SRS_REVIEW_REMOVAL_OPERATIONS_EXTENSION = 'srs_review_removal_operations_by_id';
 
 const PERSONALIZATION_SHADOW_FEATURE_FLAG = 'VOCABULARY_PERSONALIZATION_SHADOW_ENABLED';
 
@@ -191,6 +202,30 @@ function normalizeAttemptInput(input) {
   };
 }
 
+function normalizeRemovalInput(input, now) {
+  if (!isObject(input)) fail('INVALID_FIELD_TYPE', 'removal input must be an object', { field: 'input' });
+  const removedAt = timestamp(input.removed_at ?? now(), 'removed_at');
+  const operationId = requiredId(input.operation_id || input.operationId, 'operation_id');
+  const sessionId = requiredId(input.session_id || input.sessionId, 'session_id');
+  const ledgerItemId = requiredId(input.ledger_item_id || input.ledgerItemId, 'ledger_item_id');
+  const wordId = requiredId(input.word_id || input.wordId, 'word_id');
+  const learningUnitId = input.learning_unit_id || input.learningUnitId;
+  if (learningUnitId !== undefined && learningUnitId !== null) {
+    requiredId(learningUnitId, 'learning_unit_id');
+  }
+  return {
+    operation_id: operationId,
+    session_id: sessionId,
+    ledger_item_id: ledgerItemId,
+    word_id: wordId,
+    learning_unit_id: learningUnitId == null ? null : String(learningUnitId),
+    removed_at: removedAt,
+    event_partition: removedAt.slice(0, 7),
+    command_id: input.command_id || `srs-review-remove:${operationId}:command`,
+    correlation_id: input.correlation_id || `srs-review-remove:${operationId}`,
+  };
+}
+
 function sameLocalDayEvents(events, localDay, timezone) {
   return events.filter((event) => (
     event.event_type === 'review_attempt_recorded'
@@ -354,6 +389,9 @@ function resultFromReviewEvent(event) {
 function ledgerRuntime(ledger) {
   return {
     completed_item_ids: [...new Set(ledger.extensions.completed_item_ids ?? [])],
+    excluded_ledger_item_ids: [...new Set(
+      ledger.extensions[SRS_REVIEW_EXCLUDED_LEDGER_ITEM_IDS_EXTENSION] ?? [],
+    )],
     attempt_ids: [...new Set(ledger.extensions.attempt_ids ?? [])],
     revisit_counts_by_learning_unit_id: {
       ...(ledger.extensions.revisit_counts_by_learning_unit_id ?? {}),
@@ -371,6 +409,61 @@ function ledgerRuntime(ledger) {
   };
 }
 
+function sameIdSet(left, right) {
+  const normalize = (values) => [...new Set(
+    (Array.isArray(values) ? values : []).map((value) => String(value)),
+  )].sort();
+  return canonicalJson(normalize(left)) === canonicalJson(normalize(right));
+}
+
+function assertRemovalOperationMatches(operation, {
+  operationId,
+  sessionId,
+  wordId,
+  ledgerItemId = null,
+  learningUnitIds,
+  ledgerItemIds,
+}) {
+  const targetLedgerItemIds = (Array.isArray(ledgerItemIds) ? ledgerItemIds : [])
+    .map((value) => String(value));
+  const originalLedgerItemMatches = ledgerItemId === null
+    ? targetLedgerItemIds.includes(operation?.ledger_item_id)
+    : operation?.ledger_item_id === ledgerItemId;
+  if (operation?.operation_id !== operationId
+    || operation?.session_id !== sessionId
+    || operation?.word_id !== wordId
+    || !originalLedgerItemMatches
+    || !sameIdSet(operation?.learning_unit_ids, learningUnitIds)
+    || !sameIdSet(operation?.ledger_item_ids, targetLedgerItemIds)) {
+    fail('IDEMPOTENCY_CONFLICT', 'Persisted SRS removal operation does not match its target', {
+      operation_id: operationId,
+      word_id: wordId,
+    });
+  }
+}
+
+function advanceLedgerCursorPastNonAnswerItems(ledger, runtimeOverride = null) {
+  const runtime = runtimeOverride || ledgerRuntime(ledger);
+  const completed = new Set(runtime.completed_item_ids);
+  const excluded = new Set(runtime.excluded_ledger_item_ids);
+  while (ledger.cursor < ledger.entries.length) {
+    const ledgerItemId = ledger.entries[ledger.cursor].ledger_item_id;
+    if (!completed.has(ledgerItemId) && !excluded.has(ledgerItemId)) break;
+    ledger.cursor += 1;
+  }
+  return ledger;
+}
+
+function currentReviewLedgerEntry(ledger) {
+  const runtime = ledgerRuntime(ledger);
+  const completed = new Set(runtime.completed_item_ids);
+  const excluded = new Set(runtime.excluded_ledger_item_ids);
+  return ledger.entries.slice(ledger.cursor).find((entry) => (
+    !completed.has(entry.ledger_item_id)
+    && !excluded.has(entry.ledger_item_id)
+  )) || null;
+}
+
 function appendRevisitIfAllowed(ledger, entry, result, runtime) {
   const decision = result.revisit_decision;
   if (!decision.allowed) return;
@@ -382,8 +475,12 @@ function appendRevisitIfAllowed(ledger, entry, result, runtime) {
   ));
   if (alreadyExists) return;
   const completed = new Set(runtime.completed_item_ids);
+  const excluded = new Set(runtime.excluded_ledger_item_ids);
   const remainingEstimatedMs = ledger.entries
-    .filter((candidate) => !completed.has(candidate.ledger_item_id))
+    .filter((candidate) => (
+      !completed.has(candidate.ledger_item_id)
+      && !excluded.has(candidate.ledger_item_id)
+    ))
     .reduce((total, candidate) => total + candidate.estimated_duration_ms, 0);
   if (
     runtime.active_duration_ms
@@ -442,15 +539,23 @@ function applyAttemptToLedger(inputLedger, result) {
     );
   }
   appendRevisitIfAllowed(ledger, entry, result, runtime);
-  const completed = new Set(runtime.completed_item_ids);
-  while (ledger.cursor < ledger.entries.length
-    && completed.has(ledger.entries[ledger.cursor].ledger_item_id)) {
-    ledger.cursor += 1;
-  }
-  ledger.status = ledger.cursor === ledger.entries.length ? 'completed' : 'active';
+  // The runtime contains the attempt that was just accepted. The ledger
+  // extensions are persisted below, so reading them here would advance from
+  // the pre-attempt completed set and leave a normal rating on the same card.
+  advanceLedgerCursorPastNonAnswerItems(ledger, runtime);
+  // Exclusion is participation state, not an answered item. Keep the session
+  // active even when the cursor reaches the end because no rating was added
+  // for the excluded ledger item(s).
+  ledger.status = ledger.cursor === ledger.entries.length
+    && runtime.excluded_ledger_item_ids.length === 0
+    ? 'completed'
+    : 'active';
   ledger.extensions = {
     ...ledger.extensions,
     completed_item_ids: [...new Set(runtime.completed_item_ids)],
+    [SRS_REVIEW_EXCLUDED_LEDGER_ITEM_IDS_EXTENSION]: [
+      ...new Set(runtime.excluded_ledger_item_ids),
+    ],
     attempt_ids: [...new Set(runtime.attempt_ids)],
     revisit_counts_by_learning_unit_id: runtime.revisit_counts_by_learning_unit_id,
     attempt_fingerprints_by_id: runtime.attempt_fingerprints_by_id,
@@ -535,11 +640,115 @@ export function createSrsReviewServiceV2(options = {}) {
     return ledger;
   }
 
+  async function reconcileLedgerFromParticipationMarkers(inputLedger) {
+    const snapshot = await acquisitionRepository.loadSnapshot();
+    const markerGroups = new Map();
+    for (const pair of Object.values(snapshot.by_learning_unit_id ?? {})) {
+      const unit = pair?.learning_unit;
+      const marker = normalizeSrsReviewParticipation(
+        unit?.extensions?.[SRS_REVIEW_PARTICIPATION_FIELD],
+      );
+      if (!unit || !isSrsReviewParticipationExcluded(marker)) continue;
+      const wordId = String(unit.word_id || '');
+      if (!wordId) continue;
+      const existing = markerGroups.get(wordId);
+      if (existing && existing.marker.operation_id !== marker.operation_id) {
+        fail('IDEMPOTENCY_CONFLICT', 'Word has conflicting SRS removal operations', {
+          word_id: wordId,
+          operation_ids: [existing.marker.operation_id, marker.operation_id],
+        });
+      }
+      if (existing) {
+        existing.learning_unit_ids.push(unit.learning_unit_id);
+      } else {
+        markerGroups.set(wordId, {
+          marker,
+          learning_unit_ids: [unit.learning_unit_id],
+        });
+      }
+    }
+    if (!markerGroups.size) return inputLedger;
+
+    const ledger = clone(inputLedger);
+    const runtime = ledgerRuntime(ledger);
+    const completed = new Set(runtime.completed_item_ids);
+    const excluded = new Set(runtime.excluded_ledger_item_ids);
+    const excludedWordIds = new Set(
+      ledger.extensions?.[SRS_REVIEW_EXCLUDED_WORD_IDS_EXTENSION] || [],
+    );
+    const excludedLedgerItemIds = new Set(runtime.excluded_ledger_item_ids);
+    const operations = {
+      ...(ledger.extensions?.[SRS_REVIEW_REMOVAL_OPERATIONS_EXTENSION] || {}),
+    };
+    let changed = false;
+
+    for (const [wordId, group] of markerGroups.entries()) {
+      const learningUnitIds = [...new Set(group.learning_unit_ids)].sort();
+      const entriesForWord = ledger.entries.filter((candidate) => (
+        learningUnitIds.includes(candidate.learning_unit_id)
+      ));
+      if (!entriesForWord.length) continue;
+      const ledgerItemIds = entriesForWord.map((candidate) => candidate.ledger_item_id);
+      const existingOperation = operations[group.marker.operation_id];
+      if (existingOperation) {
+        assertRemovalOperationMatches(existingOperation, {
+          operationId: group.marker.operation_id,
+          sessionId: ledger.session_id,
+          wordId,
+          learningUnitIds,
+          ledgerItemIds,
+        });
+      } else {
+        const targetEntry = entriesForWord.find((candidate) => (
+          candidate.position >= ledger.cursor
+          && !completed.has(candidate.ledger_item_id)
+          && !excluded.has(candidate.ledger_item_id)
+        )) || entriesForWord[0];
+        operations[group.marker.operation_id] = {
+          schema_version: 'srs-review-removal.v1',
+          operation_id: group.marker.operation_id,
+          session_id: ledger.session_id,
+          word_id: wordId,
+          ledger_item_id: targetEntry.ledger_item_id,
+          learning_unit_ids: learningUnitIds,
+          ledger_item_ids: ledgerItemIds,
+          removed_at: group.marker.removed_at,
+        };
+        changed = true;
+      }
+      if (!excludedWordIds.has(wordId)) {
+        excludedWordIds.add(wordId);
+        changed = true;
+      }
+      for (const ledgerItemId of ledgerItemIds) {
+        if (!excludedLedgerItemIds.has(ledgerItemId)) {
+          excludedLedgerItemIds.add(ledgerItemId);
+          changed = true;
+        }
+      }
+    }
+    if (!changed) return inputLedger;
+
+    const reconciled = {
+      ...ledger,
+      status: 'active',
+      extensions: {
+        ...ledger.extensions,
+        [SRS_REVIEW_EXCLUDED_WORD_IDS_EXTENSION]: [...excludedWordIds],
+        [SRS_REVIEW_EXCLUDED_LEDGER_ITEM_IDS_EXTENSION]: [...excludedLedgerItemIds],
+        [SRS_REVIEW_REMOVAL_OPERATIONS_EXTENSION]: operations,
+      },
+    };
+    advanceLedgerCursorPastNonAnswerItems(reconciled);
+    return normalizeReviewSessionLedger(reconciled);
+  }
+
   async function persistReconciledLedger(inputLedger) {
-    const reconciled = await reconcileLedgerFromEvents(inputLedger);
-    if (JSON.stringify(reconciled) === JSON.stringify(inputLedger)) return inputLedger;
-    reconciled.revision = inputLedger.revision;
-    return ledgerRepository.put(reconciled, inputLedger.revision);
+    const eventReconciled = await reconcileLedgerFromEvents(inputLedger);
+    const reconciled = await reconcileLedgerFromParticipationMarkers(eventReconciled);
+    if (JSON.stringify(reconciled) === JSON.stringify(eventReconciled)) return eventReconciled;
+    reconciled.revision = eventReconciled.revision;
+    return ledgerRepository.put(reconciled, eventReconciled.revision);
   }
 
   async function startReviewSession(rawInput) {
@@ -557,7 +766,10 @@ export function createSrsReviewServiceV2(options = {}) {
       const todayEvents = sameLocalDayEvents(allEvents, input.local_day, input.timezone);
       const candidates = [];
       const pairs = Object.values(snapshot.by_learning_unit_id ?? {})
-        .filter((pair) => pair.acquisition_state?.status === 'graduated')
+        .filter((pair) => pair.acquisition_state?.status === 'graduated'
+          && !isSrsReviewParticipationExcluded(
+            pair.learning_unit?.extensions?.[SRS_REVIEW_PARTICIPATION_FIELD],
+          ))
         .sort((left, right) => (
           left.learning_unit.learning_unit_id.localeCompare(right.learning_unit.learning_unit_id)
         ));
@@ -673,7 +885,8 @@ export function createSrsReviewServiceV2(options = {}) {
       const entry = ledger.entries.find((candidate) => candidate.ledger_item_id === input.ledger_item_id);
       const runtime = ledgerRuntime(ledger);
       const knownAttempt = runtime.attempt_ids.includes(input.attempt_id);
-      if (!entry || (!knownAttempt && ledger.entries[ledger.cursor]?.ledger_item_id !== input.ledger_item_id)) {
+      const currentEntry = currentReviewLedgerEntry(ledger);
+      if (!entry || (!knownAttempt && currentEntry?.ledger_item_id !== input.ledger_item_id)) {
         fail('INVALID_CONTEXT_REFERENCE', 'Attempt is not for the current ledger item', {
           ledger_item_id: input.ledger_item_id,
         });
@@ -724,6 +937,15 @@ export function createSrsReviewServiceV2(options = {}) {
               'REVIEW_STATE_BEFORE_GRADUATION',
               'Only graduated learning units may be reviewed',
               { learning_unit_id: entry.learning_unit_id },
+            ));
+          }
+          if (isSrsReviewParticipationExcluded(
+            unit.extensions?.[SRS_REVIEW_PARTICIPATION_FIELD],
+          )) {
+            return uow.abort(error(
+              'SRS_REVIEW_REMOVED',
+              'Removed learning units cannot be reviewed',
+              { learning_unit_id: entry.learning_unit_id, word_id: unit.word_id },
             ));
           }
           const beforeState = await uow.review.getByLearningUnitId(entry.learning_unit_id);
@@ -846,12 +1068,247 @@ export function createSrsReviewServiceV2(options = {}) {
     });
   }
 
+  async function removeWordFromReview(rawInput) {
+    const input = normalizeRemovalInput(rawInput, now);
+    return serialize(input.session_id, async () => {
+      let ledger = await ledgerRepository.getBySessionId(input.session_id);
+      if (!ledger) {
+        fail('INVALID_STATE_TRANSITION', 'Review session is not active', {
+          session_id: input.session_id,
+        });
+      }
+      ledger = await persistReconciledLedger(ledger);
+      const entry = ledger.entries.find((candidate) => (
+        candidate.ledger_item_id === input.ledger_item_id
+      ));
+      if (!entry || (
+        input.learning_unit_id !== null
+        && entry.learning_unit_id !== input.learning_unit_id
+      )) {
+        fail('INVALID_CONTEXT_REFERENCE', 'Removal is not bound to the current ledger item', {
+          ledger_item_id: input.ledger_item_id,
+          learning_unit_id: input.learning_unit_id,
+        });
+      }
+      const runtime = ledgerRuntime(ledger);
+      if (runtime.completed_item_ids.includes(entry.ledger_item_id)) {
+        fail('SRS_REVIEW_REMOVE_HAS_RATING', 'A rated ledger item cannot be removed', {
+          ledger_item_id: entry.ledger_item_id,
+        });
+      }
+      const currentUnit = await acquisitionRepository.getLearningUnit(entry.learning_unit_id);
+      if (!currentUnit || currentUnit.word_id !== input.word_id) {
+        fail('INVALID_CONTEXT_REFERENCE', 'Removal word does not match the current learning unit', {
+          ledger_item_id: entry.ledger_item_id,
+          learning_unit_id: entry.learning_unit_id,
+          word_id: input.word_id,
+        });
+      }
+      const currentMarker = normalizeSrsReviewParticipation(
+        currentUnit.extensions?.[SRS_REVIEW_PARTICIPATION_FIELD],
+      );
+      if (currentMarker && currentMarker.operation_id !== input.operation_id) {
+        fail('IDEMPOTENCY_CONFLICT', 'The current word is already removed by another operation', {
+          word_id: input.word_id,
+          operation_id: currentMarker.operation_id,
+        });
+      }
+      const acquisitionSnapshot = await acquisitionRepository.loadSnapshot();
+      const learningUnitIds = Object.values(acquisitionSnapshot.by_learning_unit_id || {})
+        .map((pair) => pair?.learning_unit)
+        .filter((unit) => unit?.word_id === input.word_id)
+        .map((unit) => unit.learning_unit_id)
+        .sort();
+      if (!learningUnitIds.includes(entry.learning_unit_id)) {
+        fail('INVALID_CONTEXT_REFERENCE', 'Current learning unit is missing from the removal set', {
+          learning_unit_id: entry.learning_unit_id,
+          word_id: input.word_id,
+        });
+      }
+      const ledgerItemIdsForWord = ledger.entries
+        .filter((candidate) => learningUnitIds.includes(candidate.learning_unit_id))
+        .map((candidate) => candidate.ledger_item_id);
+      const existingOperations = ledger.extensions?.[SRS_REVIEW_REMOVAL_OPERATIONS_EXTENSION] || {};
+      const existingOperation = existingOperations[input.operation_id];
+      if (existingOperation) {
+        assertRemovalOperationMatches(existingOperation, {
+          operationId: input.operation_id,
+          sessionId: input.session_id,
+          wordId: input.word_id,
+          ledgerItemId: input.ledger_item_id,
+          learningUnitIds,
+          ledgerItemIds: ledgerItemIdsForWord,
+        });
+        return {
+          status: 'removed',
+          idempotent: true,
+          operation_id: input.operation_id,
+          word_id: input.word_id,
+          learning_unit_ids: [...(existingOperation.learning_unit_ids || [])],
+          ledger,
+        };
+      }
+      if (currentReviewLedgerEntry(ledger)?.ledger_item_id !== entry.ledger_item_id) {
+        fail('SRS_REVIEW_REMOVE_CONTEXT_MOVED', 'Only the current unanswered ledger item can be removed', {
+          ledger_item_id: entry.ledger_item_id,
+        });
+      }
+
+      const marker = createSrsReviewExclusionMarker(input.operation_id, input.removed_at);
+      await runUnitOfWork(
+        { indexedDBApi: options.indexedDBApi, now },
+        {
+          command_id: input.command_id,
+          command_type: SRS_REVIEW_REMOVAL_COMMAND_TYPE,
+          correlation_id: input.correlation_id,
+          event_partition: input.event_partition,
+          payload: {
+            operation_id: input.operation_id,
+            session_id: input.session_id,
+            ledger_item_id: input.ledger_item_id,
+            word_id: input.word_id,
+            learning_unit_ids: learningUnitIds,
+            ledger_item_ids: ledgerItemIdsForWord,
+            removed_at: input.removed_at,
+          },
+        },
+        async (uow) => {
+          for (const learningUnitId of learningUnitIds) {
+            const unit = await uow.acquisition.getLearningUnit(learningUnitId);
+            if (!unit || unit.word_id !== input.word_id) {
+              return uow.abort(error(
+                'INVALID_CONTEXT_REFERENCE',
+                'Removal learning unit no longer matches the word',
+                { learning_unit_id: learningUnitId, word_id: input.word_id },
+              ));
+            }
+            const existingMarker = normalizeSrsReviewParticipation(
+              unit.extensions?.[SRS_REVIEW_PARTICIPATION_FIELD],
+            );
+            if (existingMarker && existingMarker.operation_id !== input.operation_id) {
+              return uow.abort(error(
+                'IDEMPOTENCY_CONFLICT',
+                'A learning unit is already removed by another operation',
+                { learning_unit_id: learningUnitId, operation_id: existingMarker.operation_id },
+              ));
+            }
+            if (isSrsReviewParticipationExcluded(existingMarker)) {
+              continue;
+            }
+            await uow.acquisition.putLearningUnit({
+              ...unit,
+              extensions: {
+                ...(unit.extensions || {}),
+                [SRS_REVIEW_PARTICIPATION_FIELD]: marker,
+              },
+            }, unit.revision);
+          }
+          return {
+            status: 'marked',
+            operation_id: input.operation_id,
+            word_id: input.word_id,
+            learning_unit_ids: learningUnitIds,
+          };
+        },
+      );
+
+      let currentLedger = await ledgerRepository.getBySessionId(input.session_id);
+      currentLedger = await persistReconciledLedger(currentLedger);
+      const currentRuntime = ledgerRuntime(currentLedger);
+      if (currentRuntime.completed_item_ids.includes(input.ledger_item_id)) {
+        fail('SRS_REVIEW_REMOVE_HAS_RATING', 'A rated ledger item cannot be removed', {
+          ledger_item_id: input.ledger_item_id,
+        });
+      }
+      const reconciledOperation = currentLedger.extensions?.[SRS_REVIEW_REMOVAL_OPERATIONS_EXTENSION]?.[
+        input.operation_id
+      ];
+      if (reconciledOperation) {
+        assertRemovalOperationMatches(reconciledOperation, {
+          operationId: input.operation_id,
+          sessionId: input.session_id,
+          wordId: input.word_id,
+          ledgerItemId: input.ledger_item_id,
+          learningUnitIds,
+          ledgerItemIds: ledgerItemIdsForWord,
+        });
+        return {
+          status: 'removed',
+          idempotent: false,
+          operation_id: input.operation_id,
+          word_id: input.word_id,
+          learning_unit_ids: learningUnitIds,
+          ledger: currentLedger,
+        };
+      }
+      if (currentReviewLedgerEntry(currentLedger)?.ledger_item_id !== input.ledger_item_id) {
+        fail('SRS_REVIEW_REMOVE_CONTEXT_MOVED', 'The current ledger item changed before removal was committed', {
+          ledger_item_id: input.ledger_item_id,
+        });
+      }
+      const operations = {
+        ...(currentLedger.extensions?.[SRS_REVIEW_REMOVAL_OPERATIONS_EXTENSION] || {}),
+        [input.operation_id]: {
+          schema_version: 'srs-review-removal.v1',
+          operation_id: input.operation_id,
+          session_id: input.session_id,
+          word_id: input.word_id,
+          ledger_item_id: input.ledger_item_id,
+          learning_unit_ids: learningUnitIds,
+          ledger_item_ids: ledgerItemIdsForWord,
+          removed_at: input.removed_at,
+        },
+      };
+      const excludedWordIds = [
+        ...(currentLedger.extensions?.[SRS_REVIEW_EXCLUDED_WORD_IDS_EXTENSION] || []),
+        input.word_id,
+      ];
+      const excludedLedgerItemIds = [
+        ...(currentLedger.extensions?.[SRS_REVIEW_EXCLUDED_LEDGER_ITEM_IDS_EXTENSION] || []),
+        ...ledgerItemIdsForWord,
+      ];
+      const nextLedger = {
+        ...currentLedger,
+        extensions: {
+          ...currentLedger.extensions,
+          [SRS_REVIEW_EXCLUDED_WORD_IDS_EXTENSION]: [...new Set(excludedWordIds)],
+          [SRS_REVIEW_EXCLUDED_LEDGER_ITEM_IDS_EXTENSION]: [
+            ...new Set(excludedLedgerItemIds),
+          ],
+          [SRS_REVIEW_REMOVAL_OPERATIONS_EXTENSION]: operations,
+        },
+      };
+      advanceLedgerCursorPastNonAnswerItems(nextLedger);
+      // Do not convert exclusion into a completed session or a completed item.
+      nextLedger.status = 'active';
+      const persisted = await ledgerRepository.put(
+        normalizeReviewSessionLedger(nextLedger),
+        currentLedger.revision,
+      );
+      return {
+        status: 'removed',
+        idempotent: false,
+        operation_id: input.operation_id,
+        word_id: input.word_id,
+        learning_unit_ids: learningUnitIds,
+        ledger: persisted,
+      };
+    });
+  }
+
   async function completeReviewSession(sessionId) {
     requiredId(sessionId, 'session_id');
     return serialize(sessionId, async () => {
       const ledger = await ledgerRepository.getBySessionId(sessionId);
       if (!ledger) return null;
       if (ledger.status === 'completed') return ledger;
+      const runtime = ledgerRuntime(ledger);
+      const completed = new Set(runtime.completed_item_ids);
+      if (runtime.excluded_ledger_item_ids.some((itemId) => !completed.has(itemId))) {
+        fail('INVALID_STATE_TRANSITION', 'Excluded ledger items cannot be completed as answered', {
+          session_id: sessionId,
+        });
+      }
       if (ledger.cursor !== ledger.entries.length) {
         fail('INVALID_STATE_TRANSITION', 'Review session has unfinished ledger items', {
           session_id: sessionId,
@@ -867,6 +1324,7 @@ export function createSrsReviewServiceV2(options = {}) {
   return {
     startReviewSession,
     recordReviewAttempt,
+    removeWordFromReview,
     resumeReviewSession,
     completeReviewSession,
     flushPersonalizationShadow,

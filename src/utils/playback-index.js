@@ -16,7 +16,7 @@ export function findChunkIndexByTime(chunkItems, time) {
 }
 
 export function bsFindActive(wordStarts, words, time) {
-    if (!Array.isArray(wordStarts) || wordStarts.length === 0) return -1;
+    if (!Array.isArray(wordStarts) || !Array.isArray(words) || wordStarts.length === 0 || !Number.isFinite(time)) return -1;
     let lo = 0;
     let hi = wordStarts.length - 1;
     let ans = -1;
@@ -29,7 +29,15 @@ export function bsFindActive(wordStarts, words, time) {
             hi = mid - 1;
         }
     }
-    return (ans !== -1 && time < ((words[ans] && words[ans].end) || ((words[ans] && words[ans].start) || 0) + 2.0)) ? ans : -1;
+    // A later word may have ended while an earlier overlapping word is still active.
+    // Keep latest-start priority among ranges that actually cover this time.
+    for (let index = ans; index >= 0; index--) {
+        const word = words[index];
+        if (!word) continue;
+        const end = Number.isFinite(word.end) ? word.end : word.start + 2.0;
+        if (word.start <= time && time < end) return index;
+    }
+    return -1;
 }
 
 export function getCurrentSegmentIndex(segments, words, wordStarts, time) {

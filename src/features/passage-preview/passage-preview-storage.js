@@ -58,7 +58,7 @@ export function savePassagePreviewData(items, storage = globalThis.localStorage)
       ...state,
       batchId: derivePassagePreviewBatchId(data),
       data,
-      progress: state.progress || createInitialPassagePreviewProgress(),
+      progress: normalizeProgress(state.progress || createInitialPassagePreviewProgress()),
     }), {
       extraRecords: (state) => ({
         [PASSAGE_PREVIEW_DATA_KEY]: {
@@ -72,7 +72,7 @@ export function savePassagePreviewData(items, storage = globalThis.localStorage)
     ...state,
     batchId: derivePassagePreviewBatchId(data),
     data,
-    progress: state.progress || createInitialPassagePreviewProgress(),
+    progress: normalizeProgress(state.progress || createInitialPassagePreviewProgress()),
   }), storage, { data: loadLegacyData(storage), progress: loadLegacyProgress(storage) })
 }
 
@@ -100,6 +100,7 @@ function normalizeProgress(saved) {
     currentIndex: Math.max(0, Number(saved.currentIndex) || 0),
     revealed: normalizeBooleanMap(saved.revealed),
     contextExpanded: normalizeBooleanMap(saved.contextExpanded || saved.sentenceExpanded),
+    firstContacts: normalizeFirstContacts(saved.firstContacts),
     startedAt: normalizeIso(saved.startedAt),
     completedAt: normalizeIso(saved.completedAt),
   }
@@ -269,15 +270,53 @@ function cloneOwnerValue(value) {
   return value === undefined ? undefined : JSON.parse(JSON.stringify(value))
 }
 
-export function createInitialPassagePreviewProgress() {
+export function createInitialPassagePreviewProgress({ firstContacts = {} } = {}) {
   return {
     status: 'not_started',
     currentIndex: 0,
     revealed: {},
     contextExpanded: {},
+    firstContacts: normalizeFirstContacts(firstContacts),
     startedAt: null,
     completedAt: null,
   }
+}
+
+function normalizeFirstContacts(value) {
+  if (value === undefined) return {}
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw firstContactPersistenceError('firstContacts must be an object')
+  }
+  const normalized = {}
+  for (const [id, rawContact] of Object.entries(value)) {
+    const contactId = normalizeText(id)
+    const seenAt = normalizeIso(rawContact?.seenAt)
+    const targetSenseKey = normalizeText(rawContact?.targetSenseKey)
+    const item = normalizeFirstContactItem(rawContact?.item)
+    if (!contactId || !seenAt || !targetSenseKey || !item || item.id !== contactId
+      || item.targetSenseKey !== targetSenseKey) {
+      throw firstContactPersistenceError(`firstContacts entry ${contactId || '<unknown>'} is invalid`)
+    }
+    normalized[contactId] = {
+      seenAt,
+      targetSenseKey,
+      item: cloneOwnerValue(rawContact.item),
+    }
+  }
+  return normalized
+}
+
+function normalizeFirstContactItem(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const id = normalizeText(value.id)
+  const lemma = normalizeText(value.lemma || value.word).toLowerCase()
+  const word = normalizeText(value.word || value.lemma)
+  const primaryMeaningZh = normalizeText(value.primaryMeaningZh)
+  const targetSenseKey = normalizeText(value.targetSenseKey)
+  if (!id || !/^[a-z]+(?:[-'][a-z]+)*$/u.test(lemma) || !word || !primaryMeaningZh || !targetSenseKey) {
+    return null
+  }
+  return { id, lemma, word, primaryMeaningZh, targetSenseKey }
 }
 
 function normalizeBooleanMap(value) {
@@ -295,6 +334,10 @@ function normalizeIso(value) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString()
 }
 
+function normalizeText(value) {
+  return String(value ?? '').normalize('NFKC').replace(/\s+/gu, ' ').trim()
+}
+
 function readJson(storage, key, fallback) {
   try {
     const raw = storage?.getItem(key)
@@ -302,6 +345,13 @@ function readJson(storage, key, fallback) {
   } catch (_error) {
     return fallback
   }
+}
+
+function firstContactPersistenceError(message) {
+  return Object.assign(
+    new Error(`Passage Preview first-contact data is invalid: ${message}`),
+    { name: 'PassagePreviewPersistenceError', code: 'PASSAGE_PREVIEW_FIRST_CONTACTS_INVALID' },
+  )
 }
 import {
   derivePassagePreviewBatchId,

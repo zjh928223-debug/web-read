@@ -3,7 +3,7 @@ const path = require('path');
 const { chromium } = require('playwright');
 
 const targetUrl = process.env.READ_WEB_URL || process.env.READ26_URL || 'http://127.0.0.1:4173/';
-const artifactsDir = path.join(process.cwd(), '.playwright-artifacts');
+const artifactsDir = process.env.READ_WEB_ARTIFACTS_DIR || path.join(process.cwd(), '.playwright-artifacts');
 const screenshotPath = path.join(artifactsDir, 'read-web-playback.png');
 const chunkScreenshotPath = path.join(artifactsDir, 'read-web-chunk-playback.png');
 const reportPath = path.join(artifactsDir, 'read-web-playback-report.json');
@@ -47,6 +47,9 @@ async function main() {
     pageErrors.push(error.message);
   });
 
+  if (process.env.READ_WEB_BROWSER_FIXTURE) {
+    await require(path.resolve(process.env.READ_WEB_BROWSER_FIXTURE))(page.context());
+  }
   await page.goto(targetUrl, { waitUntil: 'load', timeout: 30000 });
   await page.waitForFunction(
     () => typeof window.processTranscript === 'function',
@@ -60,10 +63,7 @@ async function main() {
   await page.waitForFunction(
     () => {
       const events = window.AnnotationGenerationDiagnostics?.getEvents?.() || [];
-      return events.some((entry) => (
-        entry.event === 'app.restore_session_complete'
-        || entry.event === 'app.restore_session_rejected'
-      ));
+      return events.some((entry) => entry.event === 'app.startup_complete');
     },
     null,
     { timeout: 15000 }
@@ -118,6 +118,7 @@ async function main() {
   }, makeSilentWavDataUrl(6));
 
   await page.waitForSelector('#word-1', { timeout: 10000 });
+  await page.locator('#reader-settings > summary').click();
   await page.click('#highlight-mode-btn');
   await page.click('#highlight-mode-btn');
   await page.waitForFunction(

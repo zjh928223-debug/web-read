@@ -1,31 +1,14 @@
-import { recordBestEffortFailure } from '../services/runtime/best-effort.js';
 
 export function startSessionRuntime(deps = {}) {
   const state = deps.state || {};
-  const namespace = deps.namespace || {};
   const localStorageApi = deps.localStorageApi;
   const documentObject = deps.documentObject;
-  const windowObject = deps.windowObject;
 
   let disposed = false;
-  let restoreChunkModeTimer = null;
   const ready = deps.initDB().then(async () => {
     if (disposed) return;
     await deps.clearPersistedReaderContentOnStartup();
     if (disposed) return;
-
-    const savedManualStates = localStorageApi.getItem('st.manualChunkStates');
-    if (savedManualStates) {
-      try {
-        state.manualChunkStates = JSON.parse(savedManualStates);
-      } catch (error) {
-        recordBestEffortFailure(error, {
-          operationId: 'session-manual-chunk-state-restore',
-          reason: 'invalid optional manual chunk preferences fall back to a fresh in-memory map'
-        });
-        state.manualChunkStates = {};
-      }
-    }
 
     const savedCnMode = localStorageApi.getItem('st.chunkCnMode');
     if (savedCnMode === 'focus') {
@@ -50,22 +33,15 @@ export function startSessionRuntime(deps = {}) {
       if (state.isChunkMode && deps.transcriptContainer) deps.transcriptContainer.classList.add('cn-mode-focus');
     }
 
-    const savedChunkMode = localStorageApi.getItem('st.isChunkMode') === 'true';
     const savedChunkVisible = localStorageApi.getItem('st.chunkCnVisible');
     if (savedChunkVisible !== null) state.chunkCnVisible = savedChunkVisible === 'true';
     const savedHoldMode = localStorageApi.getItem('st.chunkCnHoldMode');
     if (savedHoldMode !== null) state.chunkCnHoldMode = savedHoldMode === 'true';
     deps.updateChunkCnHoldBtn();
 
-    await deps.restoreSession();
-    if (disposed) return;
-
-    if (savedChunkMode) {
-      restoreChunkModeTimer = setTimeout(() => {
-        restoreChunkModeTimer = null;
-        if (disposed) return;
-        if (state.chunkItems.length > 0 && state.hasAiChunkData) windowObject.toggleChunkMode(true);
-      }, 500);
+    // Restore personal settings only. Saved material is opened by an explicit user action.
+    if (typeof deps.emitAnnotationDiagnostics === 'function') {
+      deps.emitAnnotationDiagnostics('app.startup_complete', { contentRestored: false });
     }
   });
 
@@ -74,8 +50,6 @@ export function startSessionRuntime(deps = {}) {
     dispose() {
       if (disposed) return;
       disposed = true;
-      if (restoreChunkModeTimer !== null) clearTimeout(restoreChunkModeTimer);
-      restoreChunkModeTimer = null;
     }
   };
 }

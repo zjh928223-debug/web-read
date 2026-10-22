@@ -3,7 +3,7 @@ const path = require('path');
 const { chromium } = require('playwright');
 
 const targetUrl = process.env.READ_WEB_URL || process.env.READ26_URL || 'http://127.0.0.1:4173/';
-const artifactsDir = path.join(process.cwd(), '.playwright-artifacts');
+const artifactsDir = process.env.READ_WEB_ARTIFACTS_DIR || path.join(process.cwd(), '.playwright-artifacts');
 const screenshotPath = path.join(artifactsDir, 'read-web-interactions.png');
 const reportPath = path.join(artifactsDir, 'read-web-interactions-report.json');
 
@@ -37,7 +37,7 @@ async function main() {
   const consoleErrors = [];
   const pageErrors = [];
   const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, acceptDownloads: true });
+  const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, acceptDownloads: true, serviceWorkers: 'block' });
 
   page.on('console', (message) => {
     if (message.type() === 'error') consoleErrors.push(message.text());
@@ -46,6 +46,9 @@ async function main() {
     pageErrors.push(error.message);
   });
 
+  if (process.env.READ_WEB_BROWSER_FIXTURE) {
+    await require(path.resolve(process.env.READ_WEB_BROWSER_FIXTURE))(page.context());
+  }
   await page.goto(targetUrl, { waitUntil: 'load', timeout: 30000 });
   await page.waitForFunction(
     () => typeof window.processTranscript === 'function',
@@ -56,6 +59,12 @@ async function main() {
     window.__interactionRuntimeState = (await import('/src/composables/runtime-state-facade.js')).runtimeState;
     window.__interactionStores = (await import('/src/pinia-stores/runtime-registry.js')).requirePiniaRuntimeStores();
   });
+  await page.waitForFunction(
+    () => (window.AnnotationGenerationDiagnostics?.getEvents?.() || [])
+      .some((entry) => entry.event === 'app.startup_complete'),
+    null,
+    { timeout: 15000 }
+  );
 
   const annotationImportUi = await page.evaluate(() => ({
     hasLightweightExportButton: !!document.getElementById('btn-export-annotation-lightweight'),
@@ -149,6 +158,7 @@ async function main() {
     };
   });
 
+  await page.locator('#reader-settings > summary').click();
   await page.click('#hotkey-backward-input');
   const hotkeyWaitingUi = await page.evaluate(() => {
     const input = document.getElementById('hotkey-backward-input');
@@ -467,7 +477,7 @@ async function main() {
       && pageErrors.length === 0
       && annotationImportUi.hasLightweightExportButton === false
       && annotationImportUi.hasLightweightImportButton === false
-      && annotationImportUi.hasLightweightInput === true
+      && annotationImportUi.hasLightweightInput === false
       && annotationImportUi.hasGeneratedButton === false
       && annotationImportUi.hasGeneratedInput === false
       && annotationImportUi.hasPromptButton === false

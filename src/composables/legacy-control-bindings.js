@@ -55,7 +55,3 @@ export function bindLegacyControlHandlers() {
 }
 
 bindLegacyControlHandlers()
-
-window.__legacyControlBindings = {
-  bind: bindLegacyControlHandlers
-}

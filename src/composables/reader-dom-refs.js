@@ -32,6 +32,8 @@ export function collectReaderDomRefs(doc = document) {
     hotkeyAnnotationBubbleInput: doc.getElementById('hotkey-annotation-bubble-input'),
     hotkeyBackwardInput: doc.getElementById('hotkey-backward-input'),
     hotkeyForwardInput: doc.getElementById('hotkey-forward-input'),
+    hotkeyPrevAnnotationWordInput: doc.getElementById('hotkey-prev-annotation-word-input'),
+    hotkeyNextAnnotationWordInput: doc.getElementById('hotkey-next-annotation-word-input'),
     hotkeyChunkCnInput: doc.getElementById('hotkey-chunk-cn-input'),
     hotkeyChunkShadowInput: doc.getElementById('hotkey-chunk-shadow-input'),
     mainAppArea,
@@ -39,10 +41,7 @@ export function collectReaderDomRefs(doc = document) {
     importMarksInput: doc.getElementById('import-marks-file'),
     exportJsonBtn: doc.getElementById('export-json'),
     exportMdAllBtn: doc.getElementById('export-md-all'),
-    importAnnotationLightweightInput: doc.getElementById('import-annotation-lightweight-file'),
     annotationBackfillAiBtn: doc.getElementById('btn-annotation-backfill-ai'),
-    previewVocabularyBtn: doc.getElementById('btn-preview-vocabulary'),
-    togglePreviewVocabularyBtn: doc.getElementById('btn-toggle-preview-vocabulary'),
     settleArticleVocabularyBtn: doc.getElementById('btn-settle-article-vocabulary')
   };
 }

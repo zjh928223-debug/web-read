@@ -1,7 +1,6 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import App from './App.vue'
-import './styles/workflow-ui.css'
 import { applyNativeControlStyles } from './lib/native-control-styles.js'
 import { applyNativeInputStyles } from './lib/native-input-styles.js'
 import { flushPendingUiNotifications } from './composables/ui-facades.js'
@@ -18,7 +17,6 @@ import './utils/chunk-matching.js'
 import './utils/vocab-matching.js'
 import './composables/transcript-state.js'
 import './composables/chunk-state.js'
-import './composables/cloze-state.js'
 import './composables/playback-state.js'
 import './composables/file-input-bindings.js'
 import './composables/annotation-bubble.js'
@@ -33,7 +31,6 @@ import { useThemeStore } from './pinia-stores/theme.js'
 import { useUiStore } from './pinia-stores/ui.js'
 import { useAudioStore } from './pinia-stores/audio.js'
 import { useMarksStore } from './pinia-stores/marks.js'
-import { useClozeStore } from './pinia-stores/cloze.js'
 import { useTranscriptStore } from './pinia-stores/transcript.js'
 import { useChunkStore } from './pinia-stores/chunk.js'
 import { useAnnotationStore } from './pinia-stores/annotation.js'
@@ -47,14 +44,13 @@ const themeStore = useThemeStore(pinia)
 const uiStore = useUiStore(pinia)
 const audioStore = useAudioStore(pinia)
 const marksStore = useMarksStore(pinia)
-const clozeStore = useClozeStore(pinia)
 const transcriptStore = useTranscriptStore(pinia)
 const chunkStore = useChunkStore(pinia)
 const annotationStore = useAnnotationStore(pinia)
 
 configurePiniaRuntimeStores({
   theme: themeStore, ui: uiStore, audio: audioStore, marks: marksStore,
-  cloze: clozeStore, transcript: transcriptStore, chunk: chunkStore,
+  transcript: transcriptStore, chunk: chunkStore,
   annotation: annotationStore
 })
 
@@ -64,9 +60,6 @@ if (window.__transcriptState && typeof window.__transcriptState.bindPiniaStore =
 }
 if (window.__chunkState && typeof window.__chunkState.bindPiniaStore === 'function') {
   window.__chunkState.bindPiniaStore(chunkStore)
-}
-if (window.__clozeState && typeof window.__clozeState.bindPiniaStore === 'function') {
-  window.__clozeState.bindPiniaStore(clozeStore)
 }
 
 console.log('[vue] runtime adapters bound to Pinia')
@@ -83,8 +76,6 @@ const readerToolbarButtonIds = [
   'export-md-all',
   'toggle-chunk-btn',
   'btn-annotation-backfill-ai',
-  'btn-preview-vocabulary',
-  'btn-toggle-preview-vocabulary',
   'btn-settle-article-vocabulary',
   'btn-chunk-focus',
 ]
@@ -93,7 +84,7 @@ readerToolbarButtonIds.forEach((id) => {
   applyNativeControlStyles(document.getElementById(id), {
     owner: 'reader',
     variant: 'outline',
-    size: 'sm',
+    size: 'default',
   })
 })
 
@@ -101,19 +92,19 @@ document.querySelectorAll('.speed-btn[data-speed]').forEach((button) => {
   applyNativeControlStyles(button, {
     owner: 'reader',
     variant: 'outline',
-    size: 'sm',
+    size: 'default',
   })
 })
 
 applyNativeControlStyles(document.getElementById('btn-chunk-cn-hold'), {
   owner: 'reader',
   variant: 'outline',
-  size: 'xs',
+  size: 'default',
 })
 applyNativeControlStyles(document.getElementById('btn-chunk-style'), {
   owner: 'reader',
   variant: 'outline',
-  size: 'xs',
+  size: 'default',
 })
 
 const readerHotkeyInputIds = [
@@ -132,13 +123,13 @@ readerHotkeyInputIds.forEach((id) => {
 applyNativeControlStyles(document.getElementById('theme-toggle'), {
   owner: 'reader',
   variant: 'outline',
-  size: 'icon-sm',
+  size: 'icon',
   className: 'rw:rounded-full rw:p-0',
 })
 applyNativeControlStyles(document.getElementById('theme-custom-reset'), {
   owner: 'reader',
   variant: 'outline',
-  size: 'sm',
+  size: 'default',
   className: 'rw:w-full rw:mt-1',
 })
 

@@ -1,3 +1,4 @@
+  var activeKeyboardController = null;
   function isInputLikeTarget(target) {
     var tagName = target && target.tagName ? target.tagName : '';
     if (tagName === 'TEXTAREA') return true;
@@ -7,6 +8,13 @@
   }
 
   function init(deps) {
+    if (activeKeyboardController) activeKeyboardController.dispose();
+    var cleanups = [];
+    var disposed = false;
+    function listen(target, type, handler, options) {
+      target.addEventListener(type, handler, options);
+      cleanups.push(function () { target.removeEventListener(type, handler, options); });
+    }
     var audioPlayer = (window.__mediaSource && typeof window.__mediaSource.createActiveMediaProxy === 'function')
       ? window.__mediaSource.createActiveMediaProxy(deps.audioPlayer)
       : deps.audioPlayer;
@@ -25,6 +33,8 @@
     var getChunkShadowKey = typeof deps.getChunkShadowKey === 'function' ? deps.getChunkShadowKey : function () { return chunkShadowKey; };
     var getBackwardKey = typeof deps.getBackwardKey === 'function' ? deps.getBackwardKey : function () { return backwardKey; };
     var getForwardKey = typeof deps.getForwardKey === 'function' ? deps.getForwardKey : function () { return forwardKey; };
+    var getPrevAnnotationWordKey = deps.getPrevAnnotationWordKey || function () { return '['; };
+    var getNextAnnotationWordKey = deps.getNextAnnotationWordKey || function () { return ']'; };
     var toggleMarkCurrent = deps.toggleMarkCurrent;
     var toggleAnnotationBubble = deps.toggleAnnotationBubble;
     var beginHoldChunkCn = deps.beginHoldChunkCn;
@@ -38,6 +48,8 @@
     var hotkeyAnnotationBubbleInput = deps.hotkeyAnnotationBubbleInput;
     var hotkeyBackwardInput = deps.hotkeyBackwardInput;
     var hotkeyForwardInput = deps.hotkeyForwardInput;
+    var hotkeyPrevAnnotationWordInput = deps.hotkeyPrevAnnotationWordInput;
+    var hotkeyNextAnnotationWordInput = deps.hotkeyNextAnnotationWordInput;
     var hotkeyChunkCnInput = deps.hotkeyChunkCnInput;
     var hotkeyChunkShadowInput = deps.hotkeyChunkShadowInput;
     var highlightColorInput = deps.highlightColorInput;
@@ -46,8 +58,10 @@
     var themeControlsEl = deps.themeControlsEl;
 
     // === Main keyboard handler ===
-    document.addEventListener('keydown', function (e) {
+    listen(document, 'keydown', function (e) {
       if (isInputLikeTargetFn(e.target)) return;
+      if (activeHotkeyInput || (deps.isReaderShortcutEventAllowed && !deps.isReaderShortcutEventAllowed(e, document))) return;
+      if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       var key = e.key;
       var lowerKey = key.toLowerCase();
@@ -58,7 +72,7 @@
       }
       else if (lowerKey === getMarkKey()) {
         e.preventDefault();
-        Promise.resolve(toggleMarkCurrent()).catch(function (error) {
+        Promise.resolve(toggleMarkCurrent(audioPlayer)).catch(function (error) {
           if (typeof deps.onMarkError === 'function') deps.onMarkError(error);
         });
       }
@@ -86,10 +100,21 @@
         e.preventDefault();
         handleForwardClick();
       }
+      else if (key === getPrevAnnotationWordKey() || lowerKey === getPrevAnnotationWordKey()) {
+        e.preventDefault();
+        if (deps.navigateAnnotationWord) deps.navigateAnnotationWord(-1);
+      }
+      else if (key === getNextAnnotationWordKey() || lowerKey === getNextAnnotationWordKey()) {
+        e.preventDefault();
+        if (deps.navigateAnnotationWord) deps.navigateAnnotationWord(1);
+      }
+      else if (key === 'Escape' && deps.closeAnnotationNavigation) {
+        deps.closeAnnotationNavigation();
+      }
     });
 
     // === Keyup (chunk hold mode) ===
-    addEventListener('keyup', function (e) {
+    listen(window, 'keyup', function (e) {
       if (isInputLikeTargetFn(e.target)) return;
       if (!isChunkMode()) return;
       var key = e.key;
@@ -100,19 +125,19 @@
     });
 
     // === Blur (chunk hold mode) ===
-    window.addEventListener('blur', function () {
+    listen(window, 'blur', function () {
       if (chunkCnHoldMode()) endHoldChunkCn();
     });
 
     // === Escape handler ===
-    document.addEventListener('keydown', function (e) {
+    listen(document, 'keydown', function (e) {
       if (e.key === 'Escape') {
         closeCustomThemePanel();
       }
     });
 
     // === Mousedown (close panels on outside click) ===
-    document.addEventListener('mousedown', function (e) {
+    listen(document, 'mousedown', function (e) {
       if (themeCustomPanel && !themeCustomPanel.hidden && themeControlsEl && !themeControlsEl.contains(e.target)) {
         closeCustomThemePanel();
       }
@@ -120,13 +145,13 @@
 
     // === Highlight color inputs ===
     if (highlightColorInput) {
-      highlightColorInput.addEventListener('input', function (e) {
+      listen(highlightColorInput, 'input', function (e) {
         document.documentElement.style.setProperty('--word-highlight-bg', e.target.value);
         localStorage.setItem('highlightColor', e.target.value);
       });
     }
     if (sentenceColorInput) {
-      sentenceColorInput.addEventListener('input', function (e) {
+      listen(sentenceColorInput, 'input', function (e) {
         document.documentElement.style.setProperty('--sentence-highlight-bg', e.target.value);
         localStorage.setItem('sentenceColor', e.target.value);
       });
@@ -173,6 +198,14 @@
     var activeHotkeyInput = null;
 
     function applyHotkeyValue(inputEl, validKey) {
+      if (inputEl === hotkeyPrevAnnotationWordInput) {
+        if (deps.setPrevAnnotationWordKey) deps.setPrevAnnotationWordKey(validKey);
+        persistHotkey('st.prevAnnotationWordKey', validKey);
+      }
+      if (inputEl === hotkeyNextAnnotationWordInput) {
+        if (deps.setNextAnnotationWordKey) deps.setNextAnnotationWordKey(validKey);
+        persistHotkey('st.nextAnnotationWordKey', validKey);
+      }
       if (inputEl === hotkeyInput) {
         markKey = validKey;
         if (typeof setMarkKey === 'function') setMarkKey(validKey);
@@ -231,16 +264,26 @@
     }
 
     function commitHotkeyInput(inputEl, validKey) {
+      if (inputEl === hotkeyPrevAnnotationWordInput || inputEl === hotkeyNextAnnotationWordInput) {
+        var otherNavigationKey = inputEl === hotkeyPrevAnnotationWordInput ? getNextAnnotationWordKey() : getPrevAnnotationWordKey();
+        var reserved = [getMarkKey(), getAnnotationBubbleKey(), getChunkCnKey(), getChunkShadowKey(), getBackwardKey(), getForwardKey(), otherNavigationKey, ' ', 'Escape', 'Enter'];
+        if (reserved.some(function (key) { return String(key).toLowerCase() === validKey.toLowerCase(); })) {
+          var status = document.getElementById('annotation-navigation-status');
+          if (status) status.textContent = '快捷键与现有操作冲突，请换一个按键';
+          return;
+        }
+      }
       setHotkeyDisplay(inputEl, validKey);
       applyHotkeyValue(inputEl, validKey);
       clearHotkeyWaiting(inputEl);
       returnFocusToReader(inputEl);
     }
 
-    var hotkeyInputs = [hotkeyInput, hotkeyAnnotationBubbleInput, hotkeyBackwardInput, hotkeyForwardInput, hotkeyChunkCnInput, hotkeyChunkShadowInput].filter(function (el) { return !!el; });
+    var hotkeyInputs = [hotkeyInput, hotkeyAnnotationBubbleInput, hotkeyBackwardInput, hotkeyForwardInput, hotkeyChunkCnInput, hotkeyChunkShadowInput, hotkeyPrevAnnotationWordInput, hotkeyNextAnnotationWordInput].filter(function (el) { return !!el; });
 
-    document.addEventListener('keydown', function (e) {
+    listen(document, 'keydown', function (e) {
       if (!activeHotkeyInput) return;
+      if (e.isComposing || e.keyCode === 229) return;
       e.preventDefault();
       e.stopPropagation();
       if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
@@ -269,32 +312,43 @@
       if (initialValue && initialValue !== rawInitialValue) {
         applyHotkeyValue(inp, initialValue);
       }
-      inp.addEventListener('click', function (e) {
+      listen(inp, 'click', function (e) {
         e.preventDefault();
         e.stopPropagation();
         armHotkeyInput(inp);
       });
-      inp.addEventListener('focus', function () {
+      listen(inp, 'focus', function () {
         armHotkeyInput(inp);
       });
-      inp.addEventListener('keydown', function (e) {
+      listen(inp, 'keydown', function (e) {
         e.preventDefault();
         e.stopPropagation();
       });
-      inp.addEventListener('beforeinput', function (e) {
+      listen(inp, 'beforeinput', function (e) {
         e.preventDefault();
       });
-      inp.addEventListener('input', function () {
+      listen(inp, 'input', function () {
         inp.value = activeHotkeyInput === inp ? '按键' : (inp.dataset.hotkeyValue || '');
       });
-      inp.addEventListener('blur', function () {
+      listen(inp, 'blur', function () {
         setTimeout(function () {
+          if (disposed) return;
           if (activeHotkeyInput === inp && document.activeElement !== inp) {
             clearHotkeyWaiting(inp);
           }
         }, 0);
       });
     });
+    activeKeyboardController = {
+      dispose: function () {
+        if (disposed) return;
+        disposed = true;
+        clearHotkeyWaiting(activeHotkeyInput);
+        cleanups.splice(0).forEach(function (cleanup) { cleanup(); });
+        if (chunkCnHoldMode()) endHoldChunkCn();
+      }
+    };
+    return activeKeyboardController;
   }
 
   window.__keyboardModule = {

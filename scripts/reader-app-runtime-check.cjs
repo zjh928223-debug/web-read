@@ -129,14 +129,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
       "import { configureReaderPublicFacades } from './reader-public-facades.js'\n",
       "const configureReaderPublicFacades = globalThis.__readerAppRuntimeTest.configureReaderPublicFacades;\n"
     )
-    .replace(
-      "import { createOptionalLocalDictionaryClient } from '../dictionary/ecdict/browser/optional-local-dictionary-client.mjs'\n",
-      "const createOptionalLocalDictionaryClient = globalThis.__readerAppRuntimeTest.createOptionalLocalDictionaryClient;\n"
-    )
-    .replace(
-      "import { createDictionaryEnrichmentAdapter } from '../dictionary/ecdict/application/dictionary-enrichment-adapter.mjs'\n",
-      "const createDictionaryEnrichmentAdapter = globalThis.__readerAppRuntimeTest.createDictionaryEnrichmentAdapter;\n"
-    )
+
     .replace(
       "import { createLifecycleScope } from '../services/runtime/lifecycle-scope.js'\n",
       "const createLifecycleScope = globalThis.__readerAppRuntimeTest.createLifecycleScope;\n"
@@ -177,12 +170,8 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
         dispose() { calls.disposed.push('downloader'); }
       };
     },
-    createOptionalLocalDictionaryClient() {
-      return {};
-    },
-    createDictionaryEnrichmentAdapter() {
-      return {};
-    },
+
+
     initGlassEffects(deps) {
       calls.glass.push(deps);
       return () => calls.disposed.push('glass');
@@ -249,8 +238,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     importAnnotationLightweightBtn: { id: 'import-annotation' },
     importAnnotationLightweightInput: { id: 'import-annotation-input' },
     annotationBackfillAiBtn: { id: 'annotation-backfill-ai' },
-    previewVocabularyBtn: { id: 'preview-vocabulary' },
-    togglePreviewVocabularyBtn: { id: 'toggle-preview-vocabulary' },
     settleArticleVocabularyBtn: { id: 'settle-article-vocabulary' },
     exportJsonBtn: { id: 'export-json' },
     exportMdAllBtn: { id: 'export-md' },
@@ -273,18 +260,17 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.equal(calls.glass.length, 1);
   assert.equal(calls.publicFacades.length, 1);
 
-  calls.annotationLightweight[0].refreshAfterImport();
-  assert.equal(calls.rendered, 'chunk');
-  assert.equal(calls.forcedTime, 12.5);
+  assert.deepEqual(Object.keys(calls.annotationLightweight[0]).sort(), ['exportButton', 'showError']);
+  assert.equal(calls.annotationLightweight[0].exportButton, deps.exportAnnotationLightweightBtn);
+  assert.equal(calls.annotationLightweight[0].showError, deps.showError);
   calls.annotationBackfill[0].refreshAfterImport();
   assert.equal(calls.rendered, 'chunk');
+  assert.equal(calls.forcedTime, 12.5);
   assert.equal(calls.annotationBackfill[0].client, globalThis.__readerAppRuntimeTest.youtubeWorkflowClient);
-  assert.equal(calls.vocabularyPreview[0].previewButton, deps.previewVocabularyBtn);
-  assert.equal(calls.vocabularyPreview[0].togglePreviewButton, deps.togglePreviewVocabularyBtn);
   assert.equal(calls.vocabularyPreview[0].settleButton, deps.settleArticleVocabularyBtn);
   assert.equal(calls.vocabularyPreview[0].client, globalThis.__readerAppRuntimeTest.youtubeWorkflowClient);
   deps.chunkState.isChunkMode = false;
-  calls.annotationLightweight[0].refreshAfterImport();
+  calls.annotationBackfill[0].refreshAfterImport();
   assert.equal(calls.rendered, 'transcript');
 
   assert.deepEqual(calls.exports[0].getSegments(), [{ id: 1 }]);

@@ -5,7 +5,6 @@ import {
   LocalDictionaryClientError,
   createLocalDictionaryClient,
 } from '../browser/local-dictionary-client.mjs';
-import { createDictionaryEnrichmentAdapter } from '../application/dictionary-enrichment-adapter.mjs';
 import { formatDictionarySuggestion } from '../browser/dictionary-suggestion-view.mjs';
 
 function dictionaryEntry(word, overrides = {}) {
@@ -117,102 +116,8 @@ test('LocalDictionaryClient rejects malformed nested lookup entries', async () =
   );
 });
 
-test('DictionaryEnrichmentAdapter deduplicates queries and limits concurrency', async () => {
-  const calls = [];
-  let active = 0;
-  let maxActive = 0;
-  const client = {
-    async lookup(query) {
-      calls.push(query);
-      active += 1;
-      maxActive = Math.max(maxActive, active);
-      await new Promise((resolve) => setTimeout(resolve, 5));
-      active -= 1;
-      return lookupResult(query);
-    },
-  };
-  const adapter = createDictionaryEnrichmentAdapter({ client, concurrency: 2 });
-  const source = [
-    { markedText: 'Left', meaning: 'existing' },
-    { markedText: 'left', meaning: 'existing duplicate' },
-    { markedText: 'better' },
-    { markedText: 'run into' },
-  ];
-  const enriched = await adapter.enrichCandidates(source);
 
-  assert.deepEqual(calls.sort(), ['Left', 'better', 'run into']);
-  assert.ok(maxActive <= 2);
-  assert.equal(enriched[0].meaning, 'existing');
-  assert.equal(enriched[0].dictionarySuggestion.directMatch.word, 'Left');
-  assert.equal(enriched[1].dictionarySuggestion, enriched[0].dictionarySuggestion);
-  assert.notEqual(enriched[0], source[0]);
-});
 
-test('DictionaryEnrichmentAdapter preserves ambiguity and isolates a failed query', async () => {
-  const ambiguous = lookupResult('better', {
-    directMatch: dictionaryEntry('better', { translation: '更好的' }),
-    normalizedCandidates: [
-      dictionaryEntry('bet-ter', { translation: '较好的' }),
-      dictionaryEntry('better', { translation: '更好的' }),
-    ],
-    lemmaCandidates: [
-      { lemma: 'good', entry: dictionaryEntry('good', { translation: '好的' }) },
-      { lemma: 'well', entry: dictionaryEntry('well', { translation: '很好地' }) },
-    ],
-  });
-  const adapter = createDictionaryEnrichmentAdapter({
-    client: {
-      async lookup(query) {
-        if (query === 'broken') throw new Error('offline');
-        return query === 'better'
-          ? ambiguous
-          : lookupResult(query, {
-            matchedBy: 'none',
-            directMatch: null,
-            normalizedCandidates: [],
-            lemmaCandidates: [],
-          });
-      },
-    },
-  });
-
-  const enriched = await adapter.enrichCandidates([
-    { markedText: 'better' },
-    { markedText: 'take for granted' },
-    { markedText: 'broken' },
-  ]);
-  assert.equal(enriched[0].dictionarySuggestion.directMatch.word, 'better');
-  assert.equal(enriched[0].dictionarySuggestion.normalizedCandidates.length, 2);
-  assert.deepEqual(
-    enriched[0].dictionarySuggestion.lemmaCandidates.map(({ lemma }) => lemma),
-    ['good', 'well'],
-  );
-  assert.equal(enriched[1].dictionarySuggestion.matchedBy, 'none');
-  assert.equal(enriched[2].dictionarySuggestion.available, false);
-  assert.equal(enriched[2].dictionarySuggestion.errorCode, 'ECDICT_REQUEST_FAILED');
-});
-
-test('one malformed DTO does not affect other preview candidates', async () => {
-  const client = createLocalDictionaryClient({
-    fetchImpl: async (url) => {
-      const query = new URL(String(url), 'http://localhost').searchParams.get('q');
-      return jsonResponse(query === 'broken'
-        ? lookupResult(query, {
-          normalizedCandidates: [{ ...dictionaryEntry('broken'), tags: [123] }],
-        })
-        : lookupResult(query));
-    },
-  });
-  const adapter = createDictionaryEnrichmentAdapter({ client });
-  const enriched = await adapter.enrichCandidates([
-    { markedText: 'healthy' },
-    { markedText: 'broken' },
-  ]);
-  assert.equal(enriched[0].dictionarySuggestion.available, true);
-  assert.equal(enriched[0].dictionarySuggestion.directMatch.word, 'healthy');
-  assert.equal(enriched[1].dictionarySuggestion.available, false);
-  assert.equal(enriched[1].dictionarySuggestion.errorCode, 'ECDICT_INVALID_RESPONSE');
-});
 
 test('dictionary suggestion text labels exact and ambiguous results without inventing meaning', () => {
   assert.equal(

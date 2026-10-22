@@ -58,7 +58,6 @@ function assertNoStateProperty(field) {
 
   ['chunkItems', ['chunkState.chunkItems']],
   ['hasAiChunkData', ['chunkState.hasAiChunkData']],
-  ['manualChunkStates', ['chunkState.manualChunkStates']],
   ['isChunkMode', ['chunkState.isChunkMode']],
   ['chunkCnVisible', ['chunkState.chunkCnVisible']],
   ['chunkCnHoldMode', ['chunkState.chunkCnHoldMode']],
@@ -68,9 +67,6 @@ function assertNoStateProperty(field) {
   ['lastAiPrevTapChunkIndex', ['chunkState.lastAiPrevTapChunkIndex']],
   ['lastAiPrevTapAt', ['chunkState.lastAiPrevTapAt']],
 
-  ['hasClozeData', ['clozeState.hasClozeData']],
-  ['clozeItems', ['clozeState.clozeItems']],
-  ['clozeAnswerState', ['clozeState.clozeAnswerState']],
 
   ['autoFollow', ['playbackState.autoFollow']],
   ['userScrollSuppress', ['playbackState.userScrollSuppress']],
@@ -83,6 +79,10 @@ function assertNoStateProperty(field) {
 ].forEach(([field, fragments]) => assertFacade(field, fragments));
 
 [
+  'manualChunkStates',
+  'hasClozeData',
+  'clozeItems',
+  'clozeAnswerState',
   'chunkNotesFileHandle',
   'chunkNotesFileHandleAudioKey',
   'chunkNotesFileName',
@@ -126,7 +126,7 @@ assert.ok(assemblySource.includes('var bootstrapRuntime = runtimeContext.bootstr
 assert.ok(contextSource.includes("import { initReaderBootstrapRuntime } from './reader-bootstrap-runtime.js';"));
 assert.ok(featureDepsSource.includes('transcriptState: bootstrap.transcriptState'));
 assert.ok(featureDepsSource.includes('chunkState: bootstrap.chunkState'));
-assert.ok(featureDepsSource.includes('clozeState: bootstrap.clozeState'));
+assert.equal(featureDepsSource.includes('clozeState'), false, 'retired Cloze must not flow through feature deps');
 assert.ok(featureDepsSource.includes('playbackState: bootstrap.playbackState'));
 assert.ok(assemblySource.includes("import { runtimeState } from './runtime-state-facade.js';"));
 assert.ok(assemblySource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"));

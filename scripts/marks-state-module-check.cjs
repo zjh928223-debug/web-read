@@ -1,6 +1,8 @@
 ﻿const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
+const { pathToFileURL } = require('node:url');
 
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
@@ -131,8 +133,13 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'marks state module should export initMarksState'
   );
 
-  const encodedSource = Buffer.from(moduleSource, 'utf8').toString('base64');
-  const { initMarksState } = await import(`data:text/javascript;base64,${encodedSource}#${Date.now()}`);
+  const vueUrl = pathToFileURL(path.join(path.dirname(require.resolve('vue/package.json')), 'index.mjs'));
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'marks-state-module-check-'));
+  const stagedPath = path.join(tempDir, 'marks-state-module.mjs');
+  const stagedSource = moduleSource.replace(/from 'vue'/g, `from '${vueUrl.href}'`);
+  fs.writeFileSync(stagedPath, stagedSource);
+  try {
+  const { initMarksState } = await import(pathToFileURL(stagedPath).href);
   const api = initMarksState();
   const mapRef = api.markedMap;
 
@@ -154,6 +161,30 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   const seededMap = new Map([[3, { globalIndex: 3, word: 'three' }]]);
   const seededApi = initMarksState(seededMap);
   assert.deepEqual(seededApi.markedMap.get(3), { globalIndex: 3, word: 'three' });
+  assert.equal(seededApi.markedMap.get(3), seededMap.get(3), 'mark values must retain their object identity');
+
+  const { effect, stop } = await import(vueUrl.href);
+  const observed = [];
+  const runner = effect(() => observed.push(mapRef.has(7)));
+  try {
+    const mark = { globalIndex: 7, word: 'seven' };
+    mapRef.set(7, mark);
+    assert.equal(api.markedMap.get(7), mark, 'reactivity must not wrap mark values');
+    assert.equal(observed.at(-1), true, 'a newly imported mark must notify Vue consumers');
+    mapRef.delete(7);
+    assert.equal(observed.at(-1), false, 'removing a mark must notify Vue consumers');
+    mapRef.set(7, mark);
+    mapRef.clear();
+    assert.equal(observed.at(-1), false, 'clearing marks must notify Vue consumers');
+    assert.deepEqual(observed, [false, true, false, true, false]);
+    assert.equal(api.markedMap, mapRef, 'notifications must retain the existing Map reference');
+  } finally {
+    stop(runner);
+  }
+  } finally {
+    fs.unlinkSync(stagedPath);
+    fs.rmdirSync(tempDir);
+  }
 }
 
 main().then(() => {

@@ -27,6 +27,8 @@
     let bodyEl = null;
     let visible = false;
     let currentAnnotation = null;
+    let emptyMessage = EMPTY_MESSAGE;
+    const hideListeners = new Set();
     let frame = loadFrame();
     let dragState = null;
     let resizeState = null;
@@ -169,6 +171,7 @@
     }
 
     function setVisible(nextVisible) {
+        const wasVisible = visible;
         visible = !!nextVisible;
         ensureMounted();
         rootEl.hidden = !visible;
@@ -177,6 +180,7 @@
             clampAndApplyFrame();
             render();
         }
+        if (wasVisible && !visible) hideListeners.forEach(listener => listener());
     }
 
     function show() {
@@ -211,8 +215,21 @@
 
     function clearAnnotation() {
         currentAnnotation = null;
+        emptyMessage = EMPTY_MESSAGE;
         ensureMounted();
         if (visible) render();
+    }
+
+    function setStatus(message) {
+        currentAnnotation = null;
+        emptyMessage = String(message || EMPTY_MESSAGE);
+        ensureMounted();
+        if (visible) render();
+    }
+
+    function onHide(listener) {
+        hideListeners.add(listener);
+        return () => hideListeners.delete(listener);
     }
 
     function render() {
@@ -222,7 +239,7 @@
         if (!currentAnnotation) {
             const empty = document.createElement('div');
             empty.className = 'annotation-bubble__empty';
-            empty.textContent = EMPTY_MESSAGE;
+            empty.textContent = emptyMessage;
             bodyEl.appendChild(empty);
             return;
         }
@@ -392,7 +409,9 @@
         toggle,
         isVisible,
         setAnnotation,
-        clearAnnotation
+        clearAnnotation,
+        setStatus,
+        onHide
     };
 
     global.AnnotationBubble = api;

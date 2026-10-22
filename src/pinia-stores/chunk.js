@@ -10,7 +10,6 @@ export const useChunkStore = defineStore('chunk', () => {
   const chunkCNHoldMode = ref(true)
   const chunkFocusMode = ref(true)
   const chunkShadowVisible = ref(true)
-  const manualChunkStates = ref({})
   const isHoldingChunkCn = ref(false)
   const holdPrevChunkCnVisible = ref(null)
   const lastAiPrevTapChunkIndex = ref(-1)
@@ -25,7 +24,6 @@ export const useChunkStore = defineStore('chunk', () => {
     chunkCNHoldMode,
     chunkFocusMode,
     chunkShadowVisible,
-    manualChunkStates,
     isHoldingChunkCn,
     holdPrevChunkCnVisible,
     lastAiPrevTapChunkIndex,

@@ -5,7 +5,9 @@ export function initHotkeyState(initial = {}) {
         chunkCnKey: initial.chunkCnKey || 'c',
         chunkShadowKey: initial.chunkShadowKey || 's',
         backwardKey: initial.backwardKey || 'ArrowLeft',
-        forwardKey: initial.forwardKey || 'ArrowRight'
+        forwardKey: initial.forwardKey || 'ArrowRight',
+        prevAnnotationWordKey: initial.prevAnnotationWordKey || '[',
+        nextAnnotationWordKey: initial.nextAnnotationWordKey || ']'
     };
 
     function normalize(value, fallback) {
@@ -19,11 +21,15 @@ export function initHotkeyState(initial = {}) {
         get chunkShadowKey() { return state.chunkShadowKey; },
         get backwardKey() { return state.backwardKey; },
         get forwardKey() { return state.forwardKey; },
+        get prevAnnotationWordKey() { return state.prevAnnotationWordKey; },
+        get nextAnnotationWordKey() { return state.nextAnnotationWordKey; },
         setMarkKey: function (value) { state.markKey = normalize(value, 'm'); return state.markKey; },
         setAnnotationBubbleKey: function (value) { state.annotationBubbleKey = normalize(value, 'b'); return state.annotationBubbleKey; },
         setChunkCnKey: function (value) { state.chunkCnKey = normalize(value, 'c'); return state.chunkCnKey; },
         setChunkShadowKey: function (value) { state.chunkShadowKey = normalize(value, 's'); return state.chunkShadowKey; },
         setBackwardKey: function (value) { state.backwardKey = normalize(value, 'ArrowLeft'); return state.backwardKey; },
-        setForwardKey: function (value) { state.forwardKey = normalize(value, 'ArrowRight'); return state.forwardKey; }
+        setForwardKey: function (value) { state.forwardKey = normalize(value, 'ArrowRight'); return state.forwardKey; },
+        setPrevAnnotationWordKey: function (value) { state.prevAnnotationWordKey = normalize(value, '['); return state.prevAnnotationWordKey; },
+        setNextAnnotationWordKey: function (value) { state.nextAnnotationWordKey = normalize(value, ']'); return state.nextAnnotationWordKey; }
     };
 }

@@ -36,20 +36,14 @@ import { getPiniaRuntimeStores } from '../pinia-stores/runtime-registry.js';
       holdPrevChunkCnVisible: null,
       isChunkShadowOn: true,
       chunkCnMode: 'focus',
-      manualChunkStates: {},
       lastActiveChunkIndex: -1,
       lastAiPrevTapChunkIndex: -1,
       lastAiPrevTapAt: 0
     };
   }
 
-  function isPlainObject(value) {
-    return !!value && typeof value === 'object' && !Array.isArray(value);
-  }
-
   function normalizeField(key, value) {
     if (arrayFields.has(key)) return Array.isArray(value) ? value : [];
-    if (key === 'manualChunkStates') return isPlainObject(value) ? value : {};
     if (booleanFields.has(key)) return !!value;
     if (nullableBooleanFields.has(key)) return value == null ? null : !!value;
     if (key === 'chunkCnMode') return value === 'global' ? 'global' : 'focus';
@@ -125,7 +119,6 @@ import { getPiniaRuntimeStores } from '../pinia-stores/runtime-registry.js';
       holdPrevChunkCnVisible: getField('holdPrevChunkCnVisible'),
       isChunkShadowOn: getField('isChunkShadowOn'),
       chunkCnMode: getField('chunkCnMode'),
-      manualChunkStates: getField('manualChunkStates'),
       lastActiveChunkIndex: getField('lastActiveChunkIndex'),
       lastAiPrevTapChunkIndex: getField('lastAiPrevTapChunkIndex'),
       lastAiPrevTapAt: getField('lastAiPrevTapAt')

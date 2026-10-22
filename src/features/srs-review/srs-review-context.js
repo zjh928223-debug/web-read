@@ -3,15 +3,26 @@ import { youtubeWorkflowClient } from '../../composables/youtube-workflow-client
 const transcriptCacheByClient = new WeakMap()
 const chunkDataCacheByClient = new WeakMap()
 
-export function selectReviewContext(contexts) {
+export function selectReviewContext(contexts, options = {}) {
   const valid = (Array.isArray(contexts) ? contexts : []).filter((context) => (
     context && (normalizeText(context.sentence) || normalizeText(context.surrounding_text || context.surroundingText))
   ))
+  const preferredId = normalizeText(options.preferredContextId || options.selectedContextId)
+  if (preferredId) {
+    return valid.find((context) => (
+      normalizeText(context.context_evidence_id || context.id) === preferredId
+    )) || null
+  }
+  if (options.requireSelectedContext) return null
   return valid.sort((left, right) => getTimestamp(right) - getTimestamp(left))[0] || null
 }
 
 export function buildReviewContext(entry) {
-  const context = selectReviewContext(entry && entry.contexts)
+  const selection = entry?.contextSelection
+  const context = selectReviewContext(entry && entry.contexts, {
+    selectedContextId: selection?.selected_context_id,
+    requireSelectedContext: Boolean(entry?.learningUnit?.learning_unit_id && !selection?.selected_context_id),
+  })
   if (!context) return null
   const sentence = normalizeText(context.sentence)
   const word = normalizeText(entry && entry.word && entry.word.word)
@@ -42,14 +53,17 @@ export function resolveReviewSentenceTranslation(context) {
   )
 }
 
-export function resolveReviewMeaning(word, context) {
+export function resolveReviewMeaning(word, context, targetSense = null, options = {}) {
+  const allowWordFallback = options.allowWordFallback !== false
   return normalizeText(
     context?.simple_meaning
     || context?.simpleMeaning
-    || word?.simple_meaning
-    || word?.simpleMeaning
-    || word?.meaning
-    || context?.meaning,
+    || targetSense?.gloss
+    || targetSense?.definition
+    || context?.meaning
+    || (allowWordFallback ? word?.simple_meaning : '')
+    || (allowWordFallback ? word?.simpleMeaning : '')
+    || (allowWordFallback ? word?.meaning : ''),
   )
 }
 

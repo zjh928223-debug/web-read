@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>阅读器功能地图</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="catalog.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="page-header">
+    <h1>阅读器功能地图</h1>
+    <details class="header-tools"><summary>更多</summary><div class="tools-popover"><button id="export-json">导出意见 JSON</button><button id="export-md">导出整理清单</button><button id="import-button">导入意见</button><p>初版盘点 · 代码快照 2026-10-03<br>功能说明不会自动随源码更新。</p></div></details>
+    <input id="import-file" type="file" accept=".json,application/json" hidden>
+  </header>
+  <main class="workspace">
+    <aside class="sidebar" aria-label="功能目录">
+      <div class="tree-controls">
+        <div class="directory-heading"><h2>功能</h2><span id="catalog-summary"></span></div>
+        <label class="sr-only" for="search">搜索功能、入口或行为</label><input id="search" type="search" placeholder="搜索功能…">
+      </div>
+      <p id="result-count" class="result-count" role="status"></p>
+      <nav id="tree" aria-label="可折叠功能树"></nav>
+      <details class="directory-tools"><summary>目录工具</summary><div class="directory-tools-content"><label for="filter">按判断筛选</label><select id="filter"><option value="all">全部功能</option><option value="marked">已有意见或备注</option></select><div class="tree-actions"><button id="expand-all">全部展开</button><button id="collapse-all">全部折叠</button><button id="new-idea">＋ 新增想法</button></div></div></details>
+    </aside>
+    <article id="detail" class="detail" aria-label="功能行为详情"></article>
+  </main>
+  <footer class="page-footer"><span id="save-status" role="status" aria-live="polite">意见保存在当前浏览器。</span></footer>
+  <dialog id="idea-dialog" aria-labelledby="idea-title">
+    <form id="idea-form">
+      <h2 id="idea-title">新增功能想法</h2><label for="idea-name">功能名称</label><input id="idea-name" required maxlength="120" placeholder="你希望完成什么？">
+      <label for="idea-parent">放在哪一组</label><select id="idea-parent"></select>
+      <label for="idea-description">预期入口与效果</label><textarea id="idea-description" rows="4" maxlength="4000" placeholder="例如：点击某个入口后，希望产生什么结果。"></textarea>
+      <div class="dialog-actions"><button id="idea-cancel" type="button">取消</button><button class="primary" type="submit">加入功能树</button></div>
+    </form>
+  </dialog>
+</body>
+</html>

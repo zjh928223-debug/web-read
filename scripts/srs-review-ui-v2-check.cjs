@@ -41,6 +41,10 @@ async function main() {
   stage('src/features/srs-review/srs-review-policy.js', 'policy.mjs')
   stage('src/features/srs-review/srs-review-prompt.js', 'prompt.mjs')
   stage('src/features/srs-review/srs-review-source-selector.js', 'selector.mjs')
+  stage('src/services/vocabulary/vocabulary-models.js', 'vocabulary-models.mjs')
+  stage('src/services/vocabulary/settlement-meaning-refinement.js', 'settlement-refinement.mjs', [
+    ['./vocabulary-models.js', './vocabulary-models.mjs'],
+  ])
   stage(
     'src/features/srs-review/srs-review-ui-service.js',
     'ui-service.mjs',
@@ -55,6 +59,7 @@ async function main() {
       ['../../services/vocabulary/personalization/personalization-shadow-service.js', './ui-service-deps.mjs'],
       ['../../services/vocabulary/windows-owner-vocabulary-srs.js', './ui-service-deps.mjs'],
       ['./srs-review-policy.js', './policy.mjs'],
+      ['../../services/vocabulary/settlement-meaning-refinement.js', './settlement-refinement.mjs'],
     ],
   )
   stage(
@@ -92,6 +97,7 @@ async function main() {
   ])
 
   await verifyReadOnlySourceProbe({ sourceSelector, uiServiceModule })
+  await verifyArticleMeaningProjection(uiServiceModule)
   await verifySourceSelection({ useSrsReview, sourceSelector })
   verifySourceIndicator()
   await verifyPromptRendering(prompt)
@@ -405,6 +411,7 @@ async function main() {
     path.join(repoRoot, 'src/features/srs-review/SrsReviewPage.vue'),
     'utf8',
   )
+  const mediaSource = fs.readFileSync(path.join(repoRoot, 'src/features/srs-review/use-srs-review-media.js'), 'utf8')
   assert.doesNotMatch(pageSource, /srs-review-session-meta/)
   assert.doesNotMatch(pageSource, /<strong>Backlog<\/strong>/)
   assert.match(pageSource, /visibleReviewParagraphs/)
@@ -413,7 +420,7 @@ async function main() {
   assert.match(pageSource, /removeUnavailableReason/)
   assert.match(pageSource, /sourceAudioNotice/)
   assert.match(pageSource, /retrySourceAudio/)
-  assert.match(pageSource, /handleReviewSourceError\(error, request\)/)
+  assert.match(mediaSource, /handleReviewSourceError\(error, request\)/)
   assert.doesNotMatch(pageSource, />\s*掌握\s*</, 'the page must not expose a fifth rating')
 
   const appSource = fs.readFileSync(path.join(repoRoot, 'src/App.vue'), 'utf8')
@@ -432,6 +439,42 @@ async function main() {
   assert.match(appSource, /:active="isSrsReviewOpen"/)
 
   console.log('SRS review UI V2 focused verification passed.')
+}
+
+async function verifyArticleMeaningProjection({ createSrsReviewUiService }) {
+  const unit = { learning_unit_id: 'article-unit', word_id: 'article-word',
+    target_sense: { gloss: '大象的长鼻子,复数' }, extensions: { source: 'article-settlement' } }
+  const saved = { id: 'saved', word_id: unit.word_id, source_id: 'article',
+    sentence: 'They have long trunks.', meaning: '大象的长鼻子，复数', simple_meaning: '象鼻' }
+  const evidence = { context_evidence_id: 'evidence', learning_unit_id: unit.learning_unit_id,
+    source_id: saved.source_id, sentence: saved.sentence }
+  const cases = [
+    { contexts: [saved], expected: '象鼻', original: saved.meaning },
+    ...['word_id', 'source_id', 'sentence', 'meaning'].map((field) => ({
+      contexts: [{ ...saved, [field]: 'different' }], expected: unit.target_sense.gloss,
+    })),
+    { contexts: [saved, { ...saved, id: 'duplicate' }], expected: unit.target_sense.gloss },
+    { contexts: [{ ...saved, simple_meaning: '' }], expected: unit.target_sense.gloss, original: saved.meaning },
+    { contexts: [{ ...saved, simple_meaning: '很长'.repeat(20) }], expected: unit.target_sense.gloss, original: saved.meaning },
+    { contexts: [saved], source: 'ielts-preview', expected: unit.target_sense.gloss },
+  ]
+  for (const testCase of cases) {
+    const currentUnit = { ...unit, extensions: { source: testCase.source || 'article-settlement' } }
+    const before = JSON.stringify({ currentUnit, contexts: testCase.contexts, evidence })
+    const service = createSrsReviewUiService({
+      acquisitionRepository: { async loadSnapshot() { return { by_learning_unit_id: {
+        [unit.learning_unit_id]: { learning_unit: currentUnit, acquisition_state: { status: 'graduated' } },
+      } } } },
+      contentRepository: { async loadSnapshot() { return { words: [{ id: unit.word_id, word: 'trunks', entry_type: 'word' }], contexts: testCase.contexts } } },
+      reviewStateRepository: { async loadSnapshot() { return { by_learning_unit_id: { [unit.learning_unit_id]: {} } } } },
+      contextEvidenceRepository: { async loadSnapshot() { return { by_context_evidence_id: { evidence } } } },
+      learningEventRepository: { async query() { return [] } }, sessionLedgerRepository: {}, reviewService: {},
+    })
+    const cards = await service.getReviewCards({ entries: [{ learning_unit_id: unit.learning_unit_id }] })
+    assert.equal(cards[0].contexts[0].simple_meaning, testCase.expected)
+    assert.equal(cards[0].contexts[0].meaning, testCase.original || unit.target_sense.gloss)
+    assert.equal(JSON.stringify({ currentUnit, contexts: testCase.contexts, evidence }), before, 'projection remains read-only')
+  }
 }
 
 async function verifyReadOnlySourceProbe({ sourceSelector, uiServiceModule }) {

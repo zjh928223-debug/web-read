@@ -1,16 +1,16 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
+import { pathToFileURL } from 'node:url'
 import { chromium } from 'playwright'
 import { gateEnvironment, resolveSelectedPython } from './lib/python-runtime.mjs'
 
 const repoRoot = path.resolve(import.meta.dirname, '..')
 const workflowRoot = path.join(repoRoot, 'tools', 'subtitle-workflow')
-const distDir = path.join(repoRoot, 'dist')
 const selectedPython = await resolveSelectedPython({
   repoRoot,
   configPath: process.env.READ_WEB_RUNTIME_CONFIG || 'config/runtime.optimization.json',
@@ -28,12 +28,21 @@ if (process.env.READ_WEB_RECOVERY_BFCACHE_CONTRACT_ONLY === '1') {
 
 const apiPort = await randomPort()
 const appUrl = `http://127.0.0.1:${apiPort}`
-const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'read-web-reader-recovery-'))
+const tempRoot = await mkdtemp(path.join(process.env.READ_WEB_RECOVERY_ROOT || os.tmpdir(), 'read-web-reader-recovery-'))
+const distDir = path.resolve(process.env.READ_WEB_RECOVERY_DIST || path.join(tempRoot, 'dist'))
+const artifactsDir = path.resolve(process.env.READ_WEB_RECOVERY_ARTIFACTS || path.join(tempRoot, 'artifacts'))
+await mkdir(artifactsDir, { recursive: true })
+const browserEvidence = []
+const commandEvidence = []
+const journeyResults = []
+let contextSequence = 0
 const childProcesses = []
 let browser = null
 
 try {
-  await runCommand(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build'], {
+  const interactionConfig = process.env.READ_WEB_RECOVERY_INTERACTIONS === '1'
+    ? ['--config', await createTestBuildConfig(false)] : []
+  await runCommand(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build', '--', ...interactionConfig, '--configLoader', 'native', '--outDir', distDir], {
     cwd: repoRoot,
     env: {
       ...process.env,
@@ -58,22 +67,44 @@ try {
   const legacyJob = await createReadyJob('reader-recovery-legacy-migration')
 
   browser = await chromium.launch({ headless: true })
-  await verifyConflictReloadAndSingleFlight(jobOne.jobId)
-  await verifyCloseOutboxReplayAndAuth(jobTwo.jobId)
-  await verifyConcurrentOutboxAndConflict(concurrentJobOne.jobId, concurrentJobTwo.jobId, sameJob.jobId)
-  await verifyBfcacheReceiptGeneration(bfcacheJob.jobId)
-  await verifyLegacyOutboxMigration(legacyJob.jobId)
-  await verifyInvalidOutboxQuarantine()
-  await verifyQuarantineQuotaFailureFailsClosed()
+  await runJourney('conflict-reload-single-flight', () => verifyConflictReloadAndSingleFlight(jobOne.jobId))
+  await runJourney('close-outbox-replay-auth', () => verifyCloseOutboxReplayAndAuth(jobTwo.jobId))
+  await runJourney('concurrent-outbox-conflict', () => verifyConcurrentOutboxAndConflict(concurrentJobOne.jobId, concurrentJobTwo.jobId, sameJob.jobId))
+  await runJourney('bfcache-receipt-generation', () => verifyBfcacheReceiptGeneration(bfcacheJob.jobId))
+  await runJourney('legacy-outbox-migration', () => verifyLegacyOutboxMigration(legacyJob.jobId))
+  await runJourney('invalid-outbox-quarantine', () => verifyInvalidOutboxQuarantine())
+  await runJourney('quarantine-quota-fail-closed', () => verifyQuarantineQuotaFailureFailsClosed())
+  const unmountJob = await createReadyJob('reader-recovery-unmount')
+  await runJourney('component-unmount', () => verifyComponentUnmount(unmountJob.jobId))
+  if (process.env.READ_WEB_RECOVERY_INTERACTIONS === '1') {
+    await runJourney('current-app-reading-interactions', verifyCurrentAppInteractions)
+  }
+  if (process.env.READ_WEB_RECOVERY_LIFECYCLE === '1') {
+    const fixturePort = await randomPort()
+    const fixtureUrl = `http://127.0.0.1:${fixturePort}`
+    const fixtureDist = path.join(tempRoot, 'lifecycle-dist')
+    await runCommand(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build', '--', '--config', await createTestBuildConfig(true), '--configLoader', 'native', '--outDir', fixtureDist], {
+      cwd: repoRoot,
+      env: { ...process.env, VITE_LOCAL_SERVICE_BASE_URL: fixtureUrl, VITE_READ_WEB_SERVICE_TOKEN: token },
+    })
+    const fixtureBackend = startBackend(fixturePort, path.join(tempRoot, 'lifecycle-host'), fixtureDist)
+    childProcesses.push(fixtureBackend)
+    await waitFor(async () => {
+      if (fixtureBackend.exitCode !== null) throw new Error(fixtureBackend.diagnostic())
+      return (await fetch(`${fixtureUrl}/api/app/health`)).ok
+    }, 'lifecycle fixture host')
+    await runJourney('panel-lifecycle-and-root-cancellation', () => verifyPanelLifecycle(fixtureUrl))
+  }
   console.log('youtube workflow panel reader recovery browser check passed')
 } finally {
   if (browser) await browser.close()
   for (const child of childProcesses.reverse()) await stopProcess(child)
-  await rm(tempRoot, { recursive: true, force: true })
+  await writeFile(path.join(artifactsDir, 'recovery-evidence.json'), JSON.stringify({ appUrl, distDir, tempRoot, journeyResults, browserEvidence, commandEvidence, cleanup: childProcesses.map((child) => ({ pid: child.pid, exitCode: child.exitCode, signalCode: child.signalCode, diagnostics: child.diagnostic() })) }, null, 2))
+  if (process.env.READ_WEB_RECOVERY_KEEP_TEMP !== '1') await rm(tempRoot, { recursive: true, force: true })
 }
 
 async function verifyConflictReloadAndSingleFlight(jobId) {
-  const context = await browser.newContext()
+  const context = await createRecoveryContext()
   const page = await context.newPage()
   const marksRequests = []
   let allowInitialAuthorityGet = true
@@ -159,7 +190,7 @@ async function verifyConflictReloadAndSingleFlight(jobId) {
 }
 
 async function verifyCloseOutboxReplayAndAuth(jobId) {
-  const context = await browser.newContext()
+  const context = await createRecoveryContext()
   const firstPage = await context.newPage()
   const unloadRequests = []
   const pageErrors = []
@@ -186,7 +217,15 @@ async function verifyCloseOutboxReplayAndAuth(jobId) {
     }
     return route.continue()
   })
+  const offlineAnnotation = firstPage.waitForEvent('requestfailed', {
+    predicate: (request) => request.method() === 'POST'
+      && new URL(request.url()).pathname === '/api/reader/activity'
+      && request.postDataJSON()?.event === 'annotation',
+  })
   await setReaderState(firstPage, jobId, 'page-close', true)
+  // Close only after the fixture's offline annotation request actually failed;
+  // closing a page before its revision GET completes can remove its route.
+  await offlineAnnotation
   await firstPage.evaluate(() => window.dispatchEvent(new Event('pagehide')))
   try {
     await waitFor(() => unloadRequests.length >= 2, 'keepalive requests')
@@ -264,7 +303,7 @@ async function verifyCloseOutboxReplayAndAuth(jobId) {
 }
 
 async function verifyConcurrentOutboxAndConflict(jobOneId, jobTwoId, sameJobId) {
-  const context = await browser.newContext()
+  const context = await createRecoveryContext()
   const firstPage = await context.newPage()
   const secondPage = await context.newPage()
   await addClearOutboxScript(firstPage)
@@ -360,7 +399,7 @@ async function verifyConcurrentOutboxAndConflict(jobOneId, jobTwoId, sameJobId) 
 }
 
 async function verifyBfcacheReceiptGeneration(jobId) {
-  const context = await browser.newContext()
+  const context = await createRecoveryContext()
   const page = await context.newPage()
   const pageErrors = []
   const pendingRequests = new Map()
@@ -631,7 +670,7 @@ function runBfcacheEventSelectionContractChecks() {
 }
 
 async function verifySyntheticBfcacheReceiptGeneration(jobId) {
-  const context = await browser.newContext()
+  const context = await createRecoveryContext()
   const page = await context.newPage()
   await addClearOutboxScript(page)
   await page.goto(`${appUrl}/`, { waitUntil: 'domcontentloaded' })
@@ -669,7 +708,7 @@ async function verifySyntheticBfcacheReceiptGeneration(jobId) {
 }
 
 async function verifyLegacyOutboxMigration(jobId) {
-  const context = await browser.newContext()
+  const context = await createRecoveryContext()
   const page = await context.newPage()
   await addClearOutboxScript(page)
   const marksOperationId = `legacy-marks-${jobId}`
@@ -777,7 +816,7 @@ async function verifyInvalidOutboxQuarantine() {
 }
 
 async function verifyQuarantineScenario(label, sources) {
-  const context = await browser.newContext()
+  const context = await createRecoveryContext()
   const page = await context.newPage()
   const readerRequests = []
   const consoleMessages = []
@@ -816,7 +855,7 @@ async function verifyQuarantineScenario(label, sources) {
 }
 
 async function verifyQuarantineQuotaFailureFailsClosed() {
-  const context = await browser.newContext()
+  const context = await createRecoveryContext()
   const page = await context.newPage()
   const sourceKey = `${outboxEntryPrefix}quota-entry`
   const rawValue = JSON.stringify({ schemaVersion: 99, token: 'QUOTA-SECRET', jobId: 'private/quota/path' })
@@ -1000,14 +1039,14 @@ function isReaderWrite(url) {
   return pathname.endsWith('/reader-marks') || pathname.endsWith('/reader/activity')
 }
 
-async function createReadyJob(label) {
-  const created = await postJson('/api/jobs', { url: `https://example.test/${label}`, geminiMode: 'mock' })
-  await waitFor(async () => (await getJson(`/api/jobs/${created.jobId}`)).status === 'ready', `${label} ready job`)
+async function createReadyJob(label, origin = appUrl) {
+  const created = await postJson('/api/jobs', { url: `https://example.test/${label}`, geminiMode: 'mock' }, origin)
+  await waitFor(async () => (await getJson(`/api/jobs/${created.jobId}`, origin)).status === 'ready', `${label} ready job`)
   return created
 }
 
-async function postJson(pathname, body) {
-  const response = await fetch(`${appUrl}${pathname}`, {
+async function postJson(pathname, body, origin = appUrl) {
+  const response = await fetch(`${origin}${pathname}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'X-Read-Web-Token': token },
     body: JSON.stringify(body),
@@ -1016,8 +1055,8 @@ async function postJson(pathname, body) {
   return response.json()
 }
 
-async function getJson(pathname) {
-  const response = await fetch(`${appUrl}${pathname}`, { headers: { 'X-Read-Web-Token': token } })
+async function getJson(pathname, origin = appUrl) {
+  const response = await fetch(`${origin}${pathname}`, { headers: { 'X-Read-Web-Token': token } })
   assert.equal(response.ok, true, `GET ${pathname} failed with ${response.status}`)
   return response.json()
 }
@@ -1046,7 +1085,7 @@ async function randomPort() {
   })
 }
 
-function startBackend(port, tempRoot) {
+function startBackend(port, tempRoot, hostDist = distDir) {
   const python = selectedPython.executable
   const code = [
     'import os, uvicorn',
@@ -1068,7 +1107,9 @@ function startBackend(port, tempRoot) {
     stdio: ['ignore', 'pipe', 'pipe'],
     env: {
       ...gateEnvironment(selectedPython),
-      READ_WEB_TEST_DIST: distDir,
+      READ_WEB_SUBTITLE_DATA_ROOT: path.join(tempRoot, 'bootstrap-data'),
+      PYTHONPYCACHEPREFIX: path.join(tempRoot, 'pycache'),
+      READ_WEB_TEST_DIST: hostDist,
       READ_WEB_TEST_PORT: String(port),
       READ_WEB_TEST_ROOT: tempRoot,
       READ_WEB_TEST_TOKEN: token,
@@ -1077,6 +1118,7 @@ function startBackend(port, tempRoot) {
   let diagnostics = ''
   child.stderr.setEncoding('utf8')
   child.stderr.on('data', (chunk) => { diagnostics += String(chunk) })
+  child.stdout.on('data', (chunk) => { diagnostics += String(chunk) })
   child.diagnostic = () => diagnostics
   return child
 }
@@ -1087,12 +1129,17 @@ async function runCommand(command, args, options) {
       ...options,
       windowsHide: true,
       shell: process.platform === 'win32' && command.endsWith('.cmd'),
-      stdio: ['ignore', 'ignore', 'pipe'],
+      stdio: ['ignore', 'pipe', 'pipe'],
     })
     let stderr = ''
+    let stdout = ''
+    child.stdout.on('data', (chunk) => { stdout += String(chunk) })
     child.stderr.on('data', (chunk) => { stderr += String(chunk) })
     child.once('error', reject)
-    child.once('exit', (code) => code === 0 ? resolve() : reject(new Error(`${command} ${args.join(' ')} failed: ${stderr}`)))
+    child.once('exit', (code) => {
+      commandEvidence.push({ command, args, exit: code, stdout, stderr })
+      code === 0 ? resolve() : reject(new Error(`${command} ${args.join(' ')} failed: ${stderr}`))
+    })
   })
 }
 
@@ -1103,4 +1150,317 @@ async function stopProcess(child) {
     const timer = setTimeout(resolve, 2_000)
     child.once('exit', () => { clearTimeout(timer); resolve() })
   })
+}
+
+async function runJourney(name, run) {
+  try {
+    await run()
+    journeyResults.push({ name, status: 'PASS' })
+    console.log(name + ' passed')
+  } catch (error) {
+    journeyResults.push({ name, status: 'FAIL', error: String(error.stack || error) })
+    throw error
+  }
+}
+
+async function createRecoveryContext(origin = appUrl) {
+  const context = await browser.newContext({ serviceWorkers: 'block' })
+  const contextId = ++contextSequence
+  await context.route('**/*', (route) => {
+    const url = new URL(route.request().url())
+    return url.origin === origin || ['data:', 'blob:'].includes(url.protocol)
+      ? route.continue() : route.abort('blockedbyclient')
+  })
+  await context.routeWebSocket('**/*', (socket) => socket.close())
+  context.on('page', (page) => {
+    page.on('pageerror', (error) => browserEvidence.push({ contextId, type: 'pageerror', message: error.message }))
+    page.on('console', (message) => {
+      if (['warning', 'error'].includes(message.type())) browserEvidence.push({ contextId, type: message.type(), message: message.text() })
+    })
+    page.on('requestfailed', (request) => browserEvidence.push({ contextId, type: 'requestfailed', url: request.url(), failure: request.failure() }))
+  })
+  const close = context.close.bind(context)
+  context.close = async (...args) => {
+    for (const [index, page] of context.pages().entries()) {
+      if (!page.isClosed()) await page.screenshot({ path: path.join(artifactsDir, 'context-' + contextId + '-page-' + index + '.png') }).catch(() => {})
+    }
+    return close(...args)
+  }
+  return context
+}
+
+async function verifyComponentUnmount(jobId) {
+  const context = await createRecoveryContext()
+  const page = await context.newPage()
+  const writes = []
+  await page.addInitScript(() => {
+    const events = new Set(['reader-marks-changed', 'beforeunload', 'pagehide', 'pageshow', 'timeupdate', 'play', 'pause', 'seeking', 'ended'])
+    const registrations = []
+    const originalAdd = EventTarget.prototype.addEventListener
+    const originalRemove = EventTarget.prototype.removeEventListener
+    EventTarget.prototype.addEventListener = function(type, listener, options) {
+      if (events.has(type) && (this === window || this.id === 'audio-player')) registrations.push({ target: this, type, listener, removed: false })
+      return originalAdd.call(this, type, listener, options)
+    }
+    EventTarget.prototype.removeEventListener = function(type, listener, options) {
+      for (const item of registrations) if (item.target === this && item.type === type && item.listener === listener) item.removed = true
+      return originalRemove.call(this, type, listener, options)
+    }
+    window.__recoveryListenerCounts = () => Object.fromEntries([...events].map(type => [type, registrations.filter(item => item.type === type && !item.removed).length]))
+  })
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && isReaderWrite(request.url())) writes.push({ url: request.url(), body: request.postDataJSON() })
+  })
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' })
+  await page.waitForSelector('.youtube-reader-controls .small-btn')
+  await hydrateReaderMarks(page, jobId)
+  await abortReaderWrites(page)
+  await setReaderState(page, jobId, 'unmount-edit', true)
+  await page.waitForTimeout(200)
+  const before = await page.evaluate(() => window.__recoveryListenerCounts())
+  await page.evaluate(() => document.querySelector('#vue-root').__vue_app__.unmount())
+  await page.waitForSelector('.youtube-reader-controls', { state: 'detached' })
+  const after = await page.evaluate(() => window.__recoveryListenerCounts())
+  for (const type of ['reader-marks-changed', 'beforeunload', 'pagehide', 'pageshow', 'timeupdate', 'play', 'pause', 'seeking', 'ended']) {
+    assert.ok(after[type] < before[type], type + ' must release the persistence/tracker listener on real unmount')
+  }
+  const entries = await readOutboxEntries(page)
+  assert.equal(entries.filter(({ value }) => value.kind === 'activity' && value.intent.event === 'close').length, 1)
+  assert.equal(entries.filter(({ value }) => value.kind === 'marks' && value.intent.marks[0]?.word === 'unmount-edit').length, 1)
+  await page.waitForTimeout(100)
+  const writeCount = writes.length
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event('beforeunload'))
+    window.dispatchEvent(new Event('pagehide'))
+    window.dispatchEvent(new CustomEvent('reader-marks-changed', { detail: { source: 'edit' } }))
+    document.querySelector('#audio-player').dispatchEvent(new Event('pause'))
+  })
+  await page.waitForTimeout(150)
+  assert.equal(writes.length, writeCount, 'events after unmount must not resubmit reader writes')
+  assert.deepEqual(await readOutboxEntries(page), entries, 'events after unmount must not add another close generation')
+  await writeFile(path.join(artifactsDir, 'component-unmount.json'), JSON.stringify({ before, after, entries, writes, DOM: await page.locator('.youtube-reader-controls').count() }, null, 2))
+  await context.close()
+}
+
+async function createTestBuildConfig(lifecycle) {
+  const target = path.join(tempRoot, lifecycle ? 'lifecycle-vite.config.mjs' : 'interaction-vite.config.mjs')
+  await writeFile(target, `import base from ${JSON.stringify(pathToFileURL(path.join(repoRoot, 'vite.config.mjs')).href)};
+export default async (environment) => {
+  const config = await base(environment);
+  config.build.manifest = true;
+  config.build.rollupOptions.preserveEntrySignatures = 'strict';
+  config.build.rollupOptions.input = {
+    ...config.build.rollupOptions.input,
+    interactionState: ${JSON.stringify(path.join(repoRoot, 'src/composables/runtime-state-facade.js'))},
+    interactionStores: ${JSON.stringify(path.join(repoRoot, 'src/pinia-stores/runtime-registry.js'))},
+  };
+  if (${lifecycle}) config.plugins.unshift({
+    name: 'reader-lifecycle-fixture-only', enforce: 'pre',
+    resolveId(source, importer) {
+      if (source === './components/YouTubeWorkflowPanel.vue' && importer?.replaceAll('\\\\', '/').endsWith('/src/App.vue'))
+        return ${JSON.stringify(path.join(repoRoot, 'scripts/fixtures/ReaderSessionPersistenceLifecyclePanel.vue'))};
+    }
+  });
+  return config;
+};`)
+  return target
+}
+
+async function verifyCurrentAppInteractions() {
+  const manifest = JSON.parse(await readFile(path.join(distDir, '.vite/manifest.json'), 'utf8'))
+  const entries = {
+    '/src/composables/runtime-state-facade.js': ['runtimeState', manifest['src/composables/runtime-state-facade.js'].file],
+    '/src/pinia-stores/runtime-registry.js': ['requirePiniaRuntimeStores', manifest['src/pinia-stores/runtime-registry.js'].file],
+  }
+  const fixture = path.join(tempRoot, 'current-production-interaction-fixture.cjs')
+  await writeFile(fixture, `const entries = ${JSON.stringify(entries)};
+module.exports = async (context) => {
+  await context.route('**/*', (route) => {
+    const url = new URL(route.request().url());
+    if (url.origin === ${JSON.stringify(appUrl)}) {
+      const entry = entries[url.pathname];
+      return entry ? route.fulfill({contentType:'text/javascript', body:'export {'+entry[0]+'} from "/'+entry[1]+'";'}) : route.continue();
+    }
+    if (url.hostname === 'fonts.googleapis.com') return route.fulfill({contentType:'text/css',body:''});
+    if (url.hostname === 'cse.google.com') return route.fulfill({contentType:'application/javascript',body:''});
+    return ['data:', 'blob:'].includes(url.protocol) ? route.continue() : route.abort('blockedbyclient');
+  });
+  await context.routeWebSocket('**/*', socket => socket.close());
+};`)
+  await writeFile(path.join(artifactsDir, 'production-interaction-entry-manifest.json'), JSON.stringify({ appUrl, entries, fixture, manifest }, null, 2))
+  await runCommand(process.execPath, ['scripts/read-web-interactions-check.cjs'], {
+    cwd: repoRoot,
+    env: { ...process.env, READ_WEB_URL: appUrl, READ_WEB_ARTIFACTS_DIR: path.join(artifactsDir, 'current-app-interactions'), READ_WEB_BROWSER_FIXTURE: fixture },
+  })
+}
+
+async function verifyPanelLifecycle(origin) {
+  const job = await createReadyJob('panel-lifecycle-current', origin)
+  const next = await createReadyJob('panel-lifecycle-next', origin)
+  const context = await createRecoveryContext(origin)
+  const page = await context.newPage()
+  const writes = []
+  const errors = []
+  const evidence = { origin, job, next, boundary: 'real Vue unmount/remount; synthetic WAV with natural time progression; paired synthetic persisted hide/show contract, not real BFCache; original non-persisted close recovery separately retained' }
+  let release
+  let rootRelease
+  try {
+  page.on('pageerror', error => errors.push(error.message))
+  page.on('request', request => {
+    if (request.method() === 'POST' && isReaderWrite(request.url())) writes.push({ url: request.url(), body: request.postDataJSON() })
+  })
+  await page.addInitScript(() => {
+    const events = new Set(['reader-marks-changed', 'beforeunload', 'pagehide', 'pageshow', 'timeupdate', 'play', 'pause', 'seeking', 'ended'])
+    const registrations = []
+    const trace = []
+    const add = EventTarget.prototype.addEventListener
+    const remove = EventTarget.prototype.removeEventListener
+    EventTarget.prototype.addEventListener = function(type, listener, options) {
+      if (events.has(type) && (this === window || this.id === 'audio-player')) registrations.push({ target: this, type, listener, removed: false })
+      return add.call(this, type, listener, options)
+    }
+    EventTarget.prototype.removeEventListener = function(type, listener, options) {
+      for (const entry of registrations) if (entry.target === this && entry.type === type && entry.listener === listener) entry.removed = true
+      if (events.has(type)) trace.push({ type: 'remove', event: type })
+      return remove.call(this, type, listener, options)
+    }
+    const info = console.info
+    console.info = (...args) => {
+      if (args[0] === '[reader-session-diagnostic]') trace.push({ type: 'loader', ...args[1] })
+      return info(...args)
+    }
+    const originalFetch = window.fetch
+    window.fetch = (url, options) => {
+      if (options?.keepalive) trace.push({ type: 'keepalive', url: String(url), body: JSON.parse(options.body) })
+      return originalFetch(url, options)
+    }
+    window.addEventListener('reader-lifecycle-fixture-disposing', event => trace.push({ type: 'fixture-disposing', ...event.detail }))
+    for (const type of ['pagehide', 'pageshow']) window.addEventListener(type, event => trace.push({ type: 'lifecycle', event: type, persisted: event.persisted === true }))
+    window.__readerLifecycleProbe = () => ({ trace: [...trace], counts: Object.fromEntries([...events].map(type => [type, registrations.filter(entry => entry.type === type && !entry.removed).length])) })
+  })
+  await page.goto(origin, { waitUntil: 'domcontentloaded' })
+  await page.waitForSelector('#reader-lifecycle-fixture')
+  await page.click('#fixture-missing-provider')
+  assert.equal(await page.locator('#fixture-provider-error').textContent(), 'Reader session persistence provider is missing')
+  await hydrateReaderMarks(page, job.jobId)
+  const counts = (await page.evaluate(() => window.__readerLifecycleProbe())).counts
+  evidence.counts = counts
+  await page.click('#fixture-panel-remove')
+  await page.waitForSelector('.youtube-reader-controls', { state: 'detached' })
+  assert.deepEqual((await page.evaluate(() => window.__readerLifecycleProbe())).counts, counts, 'Panel unmount must leave the one core listener/tracker scope active')
+  await page.evaluate((src) => {
+    window.processTranscript({ segments: [{ start: 0, end: 18, words: [{ word: 'panel', start: 0, end: 1 }, { word: 'absent', start: 1, end: 18 }] }] })
+    const audio = document.getElementById('audio-player')
+    audio.src = src
+    audio.muted = true
+  }, makeLifecycleWav())
+  await page.click('#word-1')
+  await page.keyboard.press('m')
+  await page.waitForSelector('#word-1.marked')
+  await waitFor(() => writes.some(entry => entry.url.endsWith('/reader-marks') && entry.body.marks?.some(mark => mark.globalIndex === 1)), 'real mark hotkey save without Panel')
+  await page.evaluate(() => document.querySelector('#audio-player').play())
+  await waitFor(() => writes.some(entry => entry.url.endsWith('/reader/activity') && entry.body.event === 'progress' && entry.body.intervals.length), 'natural media progress save without Panel', 22_000)
+  await page.evaluate(() => document.querySelector('#audio-player').pause())
+  const openWrites = writes.filter(entry => entry.body.event === 'open')
+  assert.equal(openWrites.length, 1)
+  const sessionId = openWrites[0].body.sessionId
+  evidence.sessionId = sessionId
+  await dispatchPageHide(page, true)
+  await waitFor(() => writes.some(entry => entry.body.event === 'close'), 'pagehide close without Panel')
+  await dispatchPageShow(page, true)
+  await page.click('#fixture-panel-mount')
+  await page.waitForSelector('.youtube-reader-controls .small-btn')
+  assert.equal(await page.locator('#reader-lifecycle-fixture').getAttribute('data-job'), job.jobId)
+  assert.deepEqual((await page.evaluate(() => window.__readerLifecycleProbe())).counts, counts)
+  assert.equal(writes.filter(entry => entry.body.event === 'open').length, 1, 'remount must not replay open')
+  assert.ok(writes.filter(entry => entry.body.sessionId).every(entry => entry.body.sessionId === sessionId), 'remount must retain the same reader session')
+
+  // Delay the real manifest request. Panel cancellation must clear loading and
+  // the old response must not reactivate its job after remount.
+  let entered
+  const enteredRequest = new Promise(resolve => { entered = resolve })
+  const hold = new Promise(resolve => { release = resolve })
+  const manifestUrl = `${origin}/api/jobs/${next.jobId}/session`
+  await page.route(manifestUrl, async route => { entered(); await hold; await route.continue().catch(() => {}) })
+  await openLifecycleJob(page, next.jobId, origin)
+  await enteredRequest
+  assert.equal(await page.locator('#reader-lifecycle-fixture').getAttribute('data-loading'), 'true')
+  await page.click('#fixture-panel-remove')
+  await page.waitForFunction(() => document.querySelector('#reader-lifecycle-fixture').dataset.loading === 'false')
+  release()
+  await page.unroute(manifestUrl)
+  await page.click('#fixture-panel-mount')
+  await page.waitForSelector('.youtube-reader-controls .small-btn')
+  assert.equal(await page.locator('#reader-lifecycle-fixture').getAttribute('data-job'), job.jobId)
+
+  // A real loader failure must also end its loading scope. The next successful
+  // load proves that neither cancellation nor failure leaves it stuck.
+  await page.route(manifestUrl, route => route.abort('failed'))
+  await openLifecycleJob(page, next.jobId, origin)
+  await page.waitForFunction(() => document.querySelector('#reader-lifecycle-fixture').dataset.loading === 'false')
+  assert.equal(await page.locator('#reader-lifecycle-fixture').getAttribute('data-job'), job.jobId)
+  await page.unroute(manifestUrl)
+  await openLifecycleJob(page, next.jobId, origin)
+  await page.waitForFunction(id => {
+    const fixture = document.querySelector('#reader-lifecycle-fixture')
+    return fixture.dataset.job === id && fixture.dataset.loading === 'false'
+  }, next.jobId)
+
+  let rootEntered
+  const rootEnteredRequest = new Promise(resolve => { rootEntered = resolve })
+  const rootHold = new Promise(resolve => { rootRelease = resolve })
+  const oldManifestUrl = `${origin}/api/jobs/${job.jobId}/session`
+  await page.route(oldManifestUrl, async route => { rootEntered(); await rootHold; await route.continue().catch(() => {}) })
+  await openLifecycleJob(page, job.jobId, origin)
+  await rootEnteredRequest
+  const traceStart = (await page.evaluate(() => window.__readerLifecycleProbe())).trace.length
+  await page.click('#fixture-root-remove')
+  await page.waitForSelector('#reader-lifecycle-fixture', { state: 'detached' })
+  rootRelease()
+  await page.unroute(oldManifestUrl)
+  const after = await page.evaluate(() => window.__readerLifecycleProbe())
+  const shutdown = after.trace.slice(traceStart)
+  const cancelIndex = shutdown.findIndex(entry => entry.branch === 'loader:cancel-active-load')
+  const closeIndex = shutdown.findIndex(entry => entry.type === 'keepalive' && entry.body.event === 'close')
+  const stopIndex = shutdown.findIndex(entry => entry.type === 'remove' && entry.event === 'beforeunload')
+  Object.assign(evidence, { after, shutdown, traceStart, cancelIndex, closeIndex, stopIndex, writes, errors })
+  await writeFile(path.join(artifactsDir, 'panel-lifecycle.json'), JSON.stringify(evidence, null, 2))
+  assert.ok(cancelIndex >= 0 && closeIndex > cancelIndex && stopIndex > closeIndex, 'root shutdown must cancel the real loader, flush, then stop listeners')
+  assert.deepEqual(shutdown.find(entry => entry.type === 'fixture-disposing'), { type: 'fixture-disposing', jobId: next.jobId, loading: false })
+  for (const type of Object.keys(counts)) assert.ok(after.counts[type] < counts[type], `root must release ${type}`)
+  const postStopWrites = writes.length
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('reader-marks-changed', { detail: { source: 'edit' } })))
+  await page.waitForTimeout(250)
+  assert.equal(writes.length, postStopWrites)
+  assert.equal(await page.locator('.youtube-reader-controls').count(), 0)
+  assert.deepEqual(errors, [])
+  evidence.postStopWrites = postStopWrites
+  evidence.noLateWrites = true
+  } finally {
+    release?.()
+    rootRelease?.()
+    evidence.probe = await page.evaluate(() => window.__readerLifecycleProbe()).catch(error => ({ captureError: error.message }))
+    Object.assign(evidence, { writes, errors })
+    await writeFile(path.join(artifactsDir, 'panel-lifecycle.json'), JSON.stringify(evidence, null, 2))
+    await context.close()
+  }
+}
+
+async function openLifecycleJob(page, jobId, origin) {
+  await page.click('.youtube-material-entry')
+  await page.click('[data-view="library"]')
+  const library = await getJson('/api/reader/recent?timeScope=all&limit=50', origin)
+  const index = library.findIndex(item => item.jobId === jobId)
+  assert.ok(index >= 0, 'fixture job must be visible in the actual library')
+  await page.locator('.youtube-workflow-library-job').nth(index).locator('.youtube-library-open').click()
+}
+
+function makeLifecycleWav() {
+  const samples = 18 * 8000
+  const buffer = Buffer.alloc(44 + samples * 2)
+  buffer.write('RIFF'); buffer.writeUInt32LE(buffer.length - 8, 4); buffer.write('WAVEfmt ', 8)
+  buffer.writeUInt32LE(16, 16); buffer.writeUInt16LE(1, 20); buffer.writeUInt16LE(1, 22)
+  buffer.writeUInt32LE(8000, 24); buffer.writeUInt32LE(16000, 28); buffer.writeUInt16LE(2, 32); buffer.writeUInt16LE(16, 34)
+  buffer.write('data', 36); buffer.writeUInt32LE(samples * 2, 40)
+  return `data:audio/wav;base64,${buffer.toString('base64')}`
 }

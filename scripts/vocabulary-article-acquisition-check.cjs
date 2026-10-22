@@ -19,7 +19,8 @@ async function loadModules(repoRoot) {
     'vocabulary-service.js',
     'srs-candidates.js',
     'srs-pending-candidates.js',
-    'preview-scan.js',
+    'settlement-meaning-refinement.js',
+
     'article-srs-settlement.js',
   ];
   const tempDir = fs.mkdtempSync(path.join(repoRoot, `.tmp-vocabulary-p10-${process.pid}-`));
@@ -209,13 +210,102 @@ async function main() {
   assert.equal(batchResult.added, 20);
   assert.equal(batchTransactionCount, 5, 'twenty article candidates should use five short canonical learning transactions');
   assert.equal(individualTransactionCount, 0, 'batch article settlement must not open one transaction per state command');
-  assert.equal(batchVocabularySnapshotWrites, 1, 'twenty article candidates should finalize the legacy vocabulary snapshot once');
+  assert.equal(batchVocabularySnapshotWrites, 2, 'new words reserve identities once, then finalize contexts once');
   assertCanonicalReviewCount(batchRunner.snapshot(), 20, 'batch settlement should commit one canonical review state per candidate');
   const batchAcquisitionRow = batchRunner.snapshot()
     .find((row) => row.id === 'vocabulary.acquisition.store.v1');
   assert.equal(Object.keys(batchAcquisitionRow?.content?.by_learning_unit_id || {}).length, 20);
   assert.ok(Object.values(batchAcquisitionRow.content.by_learning_unit_id)
     .every((pair) => pair.acquisition_state.status === 'graduated'));
+
+  // A committed acquisition chunk must keep its identity when the rest fails.
+  for (const failurePoint of ['after-chunk', 'after-final-write']) {
+    const contentBase = api.createInMemoryVocabularyRepository();
+    const faultRunner = api.createInMemoryVocabularyLearningUnitOfWorkRunner({ now: () => now });
+    let writes = 0;
+    let failOnce = true;
+    const content = {
+      ...contentBase,
+      async updateSnapshot(...args) {
+        const result = await contentBase.updateSnapshot(...args);
+        if (++writes === 2 && failurePoint === 'after-final-write' && failOnce) {
+          failOnce = false;
+          throw new Error('declared lost final write response');
+        }
+        return result;
+      },
+    };
+    const faultService = api.createVocabularyService({
+      repository: content, scheduler: schedulerStub(), now: () => new Date(now),
+      acquisitionEnabled: true, acquisitionRepository: createAcquisitionReader(faultRunner.snapshot),
+      runVocabularyLearningUnitOfWork: faultRunner.run,
+      runVocabularyLearningBatchSession: faultRunner.runBatchSession,
+    });
+    const inputs = ['partialalpha', 'partialbeta'].map((word, index) => ({
+      word, meaning: '测试义', targetId: `partial-${index}`,
+      context: { source_id: 'article-partial', sentence: `${word} appears here.`, meaning: '测试义' },
+    }));
+    await assert.rejects(() => faultService.queueVocabularyAcquisitions(inputs, {
+      transactionChunkSize: 1,
+      yieldControl() {
+        if (failurePoint === 'after-chunk' && failOnce) {
+          failOnce = false;
+          throw new Error('declared interruption after committed chunk');
+        }
+      },
+    }), /declared/);
+    const committedPairs = createAcquisitionReader(faultRunner.snapshot).loadSnapshot();
+    const before = await committedPairs;
+    const savedWords = await contentBase.loadSnapshot();
+    assert.equal(savedWords.words.length, 2, 'reserved word identities survive either failure');
+    assert.equal(savedWords.contexts.length, failurePoint === 'after-chunk' ? 0 : 2);
+    await faultService.queueVocabularyAcquisitions(inputs, { transactionChunkSize: 1 });
+    const after = await createAcquisitionReader(faultRunner.snapshot).loadSnapshot();
+    assert.equal(Object.keys(after.by_learning_unit_id).length, 2, 'retry creates no duplicate learning unit');
+    for (const [id, pair] of Object.entries(before.by_learning_unit_id)) {
+      assert.deepEqual(after.by_learning_unit_id[id], pair, 'saved acquisition is not rewritten');
+    }
+    const final = await contentBase.loadSnapshot();
+    assert.equal(final.contexts.length, 2);
+    assert.deepEqual(final.words.map((word) => word.id), savedWords.words.map((word) => word.id));
+    assertCanonicalReviewCount(faultRunner.snapshot(), 2, 'retry retains one review state per target');
+    const eventsBefore = faultRunner.snapshot().filter((row) => row.content?.events);
+    await faultService.queueVocabularyAcquisitions(inputs, { transactionChunkSize: 1 });
+    assert.deepEqual(faultRunner.snapshot().filter((row) => row.content?.events), eventsBefore,
+      'a further replay creates no duplicate completion event');
+  }
+
+  for (const status of ['known', 'ignored']) {
+    const content = api.createInMemoryVocabularyRepository();
+    const learning = api.createInMemoryVocabularyLearningUnitOfWorkRunner({ now: () => now });
+    const relearnService = api.createVocabularyService({
+      repository: content, scheduler: schedulerStub(), now: () => new Date(now),
+      acquisitionEnabled: true, acquisitionRepository: createAcquisitionReader(learning.snapshot),
+      runVocabularyLearningUnitOfWork: learning.run,
+      runVocabularyLearningBatchSession: learning.runBatchSession,
+    });
+    await applyArticle(api, relearnService, [candidate()]);
+    const word = await relearnService.getWordByLemma('seismic');
+    await content.updateSnapshot((snapshot) => {
+      snapshot.words.find((entry) => entry.id === word.id).status = status;
+    });
+    const beforeContent = await content.loadSnapshot();
+    const beforeLearning = learning.snapshot();
+    const input = candidate({ targetId: 'relearn-target', target_id: 'relearn-target', relearn: true,
+      tags: ['focus'], context: { ...candidate().context, source_id: 'article-relearn' } });
+    const result = await applyArticle(api, relearnService, [input]);
+    assert.equal(result.relearned, 0, 'an existing graduated sense is reused without restarting learning');
+    const after = await content.loadSnapshot();
+    assert.equal(after.words[0].status, status);
+    assert.equal(after.words[0].id, word.id);
+    assert.equal(after.words[0].meaning, word.meaning);
+    assert.deepEqual(after.words, beforeContent.words, 'canonical acquisition preserves legacy word metadata');
+    assert.deepEqual(after.reviewStates, beforeContent.reviewStates, 'canonical relearn must not reset legacy scores');
+    assert.deepEqual(learning.snapshot(), beforeLearning, 'existing sense/unit/review/event history remains unchanged');
+    const replay = await applyArticle(api, relearnService, [input]);
+    assert.equal(replay.relearned, 0);
+    assert.equal((await content.loadSnapshot()).contexts.length, 2, 'replay adds no duplicate context');
+  }
 
   const ownerVocabularyRepository = api.createInMemoryVocabularyRepository();
   const ownerRunner = api.createInMemoryVocabularyLearningUnitOfWorkRunner({ now: () => now });
@@ -453,7 +543,7 @@ async function main() {
       relearn: true,
       tags: ['focus'],
     })]);
-    assert.equal(result.relearned, 0, `flag-on ${legacyStatus} must not report legacy relearn`);
+    assert.equal(result.relearned, 1, `flag-on ${legacyStatus} reports one new canonical learning unit`);
     const after = await existingRepository.loadSnapshot();
     assert.deepEqual(after.reviewStates, before.reviewStates, `flag-on ${legacyStatus} must preserve legacy ReviewState`);
     assert.deepEqual(after.words, before.words, `flag-on ${legacyStatus} must preserve legacy word metadata`);
@@ -598,7 +688,9 @@ async function main() {
   console.log('Vocabulary article acquisition migration checks passed.');
 }
 
-main().catch((error) => {
+module.exports = { loadModules, createAcquisitionReader, schedulerStub, candidate, applyArticle };
+
+if (require.main === module) main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });

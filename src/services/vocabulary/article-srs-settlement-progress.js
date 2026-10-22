@@ -7,6 +7,8 @@ import {
 import { summarizeArticleSrsSettlement } from './article-srs-settlement.js';
 import {
   isSettlementMeaningRefinementPendingRetryable,
+  isSettlementSimpleMeaningValid,
+  getSettlementMeaningRefinementInputKey,
   SETTLEMENT_MEANING_REFINEMENT_PROMPT_VERSION,
 } from './settlement-meaning-refinement.js';
 
@@ -64,6 +66,7 @@ function normalizeRefinement(refinement) {
     : 'completed';
   return {
     target_id: targetId,
+    input_key: normalizeNullableText(refinement.input_key),
     simple_meaning: getSimpleMeaning(refinement),
     prompt_version: Number(refinement.prompt_version || refinement.promptVersion) || 0,
     status,
@@ -207,16 +210,22 @@ export function createArticleSrsSettlementProgressRepository(storage) {
         const targetId = getTargetId(candidate);
         if (!targetId) return;
         const existing = byTargetId.get(targetId);
+        const inputKey = getSettlementMeaningRefinementInputKey(candidate, articleId);
+        const sameInput = !existing?.input_key || existing.input_key === inputKey;
         const pendingIsRetryable = existing
           && isSettlementMeaningRefinementPendingRetryable(existing, attemptedAt);
         if (existing
+          && sameInput
           && existing.prompt_version === promptVersion
-          && (existing.status === 'completed'
+          && (existing.status === 'completed' && isSettlementSimpleMeaningValid(existing.simple_meaning, candidate.entry_type)
             || existing.status === 'pending' && !pendingIsRetryable)) return;
+        if (options.automatic && sameInput && existing?.prompt_version === promptVersion) return;
         claimedTargetIds.push(targetId);
         byTargetId.set(targetId, {
           ...(existing || {}),
           target_id: targetId,
+          input_key: inputKey,
+          simple_meaning: sameInput ? existing?.simple_meaning || null : null,
           prompt_version: promptVersion,
           status: 'pending',
           attempt_token: claimToken,
@@ -247,16 +256,19 @@ export function createArticleSrsSettlementProgressRepository(storage) {
         if (!targetId) return;
         const existing = byTargetId.get(targetId);
         if (claimToken && (!existing || existing.attempt_token !== claimToken)) return;
+        const inputKey = getSettlementMeaningRefinementInputKey(candidate, articleId);
+        if (existing?.input_key && existing.input_key !== inputKey) return;
         byTargetId.set(targetId, {
           ...(existing || {}),
           target_id: targetId,
+          input_key: inputKey,
           simple_meaning: getSimpleMeaning(candidate),
           prompt_version: promptVersion,
           status: 'completed',
           attempted_at: byTargetId.get(targetId) && byTargetId.get(targetId).attempted_at || refinedAt,
           completed_at: refinedAt,
           failed_at: null,
-          error: null,
+          error: normalizeNullableText(candidate.refinement_error),
         });
       });
       return {
@@ -329,6 +341,8 @@ export function createArticleSrsSettlementProgressRepository(storage) {
         ...current.applied_target_ids,
         ...appliedTargetIds,
       ])),
+      application_claims: current.application_claims.filter((claim) => !appliedTargetIds.includes(claim.target_id)),
+      removed_target_ids: current.removed_target_ids.filter((targetId) => !appliedTargetIds.includes(targetId)),
       updated_at: updatedAt,
     }));
   }
@@ -587,10 +601,13 @@ export function applyArticleSrsSettlementProgress(settlement = {}, progress = nu
   next.candidates = sourceCandidates.map((candidate) => {
     const targetId = getTargetId(candidate);
     const refinement = refinements.get(targetId);
-    if (refinement) {
+    const inputKey = getSettlementMeaningRefinementInputKey(candidate, normalizedProgress.article_id);
+    if (refinement && (!refinement.input_key || refinement.input_key === inputKey)) {
       candidate.refinement_attempted = true;
       candidate.refinement_status = refinement.status;
       candidate.refinement_attempted_at = refinement.attempted_at;
+      candidate.refinement_error = refinement.error || '';
+      candidate.refinement_input_key = inputKey;
       if (refinement.simple_meaning) {
         candidate.simple_meaning = refinement.simple_meaning;
         candidate.simpleMeaning = refinement.simple_meaning;
@@ -599,6 +616,20 @@ export function applyArticleSrsSettlementProgress(settlement = {}, progress = nu
           candidate.context.simpleMeaning = refinement.simple_meaning;
         }
       }
+    } else if (refinement?.input_key) {
+      const hasCurrentAnnotationMeaning = candidate.annotation_simple_meaning_input_key === inputKey
+        && isSettlementSimpleMeaningValid(getSimpleMeaning(candidate), candidate.entry_type);
+      if (!hasCurrentAnnotationMeaning) {
+        delete candidate.simple_meaning;
+        delete candidate.simpleMeaning;
+        if (candidate.context) {
+          delete candidate.context.simple_meaning;
+          delete candidate.context.simpleMeaning;
+        }
+      }
+      candidate.refinement_attempted = false;
+      candidate.refinement_status = '';
+      candidate.refinement_save_pending = false;
     }
     if (processedTargetIds.has(targetId)) matchedProcessedTargetIds.add(targetId);
     candidate.application_processing = processingTargetIds.has(targetId);

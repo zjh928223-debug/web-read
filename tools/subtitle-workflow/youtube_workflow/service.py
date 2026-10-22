@@ -1,3 +1,4 @@
+from .http import register_http_routes
 import json
 import io
 import hashlib
@@ -5,7 +6,6 @@ import importlib.metadata
 import math
 import os
 import platform
-import random
 import subprocess
 import sys
 import threading
@@ -49,6 +49,33 @@ from .core import (
     resolve_retry_stage,
     utc_now_iso,
     validate_session_files,
+)
+from .annotation_backfill_runtime import (
+    AnnotationBackfillCanceled,
+    AnnotationBackfillRuntime,
+    default_annotation_backfill_requester,
+)
+from .annotation_backfill_template import (
+    ANNOTATION_BACKFILL_PROMPT_PATH,
+    ANNOTATION_BACKFILL_BATCH_SIZE,
+    ANNOTATION_BACKFILL_MAX_BATCH_SIZE,
+    SRS_MEANING_REFINEMENT_PURPOSE,
+    SRS_MEANING_REFINEMENT_SOURCE,
+    SRS_MEANING_REFINEMENT_PROMPT,
+    parse_annotation_backfill_response,
+    annotation_backfill_target_ids,
+    validate_annotation_backfill_batch_result,
+    normalize_annotation_backfill_text,
+    is_srs_meaning_refinement_request,
+    find_annotation_backfill_sentence_index,
+    scope_annotation_backfill_template,
+    normalize_annotation_backfill_batch_size,
+    normalize_annotation_backfill_retry_count,
+    normalize_annotation_backfill_retry_delay,
+    is_transient_annotation_backfill_error,
+    split_annotation_backfill_template,
+    merge_annotation_backfill_results,
+    load_annotation_backfill_history,
 )
 from .credentials import CredentialStoreError, default_credential_store
 from .history import WorkflowHistoryStore, WorkflowStateRecoveryError
@@ -177,52 +204,6 @@ IGNORED_IMPORT_JSON_NAMES = {
     "repair_queue.json",
     "source-map.json",
 }
-ANNOTATION_BACKFILL_PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "annotation_backfill_prompt.txt"
-ANNOTATION_BACKFILL_BATCH_SIZE = 15
-ANNOTATION_BACKFILL_MAX_BATCH_SIZE = 50
-SRS_MEANING_REFINEMENT_PURPOSE = "srs_meaning_refinement"
-SRS_MEANING_REFINEMENT_SOURCE = "article-srs-meaning-refinement"
-SRS_MEANING_REFINEMENT_PROMPT = """
-You will receive a JSON object for SRS meaning refinement.
-Return only valid JSON in this exact shape:
-{"items":[{"targetId":"...","simpleMeaning":"..."}]}
-
-For each item, keep targetId unchanged and generate a very short Chinese simpleMeaning.
-simpleMeaning is the short Chinese lexical gloss of markedText/boundary as written, not the named entity, concrete referent, or explanation object that the expression points to in the article.
-Use sentence, localContext, and contextualExplanation only to choose the expression's sense. Do not directly compress contextualExplanation into the answer.
-Even when contextualExplanation explicitly identifies a concrete entity, never substitute that entity for markedText/boundary unless the entity name is explicitly present in markedText/boundary itself.
-
-Follow these contrastive examples:
-- markedText="invisible gas"; contextualExplanation identifies ethylene -> simpleMeaning="不可见气体", not "乙烯气体".
-- markedText="the capital"; contextualExplanation identifies Beijing -> simpleMeaning="首都", not "北京".
-- markedText="the enzyme"; contextualExplanation identifies polyphenol oxidase -> simpleMeaning="这种酶", not "多酚氧化酶".
-- markedText="ethylene gas" -> simpleMeaning="乙烯气体".
-- markedText="polyphenol oxidase" -> simpleMeaning="多酚氧化酶".
-
-Do not introduce article background, world knowledge, named entities, chemicals, causes, or facts that are not part of the lexical meaning of markedText/boundary.
-Do not generate boundary, type, memoryHint, article explanation, markdown, or any extra text.
-If an item is a proper noun, temporary term, or unsuitable for SRS, return an empty simpleMeaning for that targetId.
-""".strip()
-
-
-class AnnotationBackfillCanceled(RuntimeError):
-    pass
-
-
-def default_annotation_backfill_requester(cache_dir, model_name, system_prompt, payload_obj, extra_config=None, log_func=None, log_prefix="Gemini"):
-    from language_service import request_gemini_with_cache
-
-    return request_gemini_with_cache(
-        cache_dir,
-        model_name,
-        system_prompt,
-        payload_obj,
-        extra_config=extra_config,
-        log_func=log_func,
-        log_prefix=log_prefix,
-    )
-
-
 def default_merriam_requester(word: str, api_key: str):
     url = (
         "https://www.dictionaryapi.com/api/v3/references/collegiate/json/"
@@ -337,203 +318,6 @@ Keep each generalMeaning lexical, context-independent, natural, and preferably u
 Include the common senses represented by the supplied English definition, separated with Chinese punctuation when needed.
 Do not add examples, article context, explanations, markdown, or facts not present in the definition.
 """.strip()
-
-
-def parse_annotation_backfill_response(response_text: str, log_func=None) -> dict:
-    try:
-        parsed = json.loads(response_text)
-    except json.JSONDecodeError:
-        from language_service import parse_json_with_light_repair
-
-        parsed = parse_json_with_light_repair(
-            response_text,
-            log_func=log_func,
-            log_prefix="annotation-backfill",
-        )
-    if not isinstance(parsed, dict) or not isinstance(parsed.get("items"), list):
-        raise RuntimeError("Gemini annotation backfill response must be a JSON object with an items array")
-    return parsed
-
-
-def annotation_backfill_target_ids(items) -> list[str]:
-    target_ids = []
-    seen = set()
-    for item in items if isinstance(items, list) else []:
-        if not isinstance(item, dict):
-            continue
-        target_id = str(item.get("targetId") or "").strip()
-        if target_id and target_id not in seen:
-            seen.add(target_id)
-            target_ids.append(target_id)
-    return target_ids
-
-
-def validate_annotation_backfill_batch_result(request_template: dict, result: dict) -> None:
-    requested_ids = annotation_backfill_target_ids(
-        request_template.get("items") if isinstance(request_template, dict) else []
-    )
-    if not requested_ids:
-        return
-    returned_ids = set(annotation_backfill_target_ids(result.get("items") if isinstance(result, dict) else []))
-    missing_ids = [target_id for target_id in requested_ids if target_id not in returned_ids]
-    if not missing_ids:
-        return
-    preview = ", ".join(missing_ids[:5])
-    if len(missing_ids) > 5:
-        preview += ", ..."
-    raise RuntimeError(
-        "Gemini annotation backfill response is incomplete: "
-        f"missing {len(missing_ids)} requested target(s): {preview}"
-    )
-
-
-def normalize_annotation_backfill_text(value) -> str:
-    return " ".join(str(value or "").split())
-
-
-def is_srs_meaning_refinement_request(payload: dict, template: dict) -> bool:
-    purpose = str((payload or {}).get("purpose") or (template or {}).get("purpose") or "").strip()
-    source = str((template or {}).get("source") or (payload or {}).get("source") or "").strip()
-    return purpose == SRS_MEANING_REFINEMENT_PURPOSE or source == SRS_MEANING_REFINEMENT_SOURCE
-
-
-def find_annotation_backfill_sentence_index(sentences: list[str], item: dict) -> int:
-    source_sentence = normalize_annotation_backfill_text(item.get("sourceSentence") if isinstance(item, dict) else "")
-    if not source_sentence:
-        return -1
-    for index, sentence in enumerate(sentences):
-        if sentence == source_sentence or source_sentence in sentence or sentence in source_sentence:
-            return index
-    return -1
-
-
-def scope_annotation_backfill_template(template: dict, items: list[dict]) -> dict:
-    scoped = dict(template)
-    scoped["items"] = items
-    sentences = [
-        normalize_annotation_backfill_text(sentence)
-        for sentence in (template.get("articleSentences") if isinstance(template.get("articleSentences"), list) else [])
-    ]
-    sentences = [sentence for sentence in sentences if sentence]
-    if not items:
-        return scoped
-
-    last_sentence_index = -1
-    for item in items:
-        last_sentence_index = max(last_sentence_index, find_annotation_backfill_sentence_index(sentences, item))
-    if last_sentence_index >= 0:
-        scoped_sentences = sentences[:last_sentence_index + 1]
-        scoped["articleSentences"] = scoped_sentences
-        scoped["articleText"] = " ".join(scoped_sentences)
-        return scoped
-
-    article_text = normalize_annotation_backfill_text(template.get("articleText"))
-    last_end = 0
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        source_sentence = normalize_annotation_backfill_text(item.get("sourceSentence"))
-        if not source_sentence or not article_text:
-            continue
-        index = article_text.find(source_sentence)
-        if index >= 0:
-            last_end = max(last_end, index + len(source_sentence))
-    if last_end > 0:
-        scoped["articleText"] = article_text[:last_end].strip()
-    return scoped
-
-
-def normalize_annotation_backfill_batch_size(value) -> int:
-    try:
-        batch_size = int(value)
-    except (TypeError, ValueError):
-        batch_size = ANNOTATION_BACKFILL_BATCH_SIZE
-    if batch_size <= 0:
-        batch_size = ANNOTATION_BACKFILL_BATCH_SIZE
-    return max(1, min(batch_size, ANNOTATION_BACKFILL_MAX_BATCH_SIZE))
-
-
-def normalize_annotation_backfill_retry_count(value) -> int:
-    try:
-        retry_count = int(value)
-    except (TypeError, ValueError):
-        retry_count = 2
-    return max(0, min(retry_count, 5))
-
-
-def normalize_annotation_backfill_retry_delay(value) -> float:
-    try:
-        retry_delay = float(value)
-    except (TypeError, ValueError):
-        retry_delay = 2.0
-    return max(0.0, min(retry_delay, 30.0))
-
-
-def is_transient_annotation_backfill_error(exc: Exception) -> bool:
-    detail = str(exc or "").lower()
-    return (
-        "503" in detail
-        or "429" in detail
-        or "unavailable" in detail
-        or "high demand" in detail
-        or "rate limit" in detail
-        or "temporarily" in detail
-    )
-
-
-def split_annotation_backfill_template(template: dict, batch_size: int) -> list[dict]:
-    items = template.get("items") if isinstance(template.get("items"), list) else []
-    if len(items) <= batch_size:
-        return [template]
-    return [
-        scope_annotation_backfill_template(template, items[index:index + batch_size])
-        for index in range(0, len(items), batch_size)
-    ]
-
-
-def merge_annotation_backfill_results(existing: dict | None, incoming: dict) -> dict:
-    if not isinstance(incoming, dict):
-        return {"items": []}
-    if not isinstance(existing, dict) or not isinstance(existing.get("items"), list):
-        return incoming
-    incoming_items = incoming.get("items") if isinstance(incoming.get("items"), list) else []
-    existing_items = existing.get("items") if isinstance(existing.get("items"), list) else []
-    merged_by_key: dict[str, dict] = {}
-    order: list[str] = []
-
-    def put_item(item: dict, fallback_index: int) -> None:
-        if not isinstance(item, dict):
-            return
-        target_id = str(item.get("targetId") or "").strip()
-        key = f"target:{target_id}" if target_id else f"index:{fallback_index}"
-        if key not in merged_by_key:
-            order.append(key)
-        merged_by_key[key] = item
-
-    for index, item in enumerate(existing_items):
-        put_item(item, index)
-    for index, item in enumerate(incoming_items, start=len(existing_items)):
-        put_item(item, index)
-
-    merged = dict(existing)
-    merged.update(incoming)
-    merged["items"] = [merged_by_key[key] for key in order]
-    return merged
-
-
-def load_annotation_backfill_history(backfill_dir: Path) -> list[dict]:
-    runs_dir = backfill_dir / "runs"
-    if not runs_dir.exists():
-        return []
-    history: list[dict] = []
-    for meta_path in sorted(runs_dir.glob("*-meta.json"), key=lambda path: path.stat().st_mtime, reverse=True):
-        try:
-            meta = load_json_file(meta_path)
-        except Exception:
-            continue
-        if isinstance(meta, dict):
-            history.append(meta)
-    return history
 
 
 def write_json_file(path: Path, payload: dict) -> None:
@@ -1092,13 +876,17 @@ class JobManager:
         }
         self.folder_picker = folder_picker or open_system_folder_picker
         self.video_picker = video_picker or open_system_video_picker
-        self.annotation_backfill_requester = annotation_backfill_requester or default_annotation_backfill_requester
-        self.annotation_retry_jitter = annotation_retry_jitter or (lambda delay: random.uniform(0.0, max(0.0, delay * 0.25)))
-        self.annotation_backfill_operations: dict[str, dict] = {}
-        self.annotation_backfill_threads: dict[str, threading.Thread] = {}
-        self.annotation_backfill_lock = threading.RLock()
-        self.annotation_backfill_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="annotation-ai")
-        self.annotation_resource_slots: dict[str, threading.BoundedSemaphore] = {}
+        self._annotation_runtime = AnnotationBackfillRuntime(
+            manifest_for_job=self._manifest_for_job,
+            require_writer_open=self._require_workflow_writer_open,
+            load_config=lambda: self.store.load_config(),
+            read_secret=lambda: self.credential_store.get_secret(),
+            log=self.append_service_log,
+            write_json=write_json_file,
+            redact=redact_text,
+            requester=annotation_backfill_requester,
+            retry_jitter=annotation_retry_jitter,
+        )
         self.jobs: dict[str, JobRecord] = {}
         self.event_limit = max(20, int(event_limit))
         self.persistence_delay_seconds = max(0.01, float(persistence_delay_seconds))
@@ -2016,21 +1804,14 @@ class JobManager:
                 if record.status not in TERMINAL_STATUSES:
                     record.cancel_event.set()
             worker_thread = self.worker_thread
-        with self.annotation_backfill_lock:
-            for operation in self.annotation_backfill_operations.values():
-                if operation["status"] in {"queued", "running", "retrying"}:
-                    operation["cancelEvent"].set()
-            backfill_threads = list(self.annotation_backfill_threads.values())
+        backfill_threads = self._annotation_runtime.cancel_pending()
 
         current_thread = threading.current_thread()
         if persistence_timer is not None and persistence_timer is not current_thread:
             persistence_timer.join()
         if worker_thread is not None and worker_thread is not current_thread:
             worker_thread.join()
-        for thread in backfill_threads:
-            if thread is not current_thread:
-                thread.join()
-        self.annotation_backfill_executor.shutdown(wait=True, cancel_futures=True)
+        self._annotation_runtime.close(backfill_threads)
 
         with self.lock:
             self._flush_persistence_locked()
@@ -2693,383 +2474,40 @@ class JobManager:
             report["reportPath"] = str(report_path)
         return report
 
+    @property
+    def annotation_backfill_requester(self) -> Callable[..., str]:
+        # Dictionary meaning translation shares the same injected provider.
+        return self._annotation_runtime.requester
+
+    @annotation_backfill_requester.setter
+    def annotation_backfill_requester(self, requester: Callable[..., str]) -> None:
+        self._annotation_runtime.requester = requester
+
+    @property
+    def annotation_retry_jitter(self) -> Callable[[float], float]:
+        return self._annotation_runtime.retry_jitter
+
+    @annotation_retry_jitter.setter
+    def annotation_retry_jitter(self, jitter: Callable[[float], float]) -> None:
+        self._annotation_runtime.retry_jitter = jitter
+
     def run_annotation_backfill(self, job_id: str, payload: dict | None = None) -> dict:
-        self._require_workflow_writer_open()
-        payload = payload or {}
-        template = payload.get("template")
-        if not isinstance(template, dict) or not isinstance(template.get("items"), list):
-            raise HTTPException(status_code=400, detail="template with items array is required")
-        manifest = self._manifest_for_job(job_id)
-        output_dir = Path(str(manifest.get("outputDir") or ""))
-        if not output_dir:
-            raise HTTPException(status_code=409, detail="job outputDir is missing")
-        is_srs_refinement = is_srs_meaning_refinement_request(payload, template)
-        backfill_dir = output_dir / "_workflow" / (
-            "srs-meaning-refinement" if is_srs_refinement else "annotation-backfill"
-        )
-        runs_dir = backfill_dir / "runs"
-        runs_dir.mkdir(parents=True, exist_ok=True)
-        run_id = f"{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
-
-        if not is_srs_refinement and not ANNOTATION_BACKFILL_PROMPT_PATH.exists():
-            raise HTTPException(status_code=500, detail="annotation backfill prompt is missing")
-        prompt = (
-            SRS_MEANING_REFINEMENT_PROMPT
-            if is_srs_refinement
-            else ANNOTATION_BACKFILL_PROMPT_PATH.read_text(encoding="utf-8")
-        )
-        write_json_file(backfill_dir / "latest-template.json", template)
-        write_json_file(runs_dir / f"{run_id}-template.json", template)
-        (backfill_dir / "latest-prompt.txt").write_text(prompt, encoding="utf-8")
-        (runs_dir / f"{run_id}-prompt.txt").write_text(prompt, encoding="utf-8")
-
-        api_key = str(payload.get("apiKey") or payload.get("api_key") or "").strip()
-        if not api_key:
-            try:
-                api_key = self.credential_store.get_secret()
-            except Exception:
-                api_key = ""
-        if not api_key:
-            raise HTTPException(status_code=400, detail="Gemini API key must be provided or saved in system credentials")
-
-        saved_config = self.store.load_config()
-        model = str(payload.get("model") or saved_config.get("model") or DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL
-        base_url = str(saved_config.get("baseUrl") or "").strip()
-        template_items = template.get("items") if isinstance(template.get("items"), list) else []
-        batch_size = (
-            max(1, len(template_items))
-            if is_srs_refinement
-            else normalize_annotation_backfill_batch_size(payload.get("batchSize"))
-        )
-        request_templates = [template] if is_srs_refinement else split_annotation_backfill_template(template, batch_size)
-        max_retries = 0 if is_srs_refinement else normalize_annotation_backfill_retry_count(payload.get("maxRetries"))
-        retry_delay_seconds = normalize_annotation_backfill_retry_delay(payload.get("retryDelaySeconds"))
-        operation_control = payload.get("_operationControl") if isinstance(payload.get("_operationControl"), dict) else {}
-        cancel_event = operation_control.get("cancelEvent")
-        deadline = operation_control.get("deadline")
-        retry_count = 0
-
-        def log_annotation_backfill(message: str) -> None:
-            self.append_service_log(f"annotation-backfill {job_id}: {message}")
-
-        result: dict = {"items": []}
-        try:
-            for batch_index, request_template in enumerate(request_templates, start=1):
-                batch_items = request_template.get("items") if isinstance(request_template.get("items"), list) else []
-                if len(request_templates) > 1:
-                    write_json_file(runs_dir / f"{run_id}-batch-{batch_index}-template.json", request_template)
-                    log_annotation_backfill(
-                        f"request batch {batch_index}/{len(request_templates)} items={len(batch_items)}"
-                    )
-                for attempt_index in range(max_retries + 1):
-                    if cancel_event is not None and cancel_event.is_set():
-                        raise AnnotationBackfillCanceled("annotation backfill canceled")
-                    if deadline is not None and time.monotonic() >= deadline:
-                        raise TimeoutError("annotation backfill deadline exceeded")
-                    try:
-                        response_text = self.annotation_backfill_requester(
-                            GEMINI_CACHE_DIR,
-                            model,
-                            prompt,
-                            request_template,
-                            extra_config={
-                                "api_key": api_key,
-                                "base_url": base_url,
-                                "response_mime_type": "application/json",
-                                "temperature": 0.1,
-                                "deadline": time.time() + max(0.0, deadline - time.monotonic()) if deadline else None,
-                            },
-                            log_func=log_annotation_backfill,
-                            log_prefix="annotation-backfill",
-                        )
-                        if cancel_event is not None and cancel_event.is_set():
-                            raise AnnotationBackfillCanceled("annotation backfill canceled")
-                        if deadline is not None and time.monotonic() >= deadline:
-                            raise TimeoutError("annotation backfill deadline exceeded")
-                        break
-                    except Exception as exc:
-                        if attempt_index >= max_retries or not is_transient_annotation_backfill_error(exc):
-                            raise exc
-                        retry_count += 1
-                        safe_detail = redact_text(str(exc), [api_key])
-                        log_annotation_backfill(
-                            f"transient failure in batch {batch_index}/{len(request_templates)}; "
-                            f"retry {attempt_index + 1}/{max_retries}: {safe_detail}"
-                        )
-                        if retry_delay_seconds > 0:
-                            retry_wait = retry_delay_seconds * (2 ** attempt_index)
-                            retry_wait += self.annotation_retry_jitter(retry_wait)
-                            if cancel_event is not None and cancel_event.wait(retry_wait):
-                                raise AnnotationBackfillCanceled("annotation backfill canceled")
-                            if cancel_event is None:
-                                time.sleep(retry_wait)
-                try:
-                    batch_result = parse_annotation_backfill_response(response_text, log_func=log_annotation_backfill)
-                    validate_annotation_backfill_batch_result(request_template, batch_result)
-                except Exception as exc:
-                    (backfill_dir / "latest-result.raw.txt").write_text(str(response_text or ""), encoding="utf-8")
-                    (runs_dir / f"{run_id}-batch-{batch_index}-result.raw.txt").write_text(
-                        str(response_text or ""),
-                        encoding="utf-8",
-                    )
-                    safe_detail = redact_text(str(exc), [api_key])
-                    self.append_service_log(
-                        f"annotation-backfill {job_id}: response parse/validation failed in batch "
-                        f"{batch_index}/{len(request_templates)}: {safe_detail}"
-                    )
-                    raise HTTPException(status_code=502, detail=safe_detail)
-                result = merge_annotation_backfill_results(result, batch_result)
-        except Exception as exc:
-            if isinstance(exc, (AnnotationBackfillCanceled, TimeoutError)):
-                raise
-            if isinstance(exc, HTTPException):
-                raise exc
-            safe_detail = redact_text(str(exc), [api_key])
-            self.append_service_log(f"annotation-backfill {job_id}: request failed: {safe_detail}")
-            raise HTTPException(status_code=502, detail=safe_detail)
-
-        if payload.get("mergeWithLatest"):
-            try:
-                existing_result = load_json_file(backfill_dir / "latest-result.json")
-            except Exception:
-                existing_result = {}
-            result = merge_annotation_backfill_results(existing_result, result)
-
-        metadata = {
-            "schemaVersion": 1,
-            "jobId": job_id,
-            "runId": run_id,
-            "model": model,
-            "generatedAt": utc_now_iso(),
-            "itemCount": len(result.get("items") or []),
-            "templateItemCount": len(template.get("items") or []),
-            "requestItemCount": len(template.get("items") or []),
-            "batchSize": batch_size,
-            "batchCount": len(request_templates),
-            "retryCount": retry_count,
-            "mergeWithLatest": bool(payload.get("mergeWithLatest")),
-            "purpose": SRS_MEANING_REFINEMENT_PURPOSE if is_srs_refinement else "annotation_backfill",
-            "singleRequest": bool(is_srs_refinement or payload.get("singleRequest")),
-        }
-        write_json_file(backfill_dir / "latest-result.json", result)
-        write_json_file(backfill_dir / "latest-meta.json", metadata)
-        write_json_file(runs_dir / f"{run_id}-result.json", result)
-        write_json_file(runs_dir / f"{run_id}-meta.json", metadata)
-        self.append_service_log(f"annotation-backfill {job_id}: ready items={len(result.get('items') or [])}")
-        return {
-            "status": "ready",
-            "jobId": job_id,
-            "outputDir": str(output_dir),
-            "backfillDir": str(backfill_dir),
-            "templatePath": str(backfill_dir / "latest-template.json"),
-            "promptPath": str(backfill_dir / "latest-prompt.txt"),
-            "resultPath": str(backfill_dir / "latest-result.json"),
-            "itemCount": len(result.get("items") or []),
-            "metadata": metadata,
-            "result": result,
-        }
+        return self._annotation_runtime.run(job_id, payload)
 
     def start_annotation_backfill(self, job_id: str, payload: dict | None = None) -> dict:
-        self._require_workflow_writer_open()
-        payload = dict(payload or {})
-        template = payload.get("template")
-        if not isinstance(template, dict) or not isinstance(template.get("items"), list):
-            raise HTTPException(status_code=400, detail="template with items array is required")
-        self._manifest_for_job(job_id)
-        operation_id = uuid.uuid4().hex[:16]
-        now = utc_now_iso()
-        operation = {
-            "operationId": operation_id,
-            "jobId": job_id,
-            "status": "queued",
-            "createdAt": now,
-            "updatedAt": now,
-            "result": None,
-            "error": None,
-            "cancelEvent": threading.Event(),
-        }
-        try:
-            deadline_seconds = float(payload.get("deadlineSeconds", 120.0))
-        except (TypeError, ValueError):
-            raise HTTPException(status_code=400, detail="deadlineSeconds must be numeric")
-        deadline_seconds = max(0.01, min(deadline_seconds, 900.0))
-        operation["deadlineAt"] = time.monotonic() + deadline_seconds
-        model = str(payload.get("model") or DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL
-        operation["resourceKey"] = f"gemini:{model.lower()}"
-        thread = threading.Thread(
-            target=self._run_annotation_backfill_operation,
-            args=(operation_id, payload),
-            daemon=True,
-        )
-        with self.annotation_backfill_lock:
-            self.annotation_backfill_operations[operation_id] = operation
-            self.annotation_backfill_threads[operation_id] = thread
-        thread.start()
-        return self._public_annotation_backfill_operation(operation)
-
-    def _run_annotation_backfill_operation(self, operation_id: str, payload: dict) -> None:
-        with self.annotation_backfill_lock:
-            operation = self.annotation_backfill_operations[operation_id]
-            operation["status"] = "running"
-            operation["updatedAt"] = utc_now_iso()
-        try:
-            controlled_payload = dict(payload)
-            controlled_payload["_operationControl"] = {
-                "cancelEvent": operation["cancelEvent"],
-                "deadline": operation["deadlineAt"],
-            }
-            slot = self._annotation_resource_slot(operation["resourceKey"])
-            while not slot.acquire(timeout=0.01):
-                if operation["cancelEvent"].is_set():
-                    raise AnnotationBackfillCanceled("annotation backfill canceled")
-                if time.monotonic() >= operation["deadlineAt"]:
-                    raise TimeoutError("annotation backfill deadline exceeded")
-            try:
-                provider_future = self.annotation_backfill_executor.submit(
-                    self.run_annotation_backfill, operation["jobId"], controlled_payload
-                )
-                while not provider_future.done():
-                    if operation["cancelEvent"].wait(0.01):
-                        raise AnnotationBackfillCanceled("annotation backfill canceled")
-                    if time.monotonic() >= operation["deadlineAt"]:
-                        raise TimeoutError("annotation backfill deadline exceeded")
-                result = provider_future.result()
-            finally:
-                if 'provider_future' not in locals() or provider_future.done():
-                    slot.release()
-                else:
-                    provider_future.add_done_callback(lambda _future: slot.release())
-        except Exception as exc:
-            safe_detail = str(exc.detail) if isinstance(exc, HTTPException) else str(exc)
-            if isinstance(exc, AnnotationBackfillCanceled):
-                status = "canceled"
-                category = "canceled"
-                retryable = True
-            elif isinstance(exc, TimeoutError):
-                status = "failed"
-                category = "timeout"
-                retryable = True
-            else:
-                status = "failed"
-                category = "upstream"
-                retryable = True
-            with self.annotation_backfill_lock:
-                operation["status"] = status
-                operation["error"] = {"category": category, "message": safe_detail, "retryable": retryable}
-                operation["updatedAt"] = utc_now_iso()
-        else:
-            with self.annotation_backfill_lock:
-                operation["status"] = "ready"
-                operation["result"] = result.get("result")
-                operation["response"] = result
-                operation["updatedAt"] = utc_now_iso()
-        finally:
-            with self.annotation_backfill_lock:
-                self.annotation_backfill_threads.pop(operation_id, None)
-
-    def _annotation_resource_slot(self, resource_key: str) -> threading.BoundedSemaphore:
-        with self.annotation_backfill_lock:
-            return self.annotation_resource_slots.setdefault(resource_key, threading.BoundedSemaphore(1))
+        return self._annotation_runtime.start(job_id, payload)
 
     def get_annotation_backfill_operation(self, job_id: str, operation_id: str) -> dict:
-        with self.annotation_backfill_lock:
-            operation = self.annotation_backfill_operations.get(operation_id)
-            if operation is None or operation["jobId"] != job_id:
-                raise HTTPException(status_code=404, detail="annotation backfill operation not found")
-            return self._public_annotation_backfill_operation(operation)
+        return self._annotation_runtime.get_operation(job_id, operation_id)
 
     def cancel_annotation_backfill_operation(self, job_id: str, operation_id: str) -> dict:
-        with self.annotation_backfill_lock:
-            operation = self.annotation_backfill_operations.get(operation_id)
-            if operation is None or operation["jobId"] != job_id:
-                raise HTTPException(status_code=404, detail="annotation backfill operation not found")
-            operation["cancelEvent"].set()
-            if operation["status"] == "queued":
-                operation["status"] = "canceled"
-                operation["error"] = {"category": "canceled", "message": "annotation backfill canceled", "retryable": True}
-                operation["updatedAt"] = utc_now_iso()
-            return self._public_annotation_backfill_operation(operation)
-
-    def _public_annotation_backfill_operation(self, operation: dict) -> dict:
-        result = {
-            key: value for key, value in operation.items()
-            if key not in {"cancelEvent", "response", "deadlineAt"} and value is not None
-        }
-        result["statusUrl"] = (
-            f"/api/jobs/{operation['jobId']}/annotation-backfill/operations/{operation['operationId']}"
-        )
-        result["cancelUrl"] = result["statusUrl"] + "/cancel"
-        if operation.get("response") is not None:
-            result["response"] = operation["response"]
-        return result
+        return self._annotation_runtime.cancel_operation(job_id, operation_id)
 
     def get_annotation_backfill_result(self, job_id: str) -> dict:
-        manifest = self._manifest_for_job(job_id)
-        output_dir = Path(str(manifest.get("outputDir") or ""))
-        if not output_dir:
-            raise HTTPException(status_code=409, detail="job outputDir is missing")
-        backfill_dir = output_dir / "_workflow" / "annotation-backfill"
-        result_path = backfill_dir / "latest-result.json"
-        meta_path = backfill_dir / "latest-meta.json"
-        if not result_path.exists():
-            raise HTTPException(status_code=404, detail="annotation backfill result not found")
-        try:
-            result = load_json_file(result_path)
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"annotation backfill result is invalid: {exc}")
-        if not isinstance(result, dict) or not isinstance(result.get("items"), list):
-            raise HTTPException(status_code=500, detail="annotation backfill result must be an object with items")
-        try:
-            metadata = load_json_file(meta_path) if meta_path.exists() else {}
-        except Exception:
-            metadata = {}
-        if not isinstance(metadata, dict):
-            metadata = {}
-        return {
-            "status": "ready",
-            "jobId": job_id,
-            "resultPath": str(result_path),
-            "itemCount": len(result.get("items") or []),
-            "metadata": metadata,
-            "history": load_annotation_backfill_history(backfill_dir),
-            "result": result,
-        }
+        return self._annotation_runtime.get_result(job_id)
 
     def get_annotation_backfill_run_result(self, job_id: str, run_id: str) -> dict:
-        run_id = str(run_id or "").strip()
-        if not run_id or "/" in run_id or "\\" in run_id or ".." in run_id:
-            raise HTTPException(status_code=400, detail="invalid annotation backfill run id")
-        manifest = self._manifest_for_job(job_id)
-        output_dir = Path(str(manifest.get("outputDir") or ""))
-        if not output_dir:
-            raise HTTPException(status_code=409, detail="job outputDir is missing")
-        backfill_dir = output_dir / "_workflow" / "annotation-backfill"
-        runs_dir = backfill_dir / "runs"
-        result_path = runs_dir / f"{run_id}-result.json"
-        meta_path = runs_dir / f"{run_id}-meta.json"
-        if not result_path.exists():
-            raise HTTPException(status_code=404, detail="annotation backfill run result not found")
-        try:
-            result = load_json_file(result_path)
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"annotation backfill run result is invalid: {exc}")
-        if not isinstance(result, dict) or not isinstance(result.get("items"), list):
-            raise HTTPException(status_code=500, detail="annotation backfill run result must be an object with items")
-        try:
-            metadata = load_json_file(meta_path) if meta_path.exists() else {}
-        except Exception:
-            metadata = {}
-        if not isinstance(metadata, dict):
-            metadata = {}
-        return {
-            "status": "ready",
-            "jobId": job_id,
-            "runId": run_id,
-            "resultPath": str(result_path),
-            "itemCount": len(result.get("items") or []),
-            "metadata": metadata,
-            "result": result,
-        }
+        return self._annotation_runtime.get_run_result(job_id, run_id)
 
     def _reader_marks_path(self, job_id: str) -> Path:
         manifest = self._raw_manifest_for_reader_record(job_id)
@@ -3997,304 +3435,7 @@ def create_app(
         expose_headers=["accept-ranges", "content-range", "etag", "x-read-web-media-identity"],
     )
 
-    @app.get("/api/health")
-    def health():
-        recovery_blocked = any(
-            not item.get("writable", True) for item in manager.recovery_status.values()
-        )
-        return {
-            "status": "degraded" if recovery_blocked else "ok",
-            "service": "subtitle-workflow",
-            "serviceVersion": SERVICE_VERSION,
-            "releaseId": os.environ.get("READ_WEB_RELEASE_ID", ""),
-            "profileId": os.environ.get("READ_WEB_PROFILE_ID", ""),
-            "instanceId": os.environ.get("READ_WEB_INSTANCE_ID", ""),
-            "workflowRoot": str(SCRIPT_DIR),
-            "dataRoot": str(DEFAULT_DATA_ROOT),
-            "features": {
-                "videoPlayback": True,
-                "videoSourceBinding": True,
-                "failedQueueCleanup": True,
-                "merriamWebsterPronunciation": True,
-                "merriamWebsterGeneralMeanings": True,
-                "edgeTtsPronunciation": True,
-            },
-            "recoveryRequired": recovery_blocked,
-            "time": utc_now_iso(),
-        }
-
-    @app.get("/api/diagnostics")
-    def diagnostics():
-        return manager.diagnostics_status()
-
-    @app.get("/api/diagnostics/package")
-    def diagnostics_package():
-        return Response(
-            content=manager.diagnostics_package(),
-            media_type="application/zip",
-            headers={"content-disposition": 'attachment; filename="subtitle-workflow-diagnostics.zip"'},
-        )
-
-    @app.get("/api/config")
-    def get_config():
-        return manager.get_config()
-
-    @app.post("/api/config")
-    def save_config(payload: dict):
-        return manager.save_config(payload)
-
-    @app.get("/api/credentials/gemini/status")
-    def gemini_credential_status():
-        return manager.credential_status()
-
-    @app.post("/api/credentials/gemini")
-    def save_gemini_credential(payload: dict):
-        return manager.save_credential(payload)
-
-    @app.delete("/api/credentials/gemini")
-    def delete_gemini_credential():
-        return manager.delete_credential()
-
-    @app.get("/api/credentials/merriam-webster/status")
-    def merriam_credential_status():
-        return manager.merriam_credential_status()
-
-    @app.post("/api/credentials/merriam-webster")
-    def save_merriam_credential(payload: dict):
-        return manager.save_merriam_credential(payload)
-
-    @app.delete("/api/credentials/merriam-webster")
-    def delete_merriam_credential():
-        return manager.delete_merriam_credential()
-
-    @app.get("/api/dictionary/pronunciation")
-    def dictionary_pronunciation(word: str = ""):
-        return manager.merriam_pronunciation(word)
-
-    @app.post("/api/dictionary/pronunciations")
-    def dictionary_pronunciations(payload: dict):
-        return manager.merriam_pronunciations(payload)
-
-    @app.get("/api/dictionary/pronunciation/status")
-    def dictionary_pronunciation_status():
-        return manager.merriam_pronunciation_status()
-
-    @app.post("/api/dictionary/general-meanings")
-    def dictionary_general_meanings(payload: dict):
-        return manager.merriam_general_meanings(payload)
-
-    @app.post("/api/tts/edge")
-    def edge_tts_pronunciation(payload: dict):
-        return manager.edge_tts_pronunciation((payload or {}).get("text"))
-
-    @app.post("/api/tts/edge/batch")
-    def edge_tts_pronunciations(payload: dict):
-        return manager.edge_tts_pronunciations(payload)
-
-    @app.get("/api/tts/edge/audio/{cache_id}.mp3")
-    def edge_tts_audio(cache_id: str):
-        return FileResponse(manager.edge_tts_audio_path(cache_id), media_type="audio/mpeg")
-
-    @app.get("/api/tts/edge/status")
-    def edge_tts_status():
-        return manager.edge_tts_status()
-
-    @app.get("/api/maintenance")
-    def maintenance():
-        return manager.maintenance_status()
-
-    @app.post("/api/maintenance/cleanup")
-    def cleanup_outputs(payload: dict | None = None):
-        return manager.cleanup_outputs(payload)
-
-    @app.post("/api/jobs")
-    def create_job(payload: dict, request: Request):
-        return manager.create_job(
-            payload,
-            idempotency_key=request.headers.get("idempotency-key"),
-            expected_revision=_expected_revision_from_request(request),
-        )
-
-    @app.post("/api/jobs/clear-canceled")
-    def clear_canceled_jobs():
-        return manager.clear_canceled_jobs()
-
-    @app.post("/api/jobs/clear-failed")
-    def clear_failed_jobs(request: Request):
-        return manager.clear_failed_jobs(expected_revision=_expected_revision_from_request(request))
-
-    @app.post("/api/import/pick-folder")
-    def import_pick_folder(payload: dict | None = None):
-        return manager.pick_import_folder(payload)
-
-    @app.post("/api/media/pick-video")
-    def media_pick_video(payload: dict | None = None):
-        return manager.pick_video_file(payload)
-
-    @app.post("/api/import/scan")
-    def import_scan(payload: dict):
-        return manager.scan_import_root(payload)
-
-    @app.post("/api/import/jobs")
-    def import_jobs(payload: dict):
-        return manager.create_import_jobs(payload)
-
-    @app.get("/api/history")
-    def history(query: str = "", status: str = "", limit: int = 50):
-        return manager.list_history(query=query, status=status, limit=limit)
-
-    @app.get("/api/history/{job_id}")
-    def history_item(job_id: str):
-        return manager.get_history(job_id)
-
-    @app.delete("/api/history/{job_id}")
-    def delete_history_item(job_id: str, deleteFiles: bool = False):
-        return manager.delete_history(job_id, delete_files=deleteFiles)
-
-    @app.get("/api/reader/recent")
-    def reader_recent(query: str = "", limit: int = 50, timeScope: str = "all", offset: int = 0):
-        return manager.list_reader_recent(query=query, limit=limit, time_scope=timeScope, offset=offset)
-
-    @app.post("/api/reader/activity")
-    def reader_activity(payload: dict | None = None):
-        return manager.record_reader_activity(payload)
-
-    @app.get("/api/jobs/{job_id}/reader-activity")
-    def job_reader_activity(job_id: str, recover: bool = False):
-        return manager.get_reader_activity(job_id, recover=recover)
-
-    @app.post("/api/jobs/snapshot")
-    def jobs_snapshot(payload: dict | None = None):
-        return manager.jobs_snapshot(payload)
-
-    @app.get("/api/jobs/{job_id}")
-    def get_job(job_id: str):
-        return manager.get_job(job_id).public_snapshot()
-
-    @app.delete("/api/jobs/{job_id}")
-    def delete_job(job_id: str, request: Request):
-        return manager.delete_job(job_id, expected_revision=_expected_revision_from_request(request))
-
-    @app.get("/api/jobs/{job_id}/events")
-    def job_events(job_id: str):
-        record = manager.get_job(job_id)
-
-        def stream():
-            sent = 0
-            while True:
-                with record.lock:
-                    events = list(record.events)
-                    terminal = record.status in TERMINAL_STATUSES
-                for event in events[sent:]:
-                    yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
-                sent = len(events)
-                if terminal and sent >= len(events):
-                    break
-                time.sleep(0.25)
-
-        return StreamingResponse(stream(), media_type="text/event-stream")
-
-    @app.post("/api/jobs/{job_id}/cancel")
-    def cancel_job(job_id: str, request: Request):
-        return manager.cancel_job(
-            job_id,
-            idempotency_key=request.headers.get("idempotency-key"),
-            expected_revision=_expected_revision_from_request(request),
-        )
-
-    @app.post("/api/jobs/{job_id}/prioritize")
-    def prioritize_job(job_id: str, request: Request):
-        return manager.prioritize_job(
-            job_id,
-            idempotency_key=request.headers.get("idempotency-key"),
-            expected_revision=_expected_revision_from_request(request),
-        )
-
-    @app.post("/api/jobs/{job_id}/redo")
-    def redo_job(job_id: str):
-        return manager.redo_job(job_id)
-
-    @app.post("/api/jobs/{job_id}/retry")
-    def retry_job(job_id: str, payload: dict | None = None, request: Request = None):
-        return manager.retry_job(
-            job_id,
-            payload,
-            idempotency_key=request.headers.get("idempotency-key") if request else None,
-            expected_revision=_expected_revision_from_request(request) if request else None,
-        )
-
-    @app.post("/api/jobs/{job_id}/video-source")
-    def bind_video_source(job_id: str, payload: dict | None = None):
-        return manager.bind_video_source(job_id, payload)
-
-    @app.get("/api/jobs/{job_id}/session")
-    def job_session(job_id: str):
-        return manager._manifest_for_job(job_id)
-
-    @app.get("/api/jobs/{job_id}/quality")
-    def job_quality(job_id: str):
-        return manager.quality_report(job_id)
-
-    @app.post("/api/jobs/{job_id}/annotation-backfill", status_code=202)
-    def job_annotation_backfill(job_id: str, payload: dict | None = None):
-        return manager.start_annotation_backfill(job_id, payload)
-
-    @app.get("/api/jobs/{job_id}/annotation-backfill/operations/{operation_id}")
-    def job_annotation_backfill_operation(job_id: str, operation_id: str):
-        return manager.get_annotation_backfill_operation(job_id, operation_id)
-
-    @app.post("/api/jobs/{job_id}/annotation-backfill/operations/{operation_id}/cancel")
-    def cancel_job_annotation_backfill_operation(job_id: str, operation_id: str):
-        return manager.cancel_annotation_backfill_operation(job_id, operation_id)
-
-    @app.get("/api/jobs/{job_id}/annotation-backfill/latest")
-    def job_annotation_backfill_latest(job_id: str):
-        return manager.get_annotation_backfill_result(job_id)
-
-    @app.get("/api/jobs/{job_id}/annotation-backfill/runs/{run_id}")
-    def job_annotation_backfill_run(job_id: str, run_id: str):
-        return manager.get_annotation_backfill_run_result(job_id, run_id)
-
-    @app.get("/api/jobs/{job_id}/reader-marks")
-    def job_reader_marks(job_id: str, recover: bool = False):
-        return manager.get_reader_marks(job_id, recover=recover)
-
-    @app.post("/api/jobs/{job_id}/reader-marks")
-    def save_job_reader_marks(job_id: str, payload: dict | None = None):
-        return manager.save_reader_marks(job_id, payload)
-
-    @app.get("/api/jobs/{job_id}/file/{file_kind}")
-    def job_file(job_id: str, file_kind: str):
-        manifest = manager._manifest_for_job(job_id)
-        key_map = {"audio": "audio", "video": "video", "transcript": "transcript", "chunkData": "chunkData"}
-        if file_kind not in key_map:
-            raise HTTPException(status_code=404, detail="file kind not found")
-        path = Path(str(manifest.get("files", {}).get(key_map[file_kind], "")))
-        if not path.exists() or not path.is_file():
-            raise HTTPException(status_code=404, detail="file not found")
-        media_type = "application/json" if file_kind in {"transcript", "chunkData"} else "application/octet-stream"
-        return FileResponse(path, media_type=media_type, filename=path.name)
-
-    @app.api_route("/api/jobs/{job_id}/media/{media_kind}", methods=["GET", "HEAD"])
-    def job_media(job_id: str, media_kind: str):
-        path = manager.registered_media_path(job_id, media_kind)
-        media_identity = f"workflow:{job_id}:{media_kind}"
-        if len(media_identity) > 256 or any(ord(char) < 0x20 or ord(char) == 0x7f for char in media_identity):
-            raise HTTPException(status_code=404, detail="media identity not found")
-        media_etag = _workflow_media_etag(media_identity, path)
-        return FileResponse(
-            path,
-            filename=path.name,
-            content_disposition_type="inline",
-            headers={
-                "ETag": media_etag,
-                "X-Read-Web-Media-Identity": media_identity,
-            },
-        )
-
-    @app.get("/api/recent")
-    def recent(limit: int = 10):
-        return manager.get_recent(limit)
+    register_http_routes(app, manager, SERVICE_VERSION=SERVICE_VERSION, TERMINAL_STATUSES=TERMINAL_STATUSES, _expected_revision_from_request=_expected_revision_from_request, _workflow_media_etag=_workflow_media_etag, utc_now_iso=utc_now_iso)
 
     return app
 

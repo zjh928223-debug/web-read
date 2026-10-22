@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Advanced Seek Player + Smart Chunking (Pro)</title>
   <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="/src/styles/workflow-ui.css" />
   <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500&family=Noto+Serif+SC:wght@400;500&display=swap" rel="stylesheet">
 </head>
 <body>
@@ -38,85 +39,97 @@
   <div id="main-app-area">
     <div class="container">
       <div class="controls">
-        <details class="deprecated-file-entry">
-          <summary>过时入口</summary>
-          <div class="deprecated-file-entry-actions">
-            <label>音频:</label>
-            <label for="audio-file" class="file-btn" id="lbl-audio">选择音频</label>
-            <input type="file" id="audio-file" accept="audio/*">
-
-            <label>字幕:</label>
-            <label for="transcript-file" class="file-btn" id="lbl-transcript">选择字幕</label>
-            <input type="file" id="transcript-file" accept=".json">
-
-            <span class="deprecated-tool-label">旧工具:</span>
-            <input type="file" id="import-marks-file" accept=".json" style="display: none;" />
-            <button id="import-marks-btn" data-ui-owner="reader">导标记</button>
-            <button id="export-json" data-ui-owner="reader">存JSON</button>
-            <button id="export-md-all" data-ui-owner="reader">存TXT</button>
-            <button id="toggle-chunk-btn" data-ui-owner="reader">AI切分</button>
-            <button id="btn-chunk-style" data-ui-owner="reader" title="调整切分模式样式">T</button>
-          </div>
-        </details>
+        <div class="reader-mode-switch">
+          <div id="reader-mode-status-root"></div>
+          <button id="toggle-chunk-btn" data-ui-owner="reader" title="在普通文本与已有的 AI 切分之间切换">AI切分</button>
+        </div>
         <div id="youtube-reader-controls-root"></div>
       </div>
-
+      <div id="reader-article-status-root"></div>
+      <details id="reader-settings" class="reader-settings deprecated-file-entry">
+        <summary>阅读设置</summary>
+        <div class="reader-settings-grid">
+          <section class="reader-settings-group" aria-labelledby="reader-playback-settings-title">
+            <h3 id="reader-playback-settings-title">播放与跟随</h3>
+            <div class="reader-settings-row speed-controls" aria-label="播放速度">
+              <span>播放速度</span>
+              <button class="speed-btn" data-speed="0.85" data-ui-owner="reader">0.85x</button>
+              <button class="speed-btn speed-button-active" data-speed="1.0" data-ui-owner="reader">1.0x</button>
+              <button class="speed-btn" data-speed="1.25" data-ui-owner="reader">1.25x</button>
+            </div>
+            <div class="reader-settings-row">
+              <button id="toggle-follow" class="on" data-ui-owner="reader" title="播放时自动滚动到当前阅读位置">跟随:开</button>
+              <div id="reader-video-control-root"></div>
+            </div>
+            <p>视频窗口可按需要打开或隐藏，隐藏后继续用音频播放。</p>
+          </section>
+          <section class="reader-settings-group" aria-labelledby="reader-chinese-settings-title">
+            <h3 id="reader-chinese-settings-title">中文显示（AI切分）</h3>
+            <div class="reader-settings-row">
+              <span>显示方式</span>
+              <button id="btn-chunk-cn-hold" class="active" data-ui-owner="reader" title="按住快捷键显示，或按一下切换显示；记住上次选择">按住</button>
+              <button id="btn-chunk-focus" class="active" data-ui-owner="reader" title="切换全部译文或当前 AI 块译文">聚焦</button>
+            </div>
+            <p>“按住”在按键期间显示；“持续”按一下切换。“聚焦”显示当前块译文，“全局”显示全部译文。</p>
+          </section>
+          <section class="reader-settings-group" aria-labelledby="reader-highlight-settings-title">
+            <h3 id="reader-highlight-settings-title">高亮与背景</h3>
+            <div class="reader-settings-row">
+              <button id="highlight-mode-btn" data-ui-owner="reader">高亮:句</button>
+              <label for="sentence-color-input">句子底色</label><input type="color" id="sentence-color-input" class="color-input" value="#e5e7eb">
+              <label for="highlight-color-input">单词底色</label><input type="color" id="highlight-color-input" class="color-input" value="#ffeb3b">
+              <button id="btn-chunk-style" data-ui-owner="reader" title="调整 AI 块字体、间距、译文颜色与背景">AI块样式</button>
+            </div>
+            <p>普通文本支持播放词、句高亮；AI切分支持词高亮与独立的当前块背景。句高亮设置用于普通文本。</p>
+          </section>
+          <section class="reader-settings-group" aria-labelledby="reader-hotkey-settings-title">
+            <h3 id="reader-hotkey-settings-title">快捷键</h3>
+            <div class="reader-settings-hotkeys">
+              <label for="hotkey-backward-input">上一句<input id="hotkey-backward-input" class="hotkey-input-wide" data-ui-owner="reader" type="text" value="ArrowLeft" title="设置后退快捷键" /></label>
+              <label for="hotkey-forward-input">下一句<input id="hotkey-forward-input" class="hotkey-input-wide" data-ui-owner="reader" type="text" value="ArrowRight" title="设置前进快捷键" /></label>
+              <label for="hotkey-input">标记词<input id="hotkey-input" class="hotkey-input" data-ui-owner="reader" type="text" maxlength="1" value="m" /></label>
+              <label for="hotkey-annotation-bubble-input">释义气泡<input id="hotkey-annotation-bubble-input" class="hotkey-input" data-ui-owner="reader" type="text" maxlength="1" value="b" /></label>
+              <label for="hotkey-prev-annotation-word-input">上个标注词<input id="hotkey-prev-annotation-word-input" class="hotkey-input" data-ui-owner="reader" type="text" value="[" title="设置上个标注词快捷键" /></label>
+              <label for="hotkey-next-annotation-word-input">下个标注词<input id="hotkey-next-annotation-word-input" class="hotkey-input" data-ui-owner="reader" type="text" value="]" title="设置下个标注词快捷键" /></label>
+              <label for="hotkey-chunk-cn-input">显示中文<input id="hotkey-chunk-cn-input" class="hotkey-input" data-ui-owner="reader" type="text" maxlength="1" value="c" title="AI切分模式下开关中文" /></label>
+              <label for="hotkey-chunk-shadow-input">AI块背景<input id="hotkey-chunk-shadow-input" class="hotkey-input" data-ui-owner="reader" type="text" maxlength="1" value="s" title="开关当前 AI 块背景" /></label>
+            </div>
+            <p>空格播放/暂停。点击按键框后录入新快捷键；标注词导航保留当前播放进度。</p>
+          </section>
+          <section class="reader-settings-group reader-settings-files" aria-labelledby="reader-file-settings-title">
+            <h3 id="reader-file-settings-title">本地文件与导出</h3>
+            <div class="reader-settings-row deprecated-file-entry-actions">
+              <label for="audio-file" class="file-btn" id="lbl-audio">选择音频</label>
+              <input type="file" id="audio-file" accept="audio/*">
+              <label for="transcript-file" class="file-btn" id="lbl-transcript">选择字幕</label>
+              <input type="file" id="transcript-file" accept=".json">
+              <input type="file" id="import-marks-file" accept=".json" style="display: none;" />
+              <button id="import-marks-btn" data-ui-owner="reader">导入标记</button>
+              <button id="export-json" data-ui-owner="reader">导出标记JSON</button>
+              <button id="export-md-all" data-ui-owner="reader">导出全文TXT</button>
+            </div>
+            <p>可导入本地音频和 WhisperX 字幕。标记与全文导出各自保留原格式。</p>
+          </section>
+        </div>
+      </details>
       <audio id="audio-player" controls></audio>
-
       <div class="extra-controls">
         <div class="control-group seek-controls">
           <button id="btn-prev-sentence" data-ui-owner="reader">上一句</button>
-          <input id="hotkey-backward-input" class="hotkey-input-wide" data-ui-owner="reader" type="text" value="ArrowLeft" title="设置后退快捷键" />
           <button id="btn-next-sentence" data-ui-owner="reader">下一句</button>
-          <input id="hotkey-forward-input" class="hotkey-input-wide" data-ui-owner="reader" type="text" value="ArrowRight" title="设置前进快捷键" />
-        </div>
-        <div class="control-group speed-controls">
-          <button class="speed-btn" data-speed="0.85" data-ui-owner="reader">0.85x</button>
-          <button class="speed-btn speed-button-active" data-speed="1.0" data-ui-owner="reader">1.0x</button>
-          <button class="speed-btn" data-speed="1.25" data-ui-owner="reader">1.25x</button>
         </div>
       </div>
-
       <div class="transcript-header">
         <div class="transcript-actions">
-          <button id="toggle-follow" class="on" data-ui-owner="reader">跟随:开</button>
-          
-          <span class="hotkey-box">
-            标记 <input id="hotkey-input" class="hotkey-input" data-ui-owner="reader" type="text" maxlength="1" value="m" />
+          <span class="annotation-navigation-controls" title="浏览已解释或手动标记词；音频保持当前进度">
+            <button id="btn-prev-annotation-word" type="button" data-ui-owner="reader">上个标注词</button>
+            <button id="btn-next-annotation-word" type="button" data-ui-owner="reader">下个标注词</button>
           </span>
-
-          <span class="hotkey-box" title="开关独立标注释义泡泡">
-            泡 <input id="hotkey-annotation-bubble-input" class="hotkey-input" data-ui-owner="reader" type="text" maxlength="1" value="b" />
-          </span>
-          
-          <button id="highlight-mode-btn" data-ui-owner="reader">高亮:句</button>
-          
-          <span class="hotkey-box" title="句子高亮底色">
-            句<input type="color" id="sentence-color-input" class="color-input" value="#e5e7eb">
-          </span>
-          <span class="hotkey-box" title="单词高亮底色">
-            词<input type="color" id="highlight-color-input" class="color-input" value="#ffeb3b">
-          </span>
-
+          <span id="annotation-navigation-status" role="status" aria-live="polite"></span>
           <span id="annotation-mark-count" class="small-btn mark-count-badge" role="status" aria-live="polite" data-count="0" title="当前文章已标记 0 个重点词">已标记 0</span>
-          <input type="file" id="import-annotation-lightweight-file" accept=".json" style="display: none;" />
           <button id="btn-annotation-backfill-ai" type="button" data-ui-owner="reader" title="自动导出轻回填模板、请求 Gemini 并导入解释结果">AI解释标注</button>
-          <button id="btn-preview-vocabulary" type="button" data-ui-owner="reader" title="扫描当前文章的预习生词">预习生词</button>
-          <button id="btn-toggle-preview-vocabulary" type="button" data-ui-owner="reader" title="显示或隐藏已解释的预习词">显示预习词</button>
           <button id="btn-settle-article-vocabulary" type="button" data-ui-owner="reader" title="确认本文已学完后，整理本篇生词到 SRS">已学完本篇</button>
           <div id="srs-review-entry-root"></div>
-
-          <span class="hotkey-box">
-            中<input id="hotkey-chunk-cn-input" class="hotkey-input" data-ui-owner="reader" type="text" maxlength="1" value="c" title="AI切分模式下开关中文" />
-            <button id="btn-chunk-cn-hold" class="active" data-ui-owner="reader" title="切换：按住快捷键才显示中文">按住</button>
-          </span>
-
-          <button id="btn-chunk-focus" class="active" data-ui-owner="reader" title="切换中文显示模式：全局/聚焦">聚焦</button>
-          
-          <span class="hotkey-box" title="AI切分模式下开关高亮背景（阴影）">
-            影<input id="hotkey-chunk-shadow-input" class="hotkey-input" data-ui-owner="reader" type="text" maxlength="1" value="s" />
-          </span>
-
         </div>
       </div>
 
@@ -160,7 +173,8 @@
           <div class="control-row">
               <span style="font-size:12px; margin-right:4px; width:50px;">高亮背景</span>
               <input type="color" id="chunk-bg-color-input" class="color-input" data-ui-owner="style-controls" value="#e5e7eb">
-              <button class="style-btn-toggle" id="btn-toggle-shadow-manual" data-ui-owner="style-controls">开关 S</button>
+              <span>当前 AI 块背景</span>
+              <button class="style-btn-toggle" id="btn-toggle-shadow-manual" data-ui-owner="style-controls" aria-label="切换当前 AI 块背景">切换AI块背景</button>
           </div>
       </div>
   </div>

@@ -1,3 +1,5 @@
+import { createAnnotationBackfillDialog, createEmptySrsSummary } from '../features/annotation-backfill/create-annotation-backfill-dialog.js';
+import { RECOMMENDED_ANNOTATION_MODEL, DEFAULT_GEMINI_MODEL, getResultItems, getTemplateItems, analyzeBackfillCoverage, buildRequestTemplate, createIncrementalConfirmMessage } from '../features/annotation-backfill/annotation-backfill-template.js';
 import {
   VOCABULARY_ENTRY_TYPES,
   applySrsCandidatesToVocabulary,
@@ -8,13 +10,13 @@ import {
   summarizeSrsCandidates,
 } from '../services/vocabulary/index.js';
 import { getWindowsOwnerVocabularySrsIntegration } from '../services/vocabulary/windows-owner-vocabulary-srs.js';
-import { createDialogController } from '../services/runtime/dialog-controller.js';
-import { applyNativeControlStyles } from '../lib/native-control-styles.js';
-import { applyNativeInputStyles } from '../lib/native-input-styles.js';
+
+
+
 
 const DEFAULT_BUTTON_TEXT = 'AI解释标注';
-const RECOMMENDED_ANNOTATION_MODEL = 'gemini-3.1-flash-lite';
-const DEFAULT_GEMINI_MODEL = RECOMMENDED_ANNOTATION_MODEL;
+
+
 const HIGH_DEMAND_BULK_MODELS = new Set(['gemini-3.5-flash']);
 const ANNOTATION_BACKFILL_MODEL_STORAGE_KEY = 'annotationBackfillAi.model';
 const ANNOTATION_BACKFILL_SESSION_API_KEY = '__annotationBackfillAiSessionApiKey';
@@ -22,12 +24,7 @@ const ANNOTATION_BACKFILL_SELECTED_RUN_STORAGE_PREFIX = 'annotationBackfillAi.se
 const STANDARD_MATERIAL_ERROR = '请先通过素材处理打开标准素材库里的文章。';
 const SWITCHED_ARTICLE_NOTICE = 'AI结果已生成，但当前文章已切换；请重新打开对应文章后手动导入结果。';
 const TERMINAL_JOB_STATUSES = new Set(['ready', 'failed', 'canceled']);
-const STEP_LABELS = {
-  config: '配置',
-  export: '模板',
-  request: 'Gemini',
-  import: '导入',
-};
+
 
 function getCurrentIdentity(state) {
   const meta = state && state.currentAudioMeta && typeof state.currentAudioMeta === 'object'
@@ -38,6 +35,13 @@ function getCurrentIdentity(state) {
     jobId,
     audioKey: state && state.currentAudioKey ? String(state.currentAudioKey) : '',
   };
+}
+
+function sameReaderIdentity(left, right) {
+  return !!left
+    && !!right
+    && left.jobId === right.jobId
+    && left.audioKey === right.audioKey;
 }
 
 function createJsonFileLike(payload, filename) {
@@ -156,10 +160,15 @@ async function getRunContext(client, runOptions = {}) {
     optionalClientCall(client, 'credentialStatus', null),
     optionalClientCall(client, 'maintenance', null),
   ]);
-  const model = String(runOptions.model || config && config.model || DEFAULT_GEMINI_MODEL).trim() || DEFAULT_GEMINI_MODEL;
+  const selectedModel = String(runOptions.model || '').trim();
+  const model = String(selectedModel || config && config.model || DEFAULT_GEMINI_MODEL).trim() || DEFAULT_GEMINI_MODEL;
   const credentialKnown = credentialStatus && typeof credentialStatus.stored === 'boolean';
   return {
     model,
+    selectedModel: selectedModel || model,
+    currentSelection: selectedModel || model,
+    finalSubmittedModel: model,
+    finalSubmittedState: '待提交',
     apiKey: String(runOptions.apiKey || '').trim(),
     baseUrl: String(config && config.baseUrl || '').trim(),
     credentialKnown,
@@ -181,126 +190,27 @@ function formatRunContextNotice(context) {
   return `AI解释标注：模型 ${context.model}，${credentialText}${queueText}`;
 }
 
-function getResultItems(result) {
-  return result && Array.isArray(result.items) ? result.items : [];
-}
 
-function getTemplateItems(template) {
-  return template && Array.isArray(template.items) ? template.items : [];
-}
 
-function getTargetId(item) {
-  return String(item && item.targetId || '').trim();
-}
 
-function hasBackfillContent(item) {
-  return ['boundary', 'type', 'meaning', 'memoryHint'].some((key) => String(item && item[key] || '').trim());
-}
 
-function analyzeBackfillCoverage(template, result) {
-  const templateItems = getTemplateItems(template);
-  const resultItems = getResultItems(result);
-  const resultByTargetId = new Map();
-  resultItems.forEach((item) => {
-    const targetId = getTargetId(item);
-    if (targetId && hasBackfillContent(item)) resultByTargetId.set(targetId, item);
-  });
-  const missingItems = [];
-  let coveredCount = 0;
-  templateItems.forEach((item) => {
-    const targetId = getTargetId(item);
-    if (targetId && resultByTargetId.has(targetId)) coveredCount += 1;
-    else missingItems.push(item);
-  });
-  return {
-    totalCount: templateItems.length,
-    resultCount: resultItems.length,
-    coveredCount,
-    missingCount: missingItems.length,
-    missingItems,
-    fullyCovered: templateItems.length > 0 && coveredCount === templateItems.length,
-    partiallyCovered: coveredCount > 0 && missingItems.length > 0,
-  };
-}
 
-function normalizeTemplateText(value) {
-  return String(value || '').replace(/\s+/g, ' ').trim();
-}
 
-function getTemplateSentences(template) {
-  return Array.isArray(template && template.articleSentences)
-    ? template.articleSentences.map((sentence) => normalizeTemplateText(sentence)).filter(Boolean)
-    : [];
-}
 
-function findSentenceIndexForItem(sentences, item) {
-  const sourceSentence = normalizeTemplateText(item && item.sourceSentence);
-  if (!sourceSentence) return -1;
-  return sentences.findIndex((sentence) => (
-    sentence === sourceSentence
-    || sentence.includes(sourceSentence)
-    || sourceSentence.includes(sentence)
-  ));
-}
 
-function truncateArticleTextByItems(template, requestItems) {
-  const items = Array.isArray(requestItems) ? requestItems : [];
-  const sentences = getTemplateSentences(template);
-  if (!items.length) {
-    return {
-      articleText: normalizeTemplateText(template && template.articleText),
-      articleSentences: sentences,
-    };
-  }
 
-  let lastSentenceIndex = -1;
-  items.forEach((item) => {
-    const sentenceIndex = findSentenceIndexForItem(sentences, item);
-    if (sentenceIndex > lastSentenceIndex) lastSentenceIndex = sentenceIndex;
-  });
-  if (lastSentenceIndex >= 0) {
-    const scopedSentences = sentences.slice(0, lastSentenceIndex + 1);
-    return {
-      articleText: scopedSentences.join(' '),
-      articleSentences: scopedSentences,
-    };
-  }
 
-  const articleText = normalizeTemplateText(template && template.articleText);
-  let lastEnd = 0;
-  items.forEach((item) => {
-    const sourceSentence = normalizeTemplateText(item && item.sourceSentence);
-    if (!sourceSentence || !articleText) return;
-    const index = articleText.indexOf(sourceSentence);
-    if (index >= 0) lastEnd = Math.max(lastEnd, index + sourceSentence.length);
-  });
-  if (lastEnd > 0) {
-    return {
-      articleText: articleText.slice(0, lastEnd).trim(),
-      articleSentences: sentences,
-    };
-  }
-  return { articleText, articleSentences: sentences };
-}
 
-function buildRequestTemplate(template, requestItems) {
-  const items = Array.isArray(requestItems) ? requestItems : [];
-  const scopedArticle = truncateArticleTextByItems(template, items);
-  return {
-    ...template,
-    articleText: scopedArticle.articleText,
-    articleSentences: scopedArticle.articleSentences,
-    items,
-  };
-}
 
-function createIncrementalConfirmMessage(coverage) {
-  return [
-    `当前文章已有 ${coverage.coveredCount} 个标注解释。`,
-    `检测到新增 ${coverage.missingCount} 个未解释标注。`,
-    '确认调用 Gemini，只为新增标注生成解释吗？',
-  ].join('\n');
-}
+
+
+
+
+
+
+
+
+
 
 async function loadSavedBackfillPayload(client, jobId) {
   if (!client || typeof client.getAnnotationBackfillResult !== 'function') return null;
@@ -376,15 +286,23 @@ function normalizeBackfillRecord(record, fallbackResult, coverage, index, select
   const data = record && typeof record === 'object' ? record : {};
   const itemCount = Number(data.itemCount);
   const runId = String(data.runId || '').trim();
+  const model = String(data.model || '').trim();
+  const mergeWithLatestRecorded = Object.prototype.hasOwnProperty.call(data, 'mergeWithLatest')
+    || Object.prototype.hasOwnProperty.call(data, 'merge_with_latest');
   const selected = selectedRunId ? runId === selectedRunId : index === 0;
   return {
     runId,
-    model: String(data.model || '').trim() || '未知模型',
+    model: model || '未记录',
+    modelRecorded: !!model,
+    runIdRecorded: !!runId,
     itemCount: Number.isFinite(itemCount) ? itemCount : getResultItems(fallbackResult).length,
     templateItemCount: Number(data.templateItemCount) || coverage.totalCount || 0,
     coveredCount: index === 0 ? coverage.coveredCount : null,
     missingCount: index === 0 ? coverage.missingCount : null,
     generatedAt: String(data.generatedAt || '').trim(),
+    mergeWithLatest: mergeWithLatestRecorded
+      ? (data.mergeWithLatest === true || data.merge_with_latest === true)
+      : null,
     current: selected,
   };
 }
@@ -399,33 +317,47 @@ function buildAnnotationSummary(template, savedPayload, selectedRunId = '', mark
     ? savedPayload.history
     : (Object.keys(metadata).length ? [metadata] : []);
   const recordRunIds = new Set(rawHistory.map((record) => String(record && record.runId || '').trim()).filter(Boolean));
-  const effectiveSelectedRunId = selectedRunId && recordRunIds.has(selectedRunId)
-    ? selectedRunId
+  const requestedRunId = String(selectedRunId || '').trim();
+  const selectedRunMismatch = !!requestedRunId && !recordRunIds.has(requestedRunId);
+  const effectiveSelectedRunId = requestedRunId
+    ? (selectedRunMismatch ? '' : requestedRunId)
     : String(rawHistory[0] && rawHistory[0].runId || '').trim();
+  const records = rawHistory.slice(0, 8).map((record, index) => normalizeBackfillRecord(
+    record,
+    result,
+    coverage,
+    index,
+    effectiveSelectedRunId,
+  )).map((record, index) => ({
+    ...record,
+    current: selectedRunMismatch ? false : record.current || (!effectiveSelectedRunId && index === 0),
+  }));
+  const selectedRecord = records.find((record) => record.current) || null;
   return {
     totalCount: coverage.totalCount,
     markedWordCount: Number(markedWordCount || 0),
     coveredCount: coverage.coveredCount,
     missingCount: coverage.missingCount,
     selectedRunId: effectiveSelectedRunId,
-    records: rawHistory.slice(0, 8).map((record, index) => normalizeBackfillRecord(record, result, coverage, index, effectiveSelectedRunId)),
+    requestedRunId,
+    selectedRunMismatch,
+    records,
+    modelProvenance: {
+      runRecordModel: selectedRecord ? selectedRecord.model : '',
+      runRecordId: selectedRecord ? selectedRecord.runId : (selectedRunMismatch ? requestedRunId : ''),
+      runRecordGeneratedAt: selectedRecord ? selectedRecord.generatedAt : '',
+      runRecordState: selectedRunMismatch
+        ? `未找到匹配运行记录（${requestedRunId}）`
+        : (selectedRecord ? (selectedRecord.modelRecorded ? '已记录' : '记录缺少模型') : '未记录'),
+      routeModel: '当前记录未提供',
+      ...(selectedRecord && selectedRecord.mergeWithLatest === true
+        ? { mergeText: '该运行记录为合并已有结果；旧结果的逐条来源未重新标记。' }
+        : { mergeText: '' }),
+    },
   };
 }
 
-function createEmptySrsSummary() {
-  return {
-    wordCandidates: 0,
-    phraseCandidates: 0,
-    excludedLongText: 0,
-    existing: 0,
-    known: 0,
-    ignored: 0,
-    pending: false,
-    canBuildFromExisting: false,
-    visible: false,
-    compact: false,
-  };
-}
+
 
 function getSrsScopeKey(identity, template) {
   return String(
@@ -501,467 +433,9 @@ async function collectExistingVocabularyWords(vocabularyService, candidates) {
   return existing;
 }
 
-function createElement(documentObject, tagName, className, textContent) {
-  const element = documentObject.createElement(tagName);
-  if (className) element.className = className;
-  if (textContent != null) element.textContent = textContent;
-  return element;
-}
 
-function createAnnotationBackfillDialog(options = {}) {
-  const documentObject = options.documentObject || null;
-  const dialogController = createDialogController({ documentObject });
-  const onRun = typeof options.onRun === 'function' ? options.onRun : function () {};
-  const onSelectRecord = typeof options.onSelectRecord === 'function' ? options.onSelectRecord : function () {};
-  const onModelChange = typeof options.onModelChange === 'function' ? options.onModelChange : function () {};
-  const onAddSrsCandidates = typeof options.onAddSrsCandidates === 'function' ? options.onAddSrsCandidates : function () {};
-  const onSkipSrsCandidates = typeof options.onSkipSrsCandidates === 'function' ? options.onSkipSrsCandidates : function () {};
-  const onBuildSrsCandidatesFromExisting = typeof options.onBuildSrsCandidatesFromExisting === 'function'
-    ? options.onBuildSrsCandidatesFromExisting
-    : function () {};
-  const getSharedApiKey = typeof options.getSessionApiKey === 'function' ? options.getSessionApiKey : function () { return ''; };
-  const onApiKeyChange = typeof options.onApiKeyChange === 'function' ? options.onApiKeyChange : function () {};
-  const srsEnabled = options.srsEnabled === true;
-  const initialModel = String(options.initialModel || DEFAULT_GEMINI_MODEL).trim() || DEFAULT_GEMINI_MODEL;
-  let mounted = false;
-  let open = false;
-  let busy = false;
-  let modelDirty = false;
-  let latestValues = { model: initialModel, apiKey: '' };
-  let backdropEl = null;
-  let rootEl = null;
-  let modelInput = null;
-  let apiKeyInput = null;
-  let statusEl = null;
-  let recordsEl = null;
-  let srsPanelEl = null;
-  let srsStatsEl = null;
-  let srsAddAllButton = null;
-  let srsAddWordsButton = null;
-  let srsSkipButton = null;
-  let srsBuildExistingButton = null;
-  let startButton = null;
-  let closeButton = null;
-  let cancelButton = null;
-  const stepEls = {};
-  const stepState = Object.keys(STEP_LABELS).reduce((acc, key) => {
-    acc[key] = { state: 'idle', message: '等待' };
-    return acc;
-  }, {});
-  let currentStatus = { message: '填写模型和 API key 后开始。', state: 'idle' };
 
-  let annotationSummary = { totalCount: 0, markedWordCount: 0, coveredCount: 0, missingCount: 0, selectedRunId: '', records: [] };
-  let srsSummary = createEmptySrsSummary();
 
-  function setOpenState(nextOpen) {
-    open = !!nextOpen;
-    if (rootEl) rootEl.hidden = !open;
-    if (backdropEl) backdropEl.hidden = !open;
-  }
-
-  function ensureMounted() {
-    if (mounted || !documentObject || typeof documentObject.createElement !== 'function') return;
-    mounted = true;
-
-    backdropEl = createElement(documentObject, 'div', 'annotation-backfill-dialog-backdrop');
-    backdropEl.hidden = true;
-
-    rootEl = createElement(documentObject, 'section', 'annotation-backfill-dialog');
-    rootEl.hidden = true;
-    rootEl.setAttribute('data-ui-theme', 'light');
-    rootEl.setAttribute('role', 'dialog');
-    rootEl.setAttribute('aria-modal', 'true');
-    rootEl.setAttribute('aria-label', 'AI解释标注');
-
-    const header = createElement(documentObject, 'div', 'annotation-backfill-dialog__header');
-    const titleWrap = createElement(documentObject, 'div', 'annotation-backfill-dialog__title-wrap');
-    const title = createElement(documentObject, 'h2', 'annotation-backfill-dialog__title', 'AI解释标注');
-    const subtitle = createElement(documentObject, 'p', 'annotation-backfill-dialog__subtitle', '本次只解释当前文章的标注，不改素材处理队列配置。');
-    titleWrap.append(title, subtitle);
-    closeButton = createElement(documentObject, 'button', 'annotation-backfill-dialog__close', '×');
-    closeButton.type = 'button';
-    applyNativeControlStyles(closeButton, { owner: 'learning', variant: 'ghost', size: 'icon-sm' });
-    closeButton.setAttribute('aria-label', '关闭 AI解释标注');
-    header.append(titleWrap, closeButton);
-
-    const form = createElement(documentObject, 'form', 'annotation-backfill-dialog__form');
-    const modelLabel = createElement(documentObject, 'label', 'annotation-backfill-dialog__field');
-    const modelLabelText = createElement(documentObject, 'span', 'annotation-backfill-dialog__label', 'Gemini 模型');
-    modelInput = createElement(documentObject, 'input', 'annotation-backfill-dialog__input');
-    modelInput.type = 'text';
-    modelInput.autocomplete = 'off';
-    modelInput.spellcheck = false;
-    modelInput.value = latestValues.model;
-    modelInput.placeholder = DEFAULT_GEMINI_MODEL;
-    applyNativeInputStyles(modelInput, { owner: 'learning', size: 'default', interaction: 'text' });
-    modelLabel.append(modelLabelText, modelInput);
-
-    const keyLabel = createElement(documentObject, 'label', 'annotation-backfill-dialog__field');
-    const keyLabelText = createElement(documentObject, 'span', 'annotation-backfill-dialog__label', 'Gemini API key');
-    apiKeyInput = createElement(documentObject, 'input', 'annotation-backfill-dialog__input');
-    apiKeyInput.type = 'password';
-    apiKeyInput.autocomplete = 'off';
-    apiKeyInput.placeholder = '留空则使用后端保存的 key';
-    applyNativeInputStyles(apiKeyInput, { owner: 'learning', size: 'default', interaction: 'text' });
-    keyLabel.append(keyLabelText, apiKeyInput);
-
-    const progress = createElement(documentObject, 'div', 'annotation-backfill-dialog__progress');
-    Object.entries(STEP_LABELS).forEach(([key, label]) => {
-      const item = createElement(documentObject, 'div', 'annotation-backfill-dialog__step');
-      item.dataset.state = 'idle';
-      const dot = createElement(documentObject, 'span', 'annotation-backfill-dialog__step-dot');
-      const text = createElement(documentObject, 'span', 'annotation-backfill-dialog__step-label', label);
-      const detail = createElement(documentObject, 'span', 'annotation-backfill-dialog__step-detail', '等待');
-      item.append(dot, text, detail);
-      progress.appendChild(item);
-      stepEls[key] = { item, detail };
-    });
-
-    statusEl = createElement(documentObject, 'div', 'annotation-backfill-dialog__status', '填写模型和 API key 后开始。');
-    statusEl.setAttribute('role', 'status');
-    statusEl.setAttribute('aria-live', 'polite');
-    statusEl.setAttribute('aria-atomic', 'true');
-    const recordsSection = createElement(documentObject, 'div', 'annotation-backfill-dialog__records');
-    const recordsTitle = createElement(documentObject, 'div', 'annotation-backfill-dialog__records-title', '当前文章标注');
-    recordsEl = createElement(documentObject, 'div', 'annotation-backfill-dialog__records-list');
-    recordsSection.append(recordsTitle, recordsEl);
-
-    srsPanelEl = createElement(documentObject, 'div', 'annotation-backfill-dialog__srs');
-    const srsTitle = createElement(documentObject, 'div', 'annotation-backfill-dialog__records-title', 'SRS 词库');
-    srsStatsEl = createElement(documentObject, 'div', 'annotation-backfill-dialog__srs-stats');
-    const srsActions = createElement(documentObject, 'div', 'annotation-backfill-dialog__srs-actions');
-    srsAddAllButton = createElement(documentObject, 'button', 'annotation-backfill-dialog__button annotation-backfill-dialog__button--primary', '加入单词和短语');
-    srsAddAllButton.type = 'button';
-    applyNativeControlStyles(srsAddAllButton, { owner: 'learning', variant: 'default', size: 'sm' });
-    srsAddWordsButton = createElement(documentObject, 'button', 'annotation-backfill-dialog__button annotation-backfill-dialog__button--secondary', '只加入单词');
-    srsAddWordsButton.type = 'button';
-    applyNativeControlStyles(srsAddWordsButton, { owner: 'learning', variant: 'outline', size: 'sm' });
-    srsSkipButton = createElement(documentObject, 'button', 'annotation-backfill-dialog__button annotation-backfill-dialog__button--secondary', '本次不加入');
-    srsSkipButton.type = 'button';
-    applyNativeControlStyles(srsSkipButton, { owner: 'learning', variant: 'outline', size: 'sm' });
-    srsBuildExistingButton = createElement(documentObject, 'button', 'annotation-backfill-dialog__button annotation-backfill-dialog__button--secondary', '从已有解释生成候选');
-    srsBuildExistingButton.type = 'button';
-    applyNativeControlStyles(srsBuildExistingButton, { owner: 'learning', variant: 'outline', size: 'sm' });
-    srsActions.append(srsAddAllButton, srsAddWordsButton, srsSkipButton, srsBuildExistingButton);
-    srsPanelEl.append(srsTitle, srsStatsEl, srsActions);
-    renderSrsSummary();
-
-    const footer = createElement(documentObject, 'div', 'annotation-backfill-dialog__footer');
-    cancelButton = createElement(documentObject, 'button', 'annotation-backfill-dialog__button annotation-backfill-dialog__button--secondary', '取消');
-    cancelButton.type = 'button';
-    applyNativeControlStyles(cancelButton, { owner: 'learning', variant: 'outline', size: 'sm' });
-    startButton = createElement(documentObject, 'button', 'annotation-backfill-dialog__button annotation-backfill-dialog__button--primary', '开始解释');
-    startButton.type = 'submit';
-    applyNativeControlStyles(startButton, { owner: 'learning', variant: 'default', size: 'sm' });
-    footer.append(cancelButton, startButton);
-
-    form.append(modelLabel, keyLabel, recordsSection, srsPanelEl, progress, statusEl, footer);
-    rootEl.append(header, form);
-    documentObject.body.append(backdropEl, rootEl);
-
-    modelInput.addEventListener('input', function () {
-      modelDirty = true;
-      latestValues.model = String(modelInput.value || '').trim();
-      if (latestValues.model) onModelChange(latestValues.model);
-    });
-    apiKeyInput.addEventListener('input', function () {
-      latestValues.apiKey = String(apiKeyInput.value || '').trim();
-      if (latestValues.apiKey) onApiKeyChange(latestValues.apiKey);
-    });
-    form.addEventListener('submit', function (event) {
-      event.preventDefault();
-      return onRun(getValues());
-    });
-    closeButton.addEventListener('click', closeDialog);
-    cancelButton.addEventListener('click', closeDialog);
-    srsAddAllButton.addEventListener('click', function () { return onAddSrsCandidates('all'); });
-    srsAddWordsButton.addEventListener('click', function () { return onAddSrsCandidates('words'); });
-    srsSkipButton.addEventListener('click', function () { return onSkipSrsCandidates(); });
-    srsBuildExistingButton.addEventListener('click', function () { return onBuildSrsCandidatesFromExisting(); });
-  }
-
-  function resetProgress() {
-    Object.values(stepEls).forEach((entry) => {
-      entry.item.dataset.state = 'idle';
-      entry.detail.textContent = '等待';
-    });
-  }
-
-  function openDialog(context) {
-    ensureMounted();
-    if (context && context.model) updateContext(context);
-    resetProgress();
-    setStatus('填写模型和 API key 后开始。', 'idle');
-    setBusy(false);
-    setOpenState(true);
-    if (modelInput) modelInput.focus();
-  }
-
-  function resetProgress() {
-    Object.keys(stepState).forEach((key) => {
-      stepState[key] = { state: 'idle', message: '等待' };
-      const entry = stepEls[key];
-      if (!entry) return;
-      entry.item.dataset.state = 'idle';
-      entry.detail.textContent = '等待';
-    });
-  }
-
-  function openDialog(context, options = {}) {
-    ensureMounted();
-    if (context && context.model) updateContext(context);
-    const sharedApiKey = String(getSharedApiKey() || '').trim();
-    if (sharedApiKey) {
-      latestValues.apiKey = sharedApiKey;
-      if (apiKeyInput) apiKeyInput.value = sharedApiKey;
-    }
-    if (options.reset !== false) {
-      resetProgress();
-      setStatus('填写模型和 API key 后开始。', 'idle');
-    } else {
-      setStatus(currentStatus.message, currentStatus.state);
-      Object.entries(stepState).forEach(([step, value]) => setStep(step, value.state, value.message));
-    }
-    setBusy(false);
-    setOpenState(true);
-    if (rootEl) {
-      dialogController.open(rootEl, {
-        initialFocus: modelInput,
-        statusElement: statusEl,
-        isPending: () => busy,
-        onRequestClose: closeDialog,
-      });
-    }
-  }
-
-  function closeDialog() {
-    setOpenState(false);
-    dialogController.close();
-  }
-
-  function updateContext(context = {}) {
-    const model = String(context.model || '').trim();
-    if (model && !modelDirty) latestValues.model = model;
-    if (modelInput && model && !modelDirty) modelInput.value = model;
-    if (statusEl && context.activeJobCount > 0 && !busy) {
-      setStatus(`当前后台还有 ${context.activeJobCount} 个任务；本次解释会使用这里填写的模型和 key。`, 'warning');
-    }
-    renderAnnotationSummary();
-  }
-
-  function getValues() {
-    latestValues = {
-      model: String(modelInput ? modelInput.value : latestValues.model || '').trim(),
-      apiKey: String(apiKeyInput ? apiKeyInput.value : latestValues.apiKey || '').trim(),
-    };
-    return { ...latestValues };
-  }
-
-  function rememberValues(values = {}) {
-    const model = String(values.model || '').trim();
-    const apiKey = String(values.apiKey || '').trim();
-    if (model) {
-      latestValues.model = model;
-      if (modelInput) modelInput.value = model;
-      onModelChange(model);
-    }
-    if (apiKey) {
-      latestValues.apiKey = apiKey;
-      if (apiKeyInput) apiKeyInput.value = apiKey;
-      onApiKeyChange(apiKey);
-    }
-  }
-
-  function setBusy(nextBusy) {
-    busy = !!nextBusy;
-    dialogController.setBusy(busy);
-    if (modelInput) modelInput.disabled = busy;
-    if (apiKeyInput) apiKeyInput.disabled = busy;
-    if (cancelButton) cancelButton.disabled = busy;
-    renderAnnotationSummary();
-    renderSrsSummary();
-    if (startButton) {
-      startButton.disabled = busy;
-      startButton.textContent = busy ? '解释中...' : '开始解释';
-    }
-  }
-
-  function setStatus(message, state = 'idle') {
-    if (!statusEl) return;
-    statusEl.textContent = message || '';
-    statusEl.dataset.state = state;
-  }
-
-  function setStep(step, state, message) {
-    const entry = stepEls[step];
-    if (!entry) return;
-    entry.item.dataset.state = state || 'idle';
-    entry.detail.textContent = message || '';
-  }
-
-  function setStatus(message, state = 'idle') {
-    currentStatus = { message: message || '', state };
-    if (!statusEl) return;
-    statusEl.textContent = message || '';
-    statusEl.dataset.state = state;
-  }
-
-  function setStep(step, state, message) {
-    if (stepState[step]) stepState[step] = { state: state || 'idle', message: message || '' };
-    const entry = stepEls[step];
-    if (!entry) return;
-    entry.item.dataset.state = state || 'idle';
-    entry.detail.textContent = message || '';
-  }
-
-  function renderAnnotationSummary() {
-    if (!recordsEl) return;
-    recordsEl.textContent = '';
-    const total = Number(annotationSummary.totalCount || 0);
-    const markedWordCount = Number(annotationSummary.markedWordCount || 0);
-    const countLabel = markedWordCount && markedWordCount !== total
-      ? `${markedWordCount} 个标记词位，${total} 条解释目标`
-      : `${total} 条解释目标`;
-    if (!total) {
-      recordsEl.appendChild(createElement(documentObject, 'div', 'annotation-backfill-dialog__record-empty', markedWordCount
-        ? `当前 ${markedWordCount} 个标记词位，暂未形成可解释目标`
-        : '当前文章暂无标注'));
-      return;
-    }
-    if (!annotationSummary.records.length) {
-      recordsEl.appendChild(createElement(documentObject, 'div', 'annotation-backfill-dialog__record-empty', `当前 ${countLabel}，暂无 AI 解释记录`));
-      return;
-    }
-    recordsEl.appendChild(createElement(documentObject, 'div', 'annotation-backfill-dialog__record-empty', `当前 ${countLabel}`));
-    annotationSummary.records.forEach((record, index) => {
-      const row = createElement(documentObject, 'button', 'annotation-backfill-dialog__record annotation-backfill-dialog__record-tab');
-      row.type = 'button';
-      row.setAttribute('data-ui-owner', 'learning');
-      row.disabled = busy;
-      row.dataset.runId = record.runId || '';
-      row.dataset.current = record.current ? 'true' : 'false';
-      const model = createElement(documentObject, 'span', 'annotation-backfill-dialog__record-model', record.model || '未知模型');
-      const countText = index === 0 && record.coveredCount != null
-        ? `已解释 ${record.coveredCount}/${total}`
-        : `${record.itemCount || 0} 条`;
-      const count = createElement(documentObject, 'span', 'annotation-backfill-dialog__record-count', countText);
-      if (record.current) {
-        row.appendChild(createElement(documentObject, 'span', 'annotation-backfill-dialog__record-current', '当前导入'));
-      }
-      row.append(model, count, createElement(documentObject, 'span', 'annotation-backfill-dialog__record-time', record.generatedAt || ''));
-      row.addEventListener('click', function () {
-        if (record.runId) onSelectRecord(record);
-      });
-      recordsEl.appendChild(row);
-    });
-  }
-
-  function updateAnnotationSummary(summary = {}) {
-    annotationSummary = {
-      totalCount: Number(summary.totalCount || 0),
-      markedWordCount: Number(summary.markedWordCount || 0),
-      coveredCount: Number(summary.coveredCount || 0),
-      missingCount: Number(summary.missingCount || 0),
-      selectedRunId: String(summary.selectedRunId || '').trim(),
-      records: Array.isArray(summary.records) ? summary.records : [],
-    };
-    renderAnnotationSummary();
-  }
-
-  function renderSrsSummary() {
-    if (!srsEnabled) {
-      if (srsPanelEl) srsPanelEl.hidden = true;
-      return;
-    }
-    const total = Number(srsSummary.wordCandidates || 0) + Number(srsSummary.phraseCandidates || 0);
-    const hasPending = !!srsSummary.pending && total > 0;
-    const canBuild = !!srsSummary.canBuildFromExisting;
-    if (srsPanelEl) srsPanelEl.hidden = !hasPending && !canBuild;
-    if (srsStatsEl) {
-      srsStatsEl.textContent = hasPending
-        ? [
-          `可加入单词 ${srsSummary.wordCandidates || 0} 个`,
-          `可加入短语 ${srsSummary.phraseCandidates || 0} 个`,
-          `已排除长文本 ${srsSummary.excludedLongText || 0} 个`,
-          `已在词库中 ${srsSummary.existing || 0} 个`,
-          `已掌握 ${srsSummary.known || 0} 个`,
-          `已忽略 ${srsSummary.ignored || 0} 个`,
-        ].join(' · ')
-        : '已有 AI 解释，可生成 SRS 候选。';
-    }
-    if (srsAddAllButton) {
-      srsAddAllButton.hidden = !hasPending;
-      srsAddAllButton.disabled = busy || total <= 0;
-    }
-    if (srsAddWordsButton) {
-      srsAddWordsButton.hidden = !hasPending;
-      srsAddWordsButton.disabled = busy || Number(srsSummary.wordCandidates || 0) <= 0;
-    }
-    if (srsSkipButton) {
-      srsSkipButton.hidden = !hasPending;
-      srsSkipButton.disabled = busy || total <= 0;
-    }
-    if (srsBuildExistingButton) {
-      srsBuildExistingButton.hidden = hasPending || !canBuild;
-      srsBuildExistingButton.disabled = busy || hasPending || !canBuild;
-    }
-  }
-
-  function updateSrsSummary(summary = {}) {
-    const wordCandidates = Number(summary.wordCandidates || 0);
-    const phraseCandidates = Number(summary.phraseCandidates || 0);
-    const hasPending = !!summary.pending && (wordCandidates + phraseCandidates) > 0;
-    const canBuildFromExisting = !!summary.canBuildFromExisting && !hasPending;
-    srsSummary = {
-      ...createEmptySrsSummary(),
-      ...summary,
-      wordCandidates,
-      phraseCandidates,
-      pending: hasPending,
-      canBuildFromExisting,
-      visible: hasPending || canBuildFromExisting,
-      compact: !hasPending && canBuildFromExisting,
-    };
-    renderSrsSummary();
-  }
-
-  function getStatusSnapshot() {
-    return {
-      open,
-      busy,
-      status: { ...currentStatus },
-      steps: Object.fromEntries(Object.entries(stepState).map(([key, value]) => [key, { ...value }])),
-      annotationSummary: {
-        ...annotationSummary,
-        records: annotationSummary.records.map((record) => ({ ...record })),
-      },
-      srsSummary: { ...srsSummary },
-      values: { ...latestValues },
-    };
-  }
-
-  return {
-    open: openDialog,
-    close: closeDialog,
-    updateContext,
-    getValues,
-    rememberValues,
-    setBusy,
-    setStatus,
-    setStep,
-    updateAnnotationSummary,
-    updateSrsSummary,
-    resetProgress,
-    getStatusSnapshot,
-    dispose() {
-      setOpenState(false);
-      dialogController.dispose();
-    },
-    isOpen() {
-      return open;
-    },
-  };
-}
 
 export function createAnnotationBackfillAiController(deps = {}) {
   const button = deps.button || null;
@@ -989,7 +463,10 @@ export function createAnnotationBackfillAiController(deps = {}) {
     : DEFAULT_BUTTON_TEXT;
   let running = false;
   let contextRequestId = 0;
+  let historyImportRequestId = 0;
+  let annotationSummaryRequestId = 0;
   let hasRunStatus = false;
+  let dialogIdentity = null;
   let activeStep = '';
   const initialModel = getStoredModel(windowObject) || DEFAULT_GEMINI_MODEL;
   const dialog = createAnnotationBackfillDialog({
@@ -1054,20 +531,65 @@ export function createAnnotationBackfillAiController(deps = {}) {
     return state && state.markedMap instanceof Map ? state.markedMap.size : 0;
   }
 
+  function createEmptyAnnotationSummary() {
+    const model = String(getStoredModel(windowObject) || initialModel || '').trim();
+    return {
+      totalCount: 0,
+      markedWordCount: getCurrentMarkedWordCount(),
+      coveredCount: 0,
+      missingCount: 0,
+      selectedRunId: '',
+      requestedRunId: '',
+      selectedRunMismatch: false,
+      records: [],
+      modelProvenance: {
+        currentSelection: model,
+        finalSubmittedModel: '',
+        finalSubmittedState: '尚未提交',
+        runRecordModel: '',
+        runRecordId: '',
+        runRecordGeneratedAt: '',
+        runRecordState: '未记录',
+        routeModel: '当前记录未提供',
+        autoSwitchText: '',
+        reuseText: '',
+        mergeText: '',
+      },
+    };
+  }
+
+  function ensureDialogIdentity(identity) {
+    if (sameReaderIdentity(dialogIdentity, identity)) return false;
+    const changed = !!dialogIdentity;
+    dialogIdentity = { ...identity };
+    if (changed) {
+      contextRequestId += 1;
+      historyImportRequestId += 1;
+      annotationSummaryRequestId += 1;
+      if (!running) hasRunStatus = false;
+    }
+    dialog.updateAnnotationSummary(createEmptyAnnotationSummary());
+    dialog.updateSrsSummary(createEmptySrsSummary());
+    return changed;
+  }
+
   async function refreshAnnotationSummaryForCurrentArticle() {
-    const emptySummary = { totalCount: 0, markedWordCount: getCurrentMarkedWordCount(), coveredCount: 0, missingCount: 0, selectedRunId: '', records: [] };
     const identity = getCurrentIdentity(state);
+    ensureDialogIdentity(identity);
+    const emptySummary = createEmptyAnnotationSummary();
+    const requestId = ++annotationSummaryRequestId;
     if (!identity.jobId) {
-      dialog.updateAnnotationSummary(emptySummary);
+      if (requestId === annotationSummaryRequestId) dialog.updateAnnotationSummary(emptySummary);
       return emptySummary;
     }
     if (!annotationLightweightModule || typeof annotationLightweightModule.buildManualLightweightAnnotationTemplate !== 'function') {
-      dialog.updateAnnotationSummary(emptySummary);
+      if (requestId === annotationSummaryRequestId) dialog.updateAnnotationSummary(emptySummary);
       return emptySummary;
     }
     try {
       const template = annotationLightweightModule.buildManualLightweightAnnotationTemplate();
       const savedPayload = await loadSavedBackfillPayload(client, identity.jobId);
+      if (requestId !== annotationSummaryRequestId || !sameReaderIdentity(identity, getCurrentIdentity(state))) return null;
       const summary = buildAnnotationSummary(template, savedPayload, getSelectedRunId(windowObject, identity.jobId), getCurrentMarkedWordCount());
       dialog.updateAnnotationSummary(summary);
       if (!inlineSrsEnabled) {
@@ -1077,8 +599,10 @@ export function createAnnotationBackfillAiController(deps = {}) {
       await refreshSrsPendingSummary(identity, template, { canBuildFromExisting: summary.coveredCount > 0 });
       return summary;
     } catch (_error) {
-      dialog.updateAnnotationSummary(emptySummary);
-      dialog.updateSrsSummary(createEmptySrsSummary());
+      if (requestId === annotationSummaryRequestId && sameReaderIdentity(identity, getCurrentIdentity(state))) {
+        dialog.updateAnnotationSummary(emptySummary);
+        dialog.updateSrsSummary(createEmptySrsSummary());
+      }
       return emptySummary;
     }
   }
@@ -1257,6 +781,7 @@ export function createAnnotationBackfillAiController(deps = {}) {
 
   async function openDialog() {
     const identity = getCurrentIdentity(state);
+    ensureDialogIdentity(identity);
     if (!identity.jobId) {
       refreshAvailability();
       showError('ANNOTATION_BACKFILL_AI', STANDARD_MATERIAL_ERROR);
@@ -1276,7 +801,7 @@ export function createAnnotationBackfillAiController(deps = {}) {
     dialog.open();
     const requestId = ++contextRequestId;
     const contextPromise = getRunContext(client, { model: getStoredModel(windowObject) || initialModel }).then((context) => {
-      if (requestId !== contextRequestId || running) return;
+      if (requestId !== contextRequestId || running || !sameReaderIdentity(identity, getCurrentIdentity(state))) return;
       dialog.updateContext(context);
     }).catch(() => {});
     await Promise.all([contextPromise, refreshAnnotationSummaryForCurrentArticle()]);
@@ -1307,18 +832,26 @@ export function createAnnotationBackfillAiController(deps = {}) {
       showError('ANNOTATION_BACKFILL_AI', '本地服务尚不支持按历史版本导入 AI 解释。');
       return null;
     }
+    const requestId = ++historyImportRequestId;
+    const startedIdentity = getCurrentIdentity(state);
     try {
       dialog.setStatus('正在导入所选 AI 解释版本...', 'working');
-      const response = await client.getAnnotationBackfillRunResult(identity.jobId, selectedRunId);
+      const response = await client.getAnnotationBackfillRunResult(startedIdentity.jobId, selectedRunId);
+      if (requestId !== historyImportRequestId || !sameReaderIdentity(startedIdentity, getCurrentIdentity(state))) {
+        return { response, imported: null, stale: true };
+      }
       const result = response && response.result ? response.result : response;
       if (!result || !Array.isArray(result.items)) {
         throw new Error('所选 AI 解释版本缺少 items 数组。');
       }
-      const importResult = await importBackfillResult(result, identity.jobId);
-      persistSelectedRunId(windowObject, identity.jobId, selectedRunId);
+      const importResult = await importBackfillResult(result, startedIdentity.jobId);
+      persistSelectedRunId(windowObject, startedIdentity.jobId, selectedRunId);
       if (annotationLightweightModule && typeof annotationLightweightModule.buildManualLightweightAnnotationTemplate === 'function') {
         const template = annotationLightweightModule.buildManualLightweightAnnotationTemplate();
-        const savedPayload = await loadSavedBackfillPayload(client, identity.jobId);
+        const savedPayload = await loadSavedBackfillPayload(client, startedIdentity.jobId);
+        if (requestId !== historyImportRequestId || !sameReaderIdentity(startedIdentity, getCurrentIdentity(state))) {
+          return { response, imported: importResult, stale: true };
+        }
         dialog.updateAnnotationSummary(buildAnnotationSummary(template, savedPayload, selectedRunId, getCurrentMarkedWordCount()));
       }
       const importedCount = getImportCount(importResult, result.items.length);
@@ -1339,6 +872,21 @@ export function createAnnotationBackfillAiController(deps = {}) {
       model: dialogValues.model || getStoredModel(windowObject) || DEFAULT_GEMINI_MODEL,
       apiKey: dialogValues.apiKey || getSessionApiKey(windowObject),
     });
+    const startedIdentity = getCurrentIdentity(state);
+    ensureDialogIdentity(startedIdentity);
+    dialog.updateModelProvenance({
+      currentSelection: runOptions.model || '未记录',
+      finalSubmittedModel: '',
+      finalSubmittedState: '尚未提交',
+      runRecordModel: '',
+      runRecordId: '',
+      runRecordGeneratedAt: '',
+      runRecordState: '未记录',
+      routeModel: '当前记录未提供',
+      autoSwitchText: '',
+      reuseText: '',
+      mergeText: '',
+    });
     if (runOptions.model) {
       persistModel(windowObject, runOptions.model);
       dialog.rememberValues({ model: runOptions.model });
@@ -1347,7 +895,6 @@ export function createAnnotationBackfillAiController(deps = {}) {
       persistSessionApiKey(windowObject, runOptions.apiKey);
       dialog.rememberValues({ apiKey: runOptions.apiKey });
     }
-    const startedIdentity = getCurrentIdentity(state);
     if (!startedIdentity.jobId) {
       refreshAvailability();
       showError('ANNOTATION_BACKFILL_AI', STANDARD_MATERIAL_ERROR);
@@ -1378,6 +925,12 @@ export function createAnnotationBackfillAiController(deps = {}) {
       setRunningStatus('读取配置...');
       const runContext = await getRunContext(client, runOptions);
       dialog.updateContext(runContext);
+      dialog.updateModelProvenance({
+        currentSelection: String(runContext.currentSelection || runContext.selectedModel || runOptions.model || '').trim() || '未记录',
+        finalSubmittedModel: String(runContext.finalSubmittedModel || runContext.model || '').trim(),
+        finalSubmittedState: String(runContext.finalSubmittedState || '待提交').trim(),
+        autoSwitchText: String(runContext.autoSwitchText || '').trim(),
+      });
       dialog.setStep('config', 'done', runContext.model);
       activeStep = '';
       if (!runContext.apiKey && runContext.credentialKnown && !runContext.credentialStored) {
@@ -1417,6 +970,11 @@ export function createAnnotationBackfillAiController(deps = {}) {
         dialog.setStep('import', 'done', `${restoredCount} 条`);
         activeStep = '';
         if (coverage.fullyCovered) {
+          dialog.updateModelProvenance({
+            finalSubmittedModel: '',
+            finalSubmittedState: '未提交（复用已有结果）',
+            reuseText: '复用已有结果，未调用 Gemini API。',
+          });
           await refreshSrsPendingSummary(startedIdentity, template, { canBuildFromExisting: coverage.coveredCount > 0 });
           dialog.setStatus(`本地已有 ${coverage.coveredCount} 条解释，已恢复，未调用 Gemini API。`, 'success');
           showToast(`本地已有 ${coverage.coveredCount} 条 AI 解释，已恢复，未调用 API。`, 'success');
@@ -1432,6 +990,10 @@ export function createAnnotationBackfillAiController(deps = {}) {
           }
           requestTemplate = buildRequestTemplate(template, coverage.missingItems);
           mergeWithLatest = true;
+          dialog.updateModelProvenance({
+            reuseText: `复用已有结果；本次仅提交新增 ${coverage.missingCount} 条。`,
+            mergeText: '本轮请求会合并已有结果；旧结果的逐条来源未重新标记。',
+          });
           dialog.setStatus(`确认调用 Gemini，只解释新增 ${coverage.missingCount} 条标注。`, 'working');
         }
       }
@@ -1440,16 +1002,34 @@ export function createAnnotationBackfillAiController(deps = {}) {
       if (shouldUseRecommendedBulkModel(runContext.model, requestItemCount)) {
         const originalModel = runContext.model;
         runContext.model = RECOMMENDED_ANNOTATION_MODEL;
+        runContext.selectedModel = originalModel;
+        runContext.currentSelection = originalModel;
+        runContext.finalSubmittedModel = RECOMMENDED_ANNOTATION_MODEL;
+        runContext.finalSubmittedState = '已按现有批量规则确定';
+        runContext.autoSwitchText = `原选择 ${originalModel} → 最终提交 ${RECOMMENDED_ANNOTATION_MODEL}（现有批量规则）`;
         runOptions.model = RECOMMENDED_ANNOTATION_MODEL;
         persistModel(windowObject, RECOMMENDED_ANNOTATION_MODEL);
         dialog.rememberValues({ model: RECOMMENDED_ANNOTATION_MODEL });
         dialog.updateContext(runContext);
+        dialog.updateModelProvenance({
+          currentSelection: String(runContext.currentSelection || originalModel).trim() || '未记录',
+          finalSubmittedModel: String(runContext.finalSubmittedModel || runContext.model || '').trim(),
+          finalSubmittedState: String(runContext.finalSubmittedState || '待提交').trim(),
+          autoSwitchText: String(runContext.autoSwitchText || '').trim(),
+        });
         dialog.setStep('config', 'done', RECOMMENDED_ANNOTATION_MODEL);
         showToast(
           `${originalModel} 当前批量标注解释容易 503，已自动切换到 ${RECOMMENDED_ANNOTATION_MODEL}。`,
           'warning',
         );
       }
+      dialog.updateModelProvenance({
+        currentSelection: String(runContext.currentSelection || runOptions.model || '').trim() || '未记录',
+        finalSubmittedModel: runContext.model,
+        finalSubmittedState: '已提交',
+        autoSwitchText: String(runContext.autoSwitchText || '').trim(),
+        mergeText: mergeWithLatest ? '本轮请求会合并已有结果；旧结果的逐条来源未重新标记。' : '',
+      });
       dialog.setStep('export', 'done', `待解释 ${requestItemCount}/${itemCount}`);
       dialog.setStatus('正在请求 Gemini，可能需要几分钟。', 'working');
       dialog.setStep('request', 'active', '请求中');
@@ -1488,9 +1068,15 @@ export function createAnnotationBackfillAiController(deps = {}) {
       activeStep = '';
       const generatedRunId = getSavedBackfillRunId(response);
       if (generatedRunId) persistSelectedRunId(windowObject, startedIdentity.jobId, generatedRunId);
+      const responseMetadata = response && response.metadata && typeof response.metadata === 'object'
+        ? response.metadata
+        : {};
+      const liveMergeFact = typeof responseMetadata.mergeWithLatest === 'boolean'
+        ? responseMetadata.mergeWithLatest
+        : (typeof responseMetadata.merge_with_latest === 'boolean' ? responseMetadata.merge_with_latest : mergeWithLatest);
       dialog.updateAnnotationSummary(buildAnnotationSummary(template, {
         result,
-        metadata: response && response.metadata,
+        metadata: { ...responseMetadata, mergeWithLatest: liveMergeFact },
         history: response && response.history,
       }, generatedRunId, getCurrentMarkedWordCount()));
       try {

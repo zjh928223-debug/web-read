@@ -1,0 +1,219 @@
+你会收到一个 JSON 对象。
+
+这个 JSON 对象顶层通常包含：
+- schemaVersion
+- articleId
+- articleText
+- articleSentences
+- items
+
+其中 items 数组里的每个 item 通常包含：
+- targetId
+- markedText
+- cleanMarkedText
+- sourceSentence
+- anchorSentence
+- sentenceBefore
+- sentenceAfter
+- sentenceIndex
+- matchType
+- occurrenceIndex
+
+你的任务是：
+基于每个 item 的 markedText 以及它在当前文章中的实际用法，为每个 item 生成以下字段：
+- targetId
+- markedText
+- sourceSentence
+- occurrenceIndex
+- boundary
+- type
+- meaning
+- memoryHint
+
+你的目标不是只做“最短词典释义”，而是做“学习型注释”：
+- 让读者知道这个表达在原文这里真正是什么意思
+- 让读者知道这个意思为什么会这样理解
+- 让读者更容易记住，而不是看完就忘
+
+但同时，你必须保持 boundary 的严格性，不要因为解释更充分，就把 boundary 扩大。
+
+处理要求：
+
+1. 保留原始 targetId，不要改写，不要丢失。
+
+2. 保留原始 markedText，不要改写，不要替换成别的形式。
+
+3. 保留原始 sourceSentence，不要改写，不要替换成 anchorSentence，也不要输出别的句子代替它。
+
+4. 保留原始 occurrenceIndex，不要改写，不要丢失。
+
+5. 当前句的判定规则：
+- 优先使用 anchorSentence 作为“判断 boundary / type / meaning / memoryHint”时的主句
+- 如果某个 item 没有 anchorSentence，再使用 sourceSentence
+- 如果两者都没有，再退回 sentence
+注意：
+输出字段里的 sourceSentence 仍然必须原样返回输入中的 sourceSentence。
+
+6. sentenceBefore、sentenceAfter、articleText、articleSentences 可以作为有效参考：
+- 它们可以帮助你理解当前表达在本文里的真正含义、语气、逻辑作用和引申方向
+- 你可以利用全文主题来避免只给很薄的字典义
+- 你可以利用前后句判断作者到底是在强调原因、结果、对比、比喻、评价还是总结
+- 但不能编造原文没有的信息
+- 不能把别的句子的内容硬说成当前表达本身的字面意思
+
+7. boundary 的定义：
+boundary 不是“方便定位的句子片段”，也不是“目标词附近的一小段上下文”。
+boundary 必须是 markedText 在当前句中所属的最小完整表达。
+
+8. boundary 必须严格满足以下规则：
+- 必须是当前句里的连续原文片段
+- 必须完整包含 markedText
+- 必须尽量短
+- 只能保留与 markedText 直接构成同一个表达的词
+- 不能为了定位方便而额外带入前后不直接相关的内容
+- 不能只收半截。右边如果该收完整，就必须收完整。左边如果不属于核心表达，就不要带入
+- 不能接近半句，更不能包含一句话的大部分内容
+
+9. 生成 boundary 时，默认先尝试：
+- boundary = markedText
+
+10. 只有在 markedText 单独拿出来明显残缺、不自然、不能独立构成一个最小表达时，才允许做最小必要扩展。
+
+11. 扩展 boundary 时遵守以下原则：
+- 优先补右边缺失的核心词，再考虑左边
+- 只补到表达刚好完整为止，补完立刻停止
+- 不要把只是相邻、但不属于核心表达的词顺手带进来
+- 不要为了“读起来顺”而加入外围主语、宾语、时间状语、铺垫成分、前一项或后一项列举内容
+
+12. 明确禁止以下错误：
+- 左边多带无关上下文
+- 右边没收完整就停下
+- 带入悬空连接词，如 and、or、but
+- 带入不属于核心表达的修饰词
+- 把目标前后的大块句子内容一起包进 boundary
+
+13. 具体处理标准：
+- 如果 markedText 本身已经是完整固定搭配、自然短语、专有名词、缩写、或可独立成立的小表达，boundary 必须直接等于 markedText
+- 如果 markedText 是修饰语，boundary 只补它直接修饰的核心词，不要再往外扩
+- 如果 markedText 是比较级、程度词或结构碎片，只补到最小完整结构，不要带外围泛指成分
+- 如果 markedText 是并列中的一部分，不要把前后并列项和连接词一起带入，除非它们本身共同构成最小完整单位
+- 如果 markedText 是功能词，例如冠词、介词、连词、系动词、代词等，才允许扩到它所在的最小自然结构，但仍然必须尽量短
+- 如果 markedText 本身就过碎、过残、学习价值很低，也不要用很长的 boundary 去硬补。仍然只做最小必要补全，不要过度扩展
+
+14. 下面这些例子代表正确方向：
+
+例子 1
+markedText: Over
+sentence: Over time, kimchi became deeply tied to Korean identity.
+正确 boundary: Over time
+错误 boundary: Over time, kimchi
+
+例子 2
+markedText: more
+sentence: fresh vegetables transformed into something more flavorful and long-lasting.
+正确 boundary: more flavorful
+错误 boundary: something more flavorful
+
+例子 3
+markedText: cubed
+sentence: the crunchy cubed radish kimchi
+正确 boundary: cubed radish
+错误 boundary: crunchy cubed radish
+
+例子 4
+markedText: profile, ingredients,
+sentence: Each type has its own flavor profile, ingredients, and uses.
+正确 boundary: flavor profile, ingredients
+错误 boundary: flavor profile, ingredients, and
+
+例子 5
+markedText: creating the
+sentence: The addition of red pepper flakes completely transformed the flavor and appearance, creating the modern kimchi style that spread throughout the country.
+正确 boundary: creating the modern kimchi style
+错误 boundary: appearance, creating the modern
+
+例子 6
+markedText: at first glance
+sentence: It's one of those foods that seems simple at first glance, but the more you learn about it, the more it feels like an entire world of its own.
+正确 boundary: at first glance
+
+例子 7
+markedText: tied to
+sentence: Over time, kimchi became deeply tied to Korean identity.
+正确 boundary: tied to
+
+例子 8
+markedText: UNESCO
+sentence: and even officially recognized by UNESCO as part of Korea's intangible cultural heritage.
+正确 boundary: UNESCO
+
+15. type：用简短标签概括该项类型，例如 word、phrase、phrasal-verb、idiom、name、abbreviation 等。保持简洁一致，不要发明过多新标签。
+
+16. meaning：
+- 根据当前文章语境写中文含义
+- 优先写当前语境义，不要只给最常见但不贴合这里的词典义
+- 允许比普通词典释义更充分一点
+- 如果这个表达有“字面义 / 常见义 / 当前语境义”之间的落差，可以顺带点出为什么这里这样理解
+- 重点是帮助读者真正理解原文，不是机械对词翻译
+- 一般写 1 到 2 句中文，必要时可以稍微展开，但不要空话
+
+17. memoryHint：
+- 写一个真正帮助记忆的中文提示，不要只是把 meaning 换个说法重复一遍
+- 可以从这些角度里选最合适的一种或两种：
+  - 字面画面或原始感觉
+  - 从本义到语境义的转弯路径
+  - 常见误解点
+  - 为什么这里不能按字面硬翻
+  - 和本文场景、逻辑或语气的绑定
+  - 和读者更熟悉的常见意思做对比
+- 允许比原始 prompt 略长一点，但不要写成小作文
+- 目标是“让人更容易记住”
+
+18. 对普通词或低学习价值 target 的处理：
+- 也必须正常输出
+- 但不要强行拔高
+- meaning 讲清楚这里的意思即可
+- memoryHint 给一个最实用、最真实的记忆抓手即可
+
+19. 不要输出任何解释文字，不要输出过程说明，不要输出 markdown。
+
+20. 输出必须覆盖输入中的所有 items，顺序尽量保持一致。
+
+21. 在生成每个 boundary 前，先默默检查下面 6 件事：
+- 它是不是当前句里的连续原文片段
+- 它有没有完整包含 markedText
+- markedText 单独是否已经够完整
+- 这次扩展是不是最小必要扩展
+- 有没有把不直接相关的前后内容顺手带进去
+- 有没有出现悬空连接词或过长片段
+
+22. 输出格式必须严格是：
+
+{
+  "items": [
+    {
+      "targetId": "...",
+      "markedText": "...",
+      "sourceSentence": "...",
+      "occurrenceIndex": 0,
+      "boundary": "...",
+      "type": "...",
+      "meaning": "...",
+      "memoryHint": "..."
+    }
+  ]
+}
+
+
+23. 附加 simpleMeaning（不替代 meaning 或 memoryHint）：
+- meaning 仍按第16条写充分的本文学习解释，memoryHint 仍按第17条提供记忆线索；不能为了短义省略原学习说明。
+- simpleMeaning 是实际 markedText 这段表达本身的简短中文词汇义；boundary 与语境帮助选义，不把 boundary 扩展后的额外对象或文章中的具体实体代替 markedText。
+- 单词尽量10字以内、硬上限16字；短语尽量14字以内、硬上限20字。只给核心意思，不写原因、背景、记忆法或整句翻译。
+- 指代只用于消歧：invisible gas 指 ethylene 时写“不可见气体”，不写“乙烯气体”；the capital 指 Beijing 时写“首都”，不写“北京”；the enzyme 指 polyphenol oxidase 时写“这种酶”，不写“多酚氧化酶”。显式 ethylene gas 可写“乙烯气体”，显式 polyphenol oxidase 可写“多酚氧化酶”。
+- 对专有名称、临时术语或不适合词汇学习的项，可返回空字符串；仍完整返回详细解释等原字段。无法给出合格短义也返回空字符串，不省略该目标或原解释。
+- 第22条的每个 item 在原字段之外增加 "simpleMeaning": "..."，其余字段与严格 boundary/type/目标覆盖规则保持。
+
+24. 输出前分别核对两种释义的范围，不把两个任务混在一起：
+- meaning 可以解释最小完整 boundary 的本文用法；simpleMeaning 必须回到输入 markedText 自身，只借语境选择义项。
+- 例如 markedText="more"、boundary="more flavorful"，simpleMeaning 应为“更”，不能写“更有风味的”；markedText="cubed"、boundary="cubed radish"，simpleMeaning 应为“切成方块的”，不能写“方块萝卜”；markedText="charge"、boundary="no charge"，simpleMeaning 应为“费用”，不能写“免费”。
+- memoryHint 的联想必须明确只是联想；不要把联想说成词源、科学因果或历史事实。不得因 light 同时有“轻”和“光”两义，就声称这两个意思来自“光没有重量”。缺乏依据时用原句搭配、同义对照、常见误解或清楚的想象画面即可。

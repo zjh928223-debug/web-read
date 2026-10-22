@@ -7,7 +7,6 @@ import '../utils/chunk-matching.js';
 import '../utils/vocab-matching.js';
 import './transcript-state.js';
 import './chunk-state.js';
-import './cloze-state.js';
 import './playback-state.js';
 import './annotation-lightweight-module.js';
 import { initReaderRuntimeAssembly } from './reader-runtime-assembly.js';

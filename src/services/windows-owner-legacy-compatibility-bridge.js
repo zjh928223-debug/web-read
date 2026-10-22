@@ -33,6 +33,7 @@ const RAW_TEXT_LOCAL_STORAGE_KEYS = new Set([
   'vocabulary.passage-preview.shortcut.translation.v1',
   'vocabulary.passage-preview.shortcut.context.v1',
   'vocabulary.passage-preview.translation-display-mode.v1',
+  'vocabulary.passage-preview.translation-display-mode.v2',
 ])
 const VOCABULARY_SETTLEMENT_PREFIX = 'vocabulary-article-srs-settlement-progress:'
 const LEGACY_LOCAL_STORAGE_SCOPE_PREFIXES = Object.freeze([

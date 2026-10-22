@@ -1,0 +1,85 @@
+/* Only the delayed-rating fixture mounts PassagePreviewCheckPage. */
+.passage-preview-check-shortcut-list { margin-top: 20px; }
+
+.passage-preview-check-shortcut-list .passage-preview-shortcut-row > kbd {
+  display: grid;
+  min-width: 44px;
+  min-height: 32px;
+  place-items: center;
+  border: 1px solid rgba(132, 149, 176, .32);
+  border-radius: 8px;
+  background: #f6f8fb;
+  color: #344c72;
+  font: 700 13px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.passage-preview-check-hint {
+  max-width: 28ch;
+  margin: 22px 0 0;
+  color: #7b8799;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.passage-preview-check-answer {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(132, 149, 176, .2);
+}
+
+.passage-preview-check-answer-text {
+  margin: 0;
+  color: var(--srs-text);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.passage-preview-check-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.passage-preview-rating {
+  min-height: 48px;
+  padding: 10px 14px;
+  border: 1px solid rgba(111, 128, 153, .3);
+  border-radius: 12px;
+  background: #fff;
+  color: #52647e;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.passage-preview-rating:hover:not(:disabled),
+.passage-preview-rating:focus-visible:not(:disabled) {
+  border-color: #4d6f9f;
+  box-shadow: 0 4px 12px rgba(68, 94, 137, .12);
+  outline: none;
+}
+
+.passage-preview-rating.is-again { color: #9a4d55; }
+
+.passage-preview-rating.is-hard { color: #9a7335; }
+
+.passage-preview-rating.is-good { color: #3d725f; }
+
+.passage-preview-rating.is-easy { color: #3e5fa0; }
+
+.passage-preview-rating:disabled {
+  cursor: wait;
+  opacity: .55;
+}
+
+.passage-preview-check-error {
+  margin: 8px 28px 0;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .passage-preview-check-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

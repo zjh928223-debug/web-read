@@ -1,5 +1,7 @@
+import { shallowReactive } from 'vue';
+
 export function initMarksState(initialMarkedMap = null) {
-    var markedMap = new Map();
+    var markedMap = shallowReactive(new Map());
 
     function setMarkedMap(nextMarkedMap) {
         markedMap.clear();

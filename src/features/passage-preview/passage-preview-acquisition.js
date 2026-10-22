@@ -63,7 +63,7 @@ export function createPassagePreviewAcquisitionCoordinator(options = {}) {
   async function registerItem(item, inputOptions = {}) {
     const normalizedItem = normalizePreviewItem(item)
     if (!normalizedItem.lemma || !normalizedItem.primaryMeaningZh) return null
-    const key = normalizedItem.id || normalizedItem.lemma
+    const key = itemKey(normalizedItem)
     if (registrationPromises.has(key)) return registrationPromises.get(key)
     const promise = registerItemInternal(normalizedItem, inputOptions)
     registrationPromises.set(key, promise)
@@ -77,12 +77,13 @@ export function createPassagePreviewAcquisitionCoordinator(options = {}) {
   async function registerItemInternal(normalizedItem, inputOptions = {}) {
     const records = await rebuildRecordsFromCanonicalRepository()
     const previous = findRecord(records, normalizedItem)
+    const targetSenseKey = getPassagePreviewTargetSenseKey(normalizedItem)
     const introducedAt = previous?.introducedAt
       || normalizeIso(inputOptions.introducedAt)
       || nowIso(nowProvider)
     const context = buildContext(normalizedItem, sourceScope)
     const targetPartOfSpeech = previous ? previous.pos : normalizedItem.pos
-    const targetId = `ielts-preview:${normalizedItem.lemma}`
+    const targetId = buildTargetId(normalizedItem.lemma, targetSenseKey)
     const result = await vocabularyService.queuePreviewVocabularyAcquisition({
       word: normalizedItem.word || normalizedItem.lemma,
       lemma: normalizedItem.lemma,
@@ -111,7 +112,7 @@ export function createPassagePreviewAcquisitionCoordinator(options = {}) {
       word: normalizedItem.word || normalizedItem.lemma,
       primaryMeaningZh: previous?.primaryMeaningZh || normalizedItem.primaryMeaningZh,
       pos: normalizedItem.pos || previous?.pos,
-      targetSenseKey: previous?.targetSenseKey || normalizedItem.targetSenseKey,
+      targetSenseKey: targetSenseKey || previous?.targetSenseKey || normalizedItem.targetSenseKey,
       learningUnitId: unitId,
       targetSenseId: result.learningUnit?.target_sense_id || previous?.targetSenseId || null,
       contextEvidenceId: state?.validated_anchor_id || previous?.contextEvidenceId || null,
@@ -319,7 +320,7 @@ function normalizePreviewItem(item = {}) {
     primaryMeaningZh: normalizeText(item.primaryMeaningZh),
     pos: normalizeText(item.pos || item.partOfSpeech),
     phonetic: normalizeText(item.phonetic),
-    targetSenseKey: normalizeText(item.targetSenseKey),
+    targetSenseKey: getPassagePreviewTargetSenseKey(item),
     previewContext: item.previewContext && typeof item.previewContext === 'object'
       ? clone(item.previewContext)
       : null,
@@ -330,26 +331,86 @@ function normalizePreviewItem(item = {}) {
 }
 
 function buildContext(item, sourceScope) {
-  const source = item.previewContext || item.realSentence || null
+  const previewContext = item.previewContext && typeof item.previewContext === 'object'
+    ? item.previewContext
+    : null
+  const realSentence = item.realSentence && typeof item.realSentence === 'object'
+    ? item.realSentence
+    : null
+  const realSource = realSentence?.source && typeof realSentence.source === 'object'
+    ? realSentence.source
+    : null
+  const sentenceMatchesPreviewContext = Boolean(
+    realSentence?.sentence
+      && previewContext?.sentence
+      && normalizeText(realSentence.sentence) === normalizeText(previewContext.sentence),
+  )
+  const source = realSentence?.sentence
+    ? {
+        sentence: realSentence.sentence,
+        surrounding_text: realSentence.surroundingText || realSentence.surrounding_text,
+        source_kind: realSource?.kind || (sentenceMatchesPreviewContext
+          ? previewContext.source_kind || previewContext.sourceKind
+          : ''),
+        source_id: realSource?.recordId || realSource?.sourceId || (sentenceMatchesPreviewContext
+          ? previewContext.source_id || previewContext.sourceId
+          : ''),
+        source_title: realSource?.name || (sentenceMatchesPreviewContext
+          ? previewContext.source_title || previewContext.sourceTitle
+          : ''),
+        source_locator: realSource?.sourceLocator || realSource?.source_locator || (sentenceMatchesPreviewContext
+          ? previewContext.source_locator || previewContext.sourceLocator
+          : null),
+        license_kind: realSource?.licenseKind || (sentenceMatchesPreviewContext
+          ? previewContext.license_kind || previewContext.licenseKind
+          : ''),
+        ownership: realSource?.ownership || (sentenceMatchesPreviewContext ? previewContext.ownership : ''),
+        quality_status: realSource?.qualityStatus || (sentenceMatchesPreviewContext
+          ? previewContext.quality_status || previewContext.qualityStatus
+          : ''),
+        quality_reason: realSource?.qualityReason || (sentenceMatchesPreviewContext
+          ? previewContext.quality_reason || previewContext.qualityReason
+          : ''),
+        validated_at: realSource?.validatedAt || (sentenceMatchesPreviewContext
+          ? previewContext.validated_at || previewContext.validatedAt
+          : ''),
+      }
+    : previewContext
   if (!source?.sentence) return null
   const sourceKind = normalizeText(source.source_kind || source.sourceKind)
-  const isLocal = sourceKind === 'user_local_exam_material' || !sourceKind
+  const supportedSourceKinds = new Set([
+    'article',
+    'subtitle',
+    'user_local_exam_material',
+    'open_corpus',
+    'dictionary_example',
+  ])
+  if (!supportedSourceKinds.has(sourceKind)) return null
+  const sourceId = normalizeText(source.source_id || source.sourceId)
+  const sourceLocator = source.source_locator || source.sourceLocator || null
+  if (!sourceId || !sourceLocator || typeof sourceLocator !== 'object' || Array.isArray(sourceLocator)) return null
+  const isLocal = sourceKind === 'user_local_exam_material'
+  const qualityStatus = normalizeQualityStatus(
+    source.quality_status || source.qualityStatus,
+    isLocal ? 'validated' : 'pending',
+  )
   const context = {
     sentence: source.sentence,
     surrounding_text: source.surrounding_text || source.surroundingText || null,
-    source_kind: isLocal ? 'user_local_exam_material' : sourceKind,
-    source_id: normalizeText(source.source_id || source.sourceId || `${sourceScope}:${item.lemma}`),
+    source_kind: sourceKind,
+    source_id: sourceId,
     source_title: normalizeText(source.source_title || source.sourceTitle || source.source?.name)
-      || '剑桥雅思阅读本地语料',
-    source_locator: source.source_locator || source.sourceLocator || {
-      locator_version: 'source-locator.v1',
-      local_locator: `${sourceScope}:${item.lemma}`,
-    },
-    license_kind: source.license_kind || source.licenseKind || (isLocal ? 'user_owned' : 'licensed_open'),
-    ownership: source.ownership || (isLocal ? 'private' : 'public'),
-    quality_status: source.quality_status || source.qualityStatus || (isLocal ? 'validated' : 'pending'),
-    quality_reason: source.quality_reason || source.qualityReason || '预习上下文已通过来源校验',
-    validated_at: source.validated_at || source.validatedAt || null,
+      || (isLocal ? '剑桥雅思阅读本地语料' : ''),
+    source_locator: sourceLocator,
+    license_kind: normalizeLicenseKind(source.license_kind || source.licenseKind, sourceKind),
+    ownership: normalizeOwnership(source.ownership, sourceKind),
+    quality_status: qualityStatus,
+    quality_reason: source.quality_reason || source.qualityReason || (
+      qualityStatus === 'validated' ? '预习上下文已通过来源校验' : '等待来源校验'
+    ),
+    validated_at: qualityStatus === 'validated'
+      ? source.validated_at || source.validatedAt || null
+      : null,
     extensions: {
       ...(source.extensions || {}),
       preview_item_id: item.id,
@@ -401,13 +462,45 @@ function uniqueRecords(records) {
 
 function findRecord(records, item) {
   const key = itemKey(item)
-  return records.find((record) => record.itemKey === key)
-    || records.find((record) => record.lemma === item.lemma)
-    || null
+  return records.find((record) => record.itemKey === key) || null
 }
 
 function itemKey(item) {
-  return `${normalizeWord(item?.lemma || item?.word)}\u001f${normalizeText(item?.targetSenseKey) || normalizeText(item?.primaryMeaningZh)}`
+  return `${normalizeWord(item?.lemma || item?.word)}\u001f${getPassagePreviewTargetSenseKey(item)}`
+}
+
+function buildTargetId(lemma, targetSenseKey) {
+  return `ielts-preview:${encodeURIComponent(lemma)}:${encodeURIComponent(targetSenseKey)}`
+}
+
+function getPassagePreviewTargetSenseKey(item = {}) {
+  const explicit = normalizeText(item.targetSenseKey || item.target_sense_key)
+  if (explicit) return explicit
+  const lemma = normalizeWord(item.lemma || item.word)
+  const meaning = normalizeText(item.primaryMeaningZh || item.meaning || item.gloss)
+  return lemma && meaning ? `preview:${lemma}:${meaning}` : ''
+}
+
+function normalizeQualityStatus(value, fallback) {
+  const normalized = normalizeText(value).toLowerCase()
+  return ['pending', 'validated', 'rejected'].includes(normalized) ? normalized : fallback
+}
+
+function normalizeLicenseKind(value, sourceKind) {
+  const normalized = normalizeText(value).toLowerCase()
+  if (['user_owned', 'licensed_open', 'dictionary_terms', 'ai_generated', 'unknown'].includes(normalized)) {
+    return normalized
+  }
+  if (sourceKind === 'user_local_exam_material') return 'user_owned'
+  if (sourceKind === 'open_corpus') return 'licensed_open'
+  if (sourceKind === 'dictionary_example') return 'dictionary_terms'
+  return 'unknown'
+}
+
+function normalizeOwnership(value, sourceKind) {
+  const normalized = normalizeText(value).toLowerCase()
+  if (['user', 'private', 'third_party', 'public'].includes(normalized)) return normalized
+  return sourceKind === 'user_local_exam_material' ? 'private' : 'third_party'
 }
 
 function mergeItems(previous, next) {

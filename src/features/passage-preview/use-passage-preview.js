@@ -46,13 +46,26 @@ import {
   loadPassagePreviewSessionCache,
   savePassagePreviewSessionCache,
 } from './passage-preview-session-cache.js'
+import { PASSAGE_PREVIEW_ENTRY_STATES } from './passage-preview-entry-state.js'
+import {
+  buildPassagePreviewContactSummary,
+  mergePassagePreviewContactStatuses,
+  samePassagePreviewTarget,
+} from './passage-preview-contact.js'
 
 export function usePassagePreview({ vocabularyService, requestImportFile } = {}) {
   const requestImportFileHandler = typeof requestImportFile === 'function'
     ? requestImportFile
     : () => {}
   const isPassagePreviewOpen = ref(false)
-  const passagePreviewItems = ref(loadPassagePreviewData())
+  let initialPassagePreviewItems = []
+  let initialPassagePreviewReadError = ''
+  try {
+    initialPassagePreviewItems = loadPassagePreviewData()
+  } catch (error) {
+    initialPassagePreviewReadError = error?.message || '已保存的待预习数据暂时不可读。'
+  }
+  const passagePreviewItems = ref(initialPassagePreviewItems)
   const passagePreviewOpening = ref(false)
   const passagePreviewPreparing = ref(false)
   const passagePreviewPreparationMessage = ref('正在准备预习句子…')
@@ -61,15 +74,112 @@ export function usePassagePreview({ vocabularyService, requestImportFile } = {})
   let passagePreviewLearningSavePromise = Promise.resolve()
   let passagePreviewAcquisitionRegistrationPromise = Promise.resolve()
   const isPassagePreviewSettingsOpen = ref(false)
-  const passagePreviewWaitingCount = ref(0)
+  const passagePreviewWaitingCount = ref(null)
+  const passagePreviewWaitingKnown = ref(false)
   const passagePreviewQueueNotice = ref('')
+  const passagePreviewContactStatuses = ref({})
+  const passagePreviewContactSummary = ref(buildPassagePreviewContactSummary())
+  let introducedPassagePreviewRecords = []
+  let introducedPassagePreviewRecordsLoaded = false
+  let passagePreviewOpenRequestId = 0
+  let passagePreviewDurableWriteChain = Promise.resolve()
+  const passagePreviewEntryState = ref(initialPassagePreviewReadError
+    ? PASSAGE_PREVIEW_ENTRY_STATES.READ_ERROR
+    : initialPassagePreviewItems.length
+      ? PASSAGE_PREVIEW_ENTRY_STATES.READY
+      : PASSAGE_PREVIEW_ENTRY_STATES.NO_CANDIDATES)
+  const passagePreviewEntryMessage = ref(initialPassagePreviewReadError)
+  const passagePreviewEntrySource = ref(initialPassagePreviewItems.length ? 'saved' : '')
+  let lastPassagePreviewProgress = createInitialPassagePreviewProgress()
+  let passagePreviewReadCompleted = false
   const passagePreviewAcquisition = createPassagePreviewAcquisitionCoordinator({ vocabularyService })
 
-  async function openStoredPassagePreviewLegacy() {
+  function setPassagePreviewEntryState(state, message = '', source = '') {
+    passagePreviewEntryState.value = state
+    passagePreviewEntryMessage.value = message
+    if (source) passagePreviewEntrySource.value = source
+  }
+
+  function updatePassagePreviewContactSummary(
+    progress = lastPassagePreviewProgress,
+    items = passagePreviewItems.value,
+    introducedRecords,
+    { introducedRecordsLoaded = true } = {},
+  ) {
+    const nextProgress = progress || createInitialPassagePreviewProgress()
+    lastPassagePreviewProgress = {
+      ...nextProgress,
+      firstContacts: {
+        ...(lastPassagePreviewProgress?.firstContacts || {}),
+        ...(nextProgress.firstContacts || {}),
+      },
+    }
+    if (introducedRecords !== undefined) {
+      introducedPassagePreviewRecords = Array.isArray(introducedRecords) ? introducedRecords : []
+      if (introducedRecordsLoaded) {
+        introducedPassagePreviewRecordsLoaded = true
+      }
+    }
+    const records = introducedPassagePreviewRecords
+    const contacts = lastPassagePreviewProgress.firstContacts || {}
+    const nextStatuses = mergePassagePreviewContactStatuses({
+      firstContacts: contacts,
+      previousStatuses: passagePreviewContactStatuses.value,
+      introducedRecords: records,
+      introducedRecordsLoaded: introducedPassagePreviewRecordsLoaded,
+    })
+    passagePreviewContactStatuses.value = nextStatuses
+    passagePreviewContactSummary.value = buildPassagePreviewContactSummary({
+      items,
+      firstContacts: contacts,
+      statuses: nextStatuses,
+    })
+  }
+
+  function createProgressPreservingContacts() {
+    return createInitialPassagePreviewProgress({
+      firstContacts: lastPassagePreviewProgress?.firstContacts || {},
+    })
+  }
+
+  function mergeIntroducedPassagePreviewRecords(records) {
+    const merged = [...introducedPassagePreviewRecords]
+    for (const record of Array.isArray(records) ? records : []) {
+      const existingIndex = merged.findIndex((candidate) => samePassagePreviewTarget(candidate, record))
+      if (existingIndex >= 0) merged[existingIndex] = record
+      else merged.push(record)
+    }
+    return merged
+  }
+
+  function isOpenPassagePreviewRequestCurrent(requestId) {
+    return requestId === passagePreviewOpenRequestId
+  }
+
+  function enqueuePassagePreviewWrite(operation, requestId = passagePreviewOpenRequestId) {
+    const queued = passagePreviewDurableWriteChain.then(async () => {
+      if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
+      const result = await operation()
+      if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
+      return result
+    })
+    passagePreviewDurableWriteChain = queued.catch(() => undefined)
+    return queued
+  }
+
+  async function openStoredPassagePreviewLegacy(requestId = passagePreviewOpenRequestId) {
+    if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
     if (validatePassagePreviewItems(passagePreviewItems.value)) {
-      passagePreviewItems.value = await preparePassagePreviewItems(passagePreviewItems.value)
-      await savePassagePreviewData(passagePreviewItems.value)
+      const prepared = await preparePassagePreviewItems(passagePreviewItems.value, { requestId })
+      if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
+      const saved = await enqueuePassagePreviewWrite(async () => {
+        await savePassagePreviewData(prepared)
+        return true
+      }, requestId)
+      if (!saved || !isOpenPassagePreviewRequestCurrent(requestId)) return false
+      passagePreviewItems.value = prepared
       isPassagePreviewOpen.value = true
+      setPassagePreviewEntryState(PASSAGE_PREVIEW_ENTRY_STATES.READY, '', 'saved')
       return true
     }
     if (passagePreviewItems.value.length) {
@@ -78,10 +188,16 @@ export function usePassagePreview({ vocabularyService, requestImportFile } = {})
           title: '首次接触',
           answers: passagePreviewItems.value,
         })
-        const prepared = await preparePassagePreviewItems(migrated)
-        await savePassagePreviewData(prepared)
+        const prepared = await preparePassagePreviewItems(migrated, { requestId })
+        if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
+        const saved = await enqueuePassagePreviewWrite(async () => {
+          await savePassagePreviewData(prepared)
+          return true
+        }, requestId)
+        if (!saved || !isOpenPassagePreviewRequestCurrent(requestId)) return false
         passagePreviewItems.value = prepared
         isPassagePreviewOpen.value = true
+        setPassagePreviewEntryState(PASSAGE_PREVIEW_ENTRY_STATES.READY, '', 'migrated')
         return true
       } catch (error) {
         if (isPassagePreviewOwnerAuthoritative()) throw error
@@ -91,9 +207,12 @@ export function usePassagePreview({ vocabularyService, requestImportFile } = {})
   }
 
   async function refreshPendingPreviewSummary() {
+    passagePreviewWaitingKnown.value = false
+    passagePreviewWaitingCount.value = null
     try {
       const summary = await vocabularyService.getPendingPreviewLearningSummary()
       passagePreviewWaitingCount.value = Number(summary?.waiting || 0)
+      passagePreviewWaitingKnown.value = true
       if (passagePreviewWaitingCount.value < IELTS_DAILY_PREVIEW_WAITING_THRESHOLD) {
         passagePreviewQueueNotice.value = ''
       }
@@ -108,24 +227,31 @@ export function usePassagePreview({ vocabularyService, requestImportFile } = {})
   async function ensurePreviewGenerationCapacity() {
     const summary = await refreshPendingPreviewSummary()
     const decision = resolveIeltsDailyPreviewContinuationGate({
-      waiting: Number(summary?.waiting || 0),
+      waiting: summary ? Number(summary.waiting || 0) : 0,
       currentBatchCompleted: true,
     })
-    if (decision.allowed) return true
-    passagePreviewQueueNotice.value = decision.notice
-    return false
+    passagePreviewQueueNotice.value = decision.notice || ''
+    return decision.allowed
   }
 
-  async function reconcileRevealedPreviewAcquisitions(items, progress, introducedRecords = []) {
-    const registeredItemIds = new Set((Array.isArray(introducedRecords) ? introducedRecords : [])
-      .map((record) => String(record?.previewItemId || '').trim())
-      .filter(Boolean))
-    for (const item of Array.isArray(items) ? items : []) {
-      if (!item?.id || progress?.revealed?.[item.id] !== true) continue
-      if (registeredItemIds.has(String(item.id))) continue
-      await registerPreviewItem({ item })
+  async function reconcilePersistedPassagePreviewContacts(items, progress, introducedRecords = []) {
+    const currentItems = new Map((Array.isArray(items) ? items : [])
+      .map((item) => [String(item?.id || ''), item])
+      .filter(([id]) => id))
+    updatePassagePreviewContactSummary(progress, items, introducedRecords)
+    for (const [id, contact] of Object.entries(progress?.firstContacts || {})) {
+      const item = contact?.item || currentItems.get(id)
+      if (!item?.id) continue
+      if ((Array.isArray(introducedRecords) ? introducedRecords : [])
+        .some((record) => samePassagePreviewTarget(item, record))) continue
+      await registerPreviewItem({
+        item,
+        firstContact: contact,
+        introducedAt: contact.seenAt,
+      })
     }
     await waitForPassagePreviewAcquisitionRegistrations()
+    updatePassagePreviewContactSummary(progress, items, await loadPreviewIntroducedRecords())
   }
 
   async function replayPersistedPassagePreviewAcquisitions() {
@@ -133,22 +259,37 @@ export function usePassagePreview({ vocabularyService, requestImportFile } = {})
       const items = await loadPassagePreviewDataFromOwner() ?? loadPassagePreviewData()
       const progress = await loadPassagePreviewProgressFromOwner() ?? loadPassagePreviewProgress()
       const introducedRecords = await loadPreviewIntroducedRecords()
-      await reconcileRevealedPreviewAcquisitions(items, progress, introducedRecords)
+      await reconcilePersistedPassagePreviewContacts(items, progress, introducedRecords)
     } catch (error) {
       console.warn('[passage-preview] startup acquisition replay unavailable', error)
     }
   }
 
-  async function openStoredPassagePreview() {
+  async function openStoredPassagePreview(requestId = passagePreviewOpenRequestId) {
+    if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
     if (passagePreviewOpening.value) return true
     passagePreviewOpening.value = true
+    passagePreviewReadCompleted = false
     try {
       passagePreviewPreparationMessage.value = '正在读取已保存的预习批次…'
       await refreshPendingPreviewSummary()
-      passagePreviewItems.value = await loadPassagePreviewDataFromOwner() ?? loadPassagePreviewData()
+      if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
+      const ownerItems = await loadPassagePreviewDataFromOwner()
+      if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
+      passagePreviewItems.value = ownerItems ?? loadPassagePreviewData()
+      passagePreviewEntrySource.value = ownerItems ? 'owner' : 'local'
       let progress = await loadPassagePreviewProgressFromOwner() ?? loadPassagePreviewProgress()
+      if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
+      passagePreviewReadCompleted = true
+      lastPassagePreviewProgress = progress
+      updatePassagePreviewContactSummary(progress, passagePreviewItems.value)
+      if (passagePreviewItems.value.length) {
+        isPassagePreviewOpen.value = true
+        setPassagePreviewEntryState(PASSAGE_PREVIEW_ENTRY_STATES.READY, '', passagePreviewEntrySource.value)
+      }
       const storedBatchDate = getPreviewBatchDate(passagePreviewItems.value)
       const introducedRecords = await loadPreviewIntroducedRecords()
+      if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
       const reconciledItems = excludePreviouslyIntroducedPreviewItems({
         items: passagePreviewItems.value,
         introducedRecords,
@@ -161,7 +302,8 @@ export function usePassagePreview({ vocabularyService, requestImportFile } = {})
               ...progress,
               status: 'completed',
               completedAt: progress.completedAt || new Date().toISOString(),
-            })
+            }, requestId)
+            if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
             if (!advanced) {
               progress = {
                 ...progress,
@@ -169,10 +311,12 @@ export function usePassagePreview({ vocabularyService, requestImportFile } = {})
                 completedAt: progress.completedAt || new Date().toISOString(),
               }
               isPassagePreviewOpen.value = true
+              setPassagePreviewEntryState(PASSAGE_PREVIEW_ENTRY_STATES.READY, '', passagePreviewEntrySource.value)
               await refreshPendingPreviewSummary()
               return true
             }
             progress = await loadPassagePreviewProgressFromOwner() ?? loadPassagePreviewProgress()
+            if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
           } else {
             progress = {
               ...progress,
@@ -183,11 +327,17 @@ export function usePassagePreview({ vocabularyService, requestImportFile } = {})
         } else {
           passagePreviewItems.value = reconciledItems.items
           progress = { ...progress, currentIndex: reconciledItems.currentIndex }
-          await savePassagePreviewData(passagePreviewItems.value)
-          await savePassagePreviewProgress(progress)
+          const saved = await enqueuePassagePreviewWrite(async () => {
+            await savePassagePreviewData(passagePreviewItems.value)
+            if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
+            await savePassagePreviewProgress(progress)
+            return true
+          }, requestId)
+          if (!saved) return false
         }
       }
-      await reconcileRevealedPreviewAcquisitions(passagePreviewItems.value, progress, introducedRecords)
+      await reconcilePersistedPassagePreviewContacts(passagePreviewItems.value, progress, introducedRecords)
+      if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
       if (validatePassagePreviewItems(passagePreviewItems.value)) {
         const currentBatchDate = getPreviewBatchDate(passagePreviewItems.value)
         if (progress.status === 'completed') {
@@ -195,81 +345,100 @@ export function usePassagePreview({ vocabularyService, requestImportFile } = {})
             waiting: passagePreviewWaitingCount.value,
             hasBatchDate: Boolean(currentBatchDate),
           })
-          if (
-            completionAction.action === 'keep_completed'
-            && completionAction.reason === 'waiting_threshold'
-          ) {
-            passagePreviewQueueNotice.value = completionAction.notice
-          }
+          passagePreviewQueueNotice.value = completionAction.notice || passagePreviewQueueNotice.value
           if (completionAction.action === 'advance_dated_batch') {
-            const advanced = await advanceCompletedIeltsPreviewBatch(currentBatchDate, progress)
+            const advanced = await advanceCompletedIeltsPreviewBatch(currentBatchDate, progress, requestId)
+            if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
             if (advanced) {
               isPassagePreviewOpen.value = true
               return true
             }
           } else if (completionAction.action === 'open_or_clear_undated_batch') {
-            const started = await openFirstAvailableIeltsPreviewBatch()
+            const started = await openFirstAvailableIeltsPreviewBatch(requestId)
+            if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
             if (started) return true
-            await savePassagePreviewData([])
-            await savePassagePreviewProgress(createInitialPassagePreviewProgress())
-            passagePreviewItems.value = []
-            passagePreviewLearningRevealTimes.clear()
-            return false
+            isPassagePreviewOpen.value = true
+            setPassagePreviewEntryState(
+              PASSAGE_PREVIEW_ENTRY_STATES.READY,
+              passagePreviewQueueNotice.value || '当前完成批次已保留，暂无可继续打开的新组。',
+              passagePreviewEntrySource.value,
+            )
+            await refreshPendingPreviewSummary()
+            return true
           }
           // Keep the completed surface visible when capacity or the candidate
           // pool prevents a new group from being generated.
           isPassagePreviewOpen.value = true
+          setPassagePreviewEntryState(PASSAGE_PREVIEW_ENTRY_STATES.READY, '', passagePreviewEntrySource.value)
           await refreshPendingPreviewSummary()
           return true
         }
-        passagePreviewItems.value = await preparePassagePreviewItems(passagePreviewItems.value)
-        await savePassagePreviewData(passagePreviewItems.value)
+        const sourceItems = passagePreviewItems.value
         isPassagePreviewOpen.value = true
+        setPassagePreviewEntryState(PASSAGE_PREVIEW_ENTRY_STATES.READY, '', passagePreviewEntrySource.value)
+        void prepareStoredPassagePreviewInBackground(sourceItems, requestId)
         return true
       }
-      if (await openStoredPassagePreviewLegacy()) return true
+      if (await openStoredPassagePreviewLegacy(requestId)) return true
+      if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
       passagePreviewPreparationMessage.value = '正在生成今日预习批次…'
-      const started = await openFirstAvailableIeltsPreviewBatch()
+      const started = await openFirstAvailableIeltsPreviewBatch(requestId)
+      if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
+      if (!started) {
+        isPassagePreviewOpen.value = true
+        setPassagePreviewEntryState(
+          hasLegacyPassagePreviewData()
+            ? PASSAGE_PREVIEW_ENTRY_STATES.LEGACY_FORMAT
+            : PASSAGE_PREVIEW_ENTRY_STATES.NO_CANDIDATES,
+          passagePreviewQueueNotice.value || '',
+          passagePreviewEntrySource.value,
+        )
+      }
       return started
     } finally {
-      passagePreviewOpening.value = false
-      passagePreviewPreparing.value = false
+      if (isOpenPassagePreviewRequestCurrent(requestId)) {
+        passagePreviewOpening.value = false
+        passagePreviewPreparing.value = false
+      }
     }
   }
 
   async function openPassagePreview() {
     if (passagePreviewOpening.value) return
-    await Promise.all([
-      passagePreviewLearningSavePromise,
-      waitForPassagePreviewAcquisitionRegistrations(),
-    ])
+    const requestId = ++passagePreviewOpenRequestId
+    isPassagePreviewOpen.value = true
+    setPassagePreviewEntryState(PASSAGE_PREVIEW_ENTRY_STATES.LOADING, '正在读取待预习队列…')
     passagePreviewPreparing.value = true
     passagePreviewPreparationMessage.value = '正在读取待预习队列…'
     try {
-      if (await openStoredPassagePreview()) return
-      if (passagePreviewQueueNotice.value) {
-        window.alert(passagePreviewQueueNotice.value)
-        return
-      }
-      if (hasLegacyPassagePreviewData()) {
-        window.alert('已有旧版预习进度会保留。请导入新版首次接触词包。')
-      } else {
-        window.alert('当前没有可打开的待预习批次，请检查 Windows Host 或导入预习词包。')
-      }
-      requestImportFileHandler()
+      await Promise.all([
+        passagePreviewLearningSavePromise,
+        waitForPassagePreviewAcquisitionRegistrations(),
+      ])
+      await openStoredPassagePreview(requestId)
     } catch (error) {
+      if (!isOpenPassagePreviewRequestCurrent(requestId)) return
       console.warn('[passage-preview] open unavailable', error)
-      window.alert(error?.message || '待预习数据读取失败，请检查 Windows Host 是否正常运行。')
+      setPassagePreviewEntryState(
+        passagePreviewReadCompleted
+          ? PASSAGE_PREVIEW_ENTRY_STATES.WRITE_UNAVAILABLE
+          : PASSAGE_PREVIEW_ENTRY_STATES.READ_ERROR,
+        error?.message || '待预习数据读取失败，请检查 Windows Host 是否正常运行。',
+        passagePreviewEntrySource.value,
+      )
     } finally {
-      passagePreviewPreparing.value = false
+      if (isOpenPassagePreviewRequestCurrent(requestId)) passagePreviewPreparing.value = false
     }
   }
 
-  async function advanceCompletedIeltsPreviewBatch(currentBatchDate, progress) {
+  async function advanceCompletedIeltsPreviewBatch(currentBatchDate, progress, requestId = passagePreviewOpenRequestId) {
+    if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
     if (!await ensurePreviewGenerationCapacity()) return false
+    if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
     const continuation = await loadIeltsDailyPreviewContinuation()
     const allocations = await loadIeltsDailyPreviewAllocations()
     const excludedLemmas = await loadPreviewExcludedLemmas()
+    if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
     const nextBatch = selectNextIeltsDailyPreviewBatch({
       allocations,
       currentBatchDate,
@@ -282,16 +451,19 @@ export function usePassagePreview({ vocabularyService, requestImportFile } = {})
       const generated = await generateTodayIeltsPreviewBatch(excludedLemmas, {
         allowAdditionalSameDayBatch: true,
       })
+      if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
       if (generated?.date >= currentBatchDate) resolvedNextBatch = generated
     }
     if (!resolvedNextBatch) {
       try {
+        if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
         await saveIeltsDailyPreviewContinuation({
           ...continuation,
           consumedBatchDates: addDate(continuation.consumedBatchDates, currentBatchDate),
           lastLoadedBatchDate: currentBatchDate,
           updatedAt: new Date().toISOString(),
         })
+        if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
       } catch (error) {
         console.warn('[passage-preview] daily continuation unavailable', error)
       }
@@ -303,15 +475,16 @@ export function usePassagePreview({ vocabularyService, requestImportFile } = {})
         batch: resolvedNextBatch,
         fallbackItems: passagePreviewItems.value,
       })
-      const preparedNextItems = await preparePassagePreviewItems(nextItems)
-      await commitPassagePreviewBatchTransition({
+      const preparedNextItems = await preparePassagePreviewItems(nextItems, { requestId })
+      if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
+      const committed = await enqueuePassagePreviewWrite(() => commitPassagePreviewBatchTransition({
         archive: {
           date: currentBatchDate,
           items: passagePreviewItems.value,
           completedAt: progress.completedAt,
         },
         nextItems: preparedNextItems,
-        progress: createInitialPassagePreviewProgress(),
+        progress: createProgressPreservingContacts(),
         continuation: {
           ...continuation,
           consumedBatchDates: addDate(continuation.consumedBatchDates, currentBatchDate),
@@ -322,22 +495,29 @@ export function usePassagePreview({ vocabularyService, requestImportFile } = {})
         saveData: savePassagePreviewData,
         saveProgress: savePassagePreviewProgress,
         saveContinuation: saveIeltsDailyPreviewContinuation,
-      })
+        canCommit: () => isOpenPassagePreviewRequestCurrent(requestId),
+      }), requestId)
+      if (!committed) return false
       passagePreviewLearningRevealTimes.clear()
       passagePreviewItems.value = preparedNextItems
+      updatePassagePreviewContactSummary(createProgressPreservingContacts(), preparedNextItems)
       return true
     } catch (error) {
+      if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
       console.warn('[passage-preview] daily continuation unavailable', error)
       return false
     }
   }
 
-  async function openFirstAvailableIeltsPreviewBatch() {
+  async function openFirstAvailableIeltsPreviewBatch(requestId = passagePreviewOpenRequestId) {
+    if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
     if (!await ensurePreviewGenerationCapacity()) return false
+    if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
     passagePreviewPreparationMessage.value = '正在读取今日候选词池…'
     const allocations = await loadIeltsDailyPreviewAllocations()
     const continuation = await loadIeltsDailyPreviewContinuation()
     const excludedLemmas = await loadPreviewExcludedLemmas()
+    if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
     const nextBatch = selectNextIeltsDailyPreviewBatch({
       allocations,
       consumedBatchDates: continuation.consumedBatchDates,
@@ -350,37 +530,54 @@ export function usePassagePreview({ vocabularyService, requestImportFile } = {})
         allowAdditionalSameDayBatch: true,
       })
     }
+    if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
     if (!resolvedNextBatch) return false
     try {
       passagePreviewPreparationMessage.value = `正在整理 ${resolvedNextBatch.words.length} 个预习词…`
       const items = await materializeIeltsDailyPreviewBatch({ batch: resolvedNextBatch })
-      const preparedItems = await preparePassagePreviewItems(items)
-      await savePassagePreviewData(preparedItems)
-      await savePassagePreviewProgress(createInitialPassagePreviewProgress())
-      await saveIeltsDailyPreviewContinuation({
-        ...continuation,
-        lastLoadedBatchDate: resolvedNextBatch.date,
-        updatedAt: new Date().toISOString(),
-      })
+      const preparedItems = await preparePassagePreviewItems(items, { requestId })
+      if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
+      const committed = await enqueuePassagePreviewWrite(async () => {
+        await savePassagePreviewData(preparedItems)
+        if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
+        const nextProgress = createProgressPreservingContacts()
+        await savePassagePreviewProgress(nextProgress)
+        if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
+        await saveIeltsDailyPreviewContinuation({
+          ...continuation,
+          lastLoadedBatchDate: resolvedNextBatch.date,
+          updatedAt: new Date().toISOString(),
+        })
+        return nextProgress
+      }, requestId)
+      if (!committed || !isOpenPassagePreviewRequestCurrent(requestId)) return false
       passagePreviewLearningRevealTimes.clear()
       passagePreviewItems.value = preparedItems
+      updatePassagePreviewContactSummary(committed, preparedItems)
       isPassagePreviewOpen.value = true
+      setPassagePreviewEntryState(PASSAGE_PREVIEW_ENTRY_STATES.READY, '', 'generated')
       await refreshPendingPreviewSummary()
       return true
     } catch (error) {
+      if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
       console.warn('[passage-preview] daily allocation unavailable', error)
       return false
     }
   }
 
-  async function preparePassagePreviewItems(items) {
+  async function preparePassagePreviewItems(
+    items,
+    { requestId = passagePreviewOpenRequestId } = {},
+  ) {
     const source = Array.isArray(items) ? items : []
+    const isCurrent = () => isOpenPassagePreviewRequestCurrent(requestId)
     if (!source.length) {
-      passagePreviewPreloaded.value = { sentences: {}, translations: {} }
+      if (isCurrent()) passagePreviewPreloaded.value = { sentences: {}, translations: {} }
       return source
     }
     const cached = loadPassagePreviewSessionCache(source)
     if (cached && isPreparedPassagePreviewCache(cached, source)) {
+      if (!isCurrent()) return source
       passagePreviewPreloaded.value = {
         sentences: cached.preloadedSentences || {},
         translations: cached.translations || {},
@@ -396,6 +593,7 @@ export function usePassagePreview({ vocabularyService, requestImportFile } = {})
         preloadExternalSources: true,
         ensureSentence: true,
         onProgress(progress) {
+          if (!isCurrent()) return
           if (progress.phase === 'stored') {
             passagePreviewPreparationMessage.value = `正在读取已保存短句 ${progress.completed}/${progress.total}…`
           } else if (progress.phase === 'sentences') {
@@ -409,6 +607,7 @@ export function usePassagePreview({ vocabularyService, requestImportFile } = {})
           }
         },
       })
+      if (!isCurrent()) return source
       passagePreviewPreloaded.value = {
         sentences: prepared.preloadedSentences,
         translations: prepared.translations,
@@ -421,8 +620,23 @@ export function usePassagePreview({ vocabularyService, requestImportFile } = {})
       return prepared.items
     } catch (error) {
       console.warn('[passage-preview] batch preload unavailable', error)
-      passagePreviewPreloaded.value = { sentences: {}, translations: {} }
+      if (isCurrent()) passagePreviewPreloaded.value = { sentences: {}, translations: {} }
       return source
+    }
+  }
+
+  async function prepareStoredPassagePreviewInBackground(sourceItems, requestId = passagePreviewOpenRequestId) {
+    try {
+      const preparedItems = await preparePassagePreviewItems(sourceItems, { requestId })
+      if (!isOpenPassagePreviewRequestCurrent(requestId) || passagePreviewItems.value !== sourceItems) return
+      const saved = await enqueuePassagePreviewWrite(async () => {
+        await savePassagePreviewData(preparedItems)
+        return true
+      }, requestId)
+      if (!saved || !isOpenPassagePreviewRequestCurrent(requestId) || passagePreviewItems.value !== sourceItems) return
+      passagePreviewItems.value = preparedItems
+    } catch (error) {
+      console.warn('[passage-preview] background preparation unavailable', error)
     }
   }
 
@@ -446,12 +660,16 @@ export function usePassagePreview({ vocabularyService, requestImportFile } = {})
   }
 
   async function closePassagePreview() {
+    const closeRequestId = ++passagePreviewOpenRequestId
+    isPassagePreviewOpen.value = false
+    passagePreviewOpening.value = false
+    passagePreviewPreparing.value = false
+    passagePreviewQueueNotice.value = ''
     await Promise.all([
       passagePreviewLearningSavePromise,
       waitForPassagePreviewAcquisitionRegistrations(),
     ])
-    isPassagePreviewOpen.value = false
-    passagePreviewQueueNotice.value = ''
+    if (!isOpenPassagePreviewRequestCurrent(closeRequestId)) return
     passagePreviewPreloaded.value = { sentences: {}, translations: {} }
   }
 
@@ -501,11 +719,14 @@ export function usePassagePreview({ vocabularyService, requestImportFile } = {})
 
   async function loadPreviewIntroducedRecords() {
     try {
-      return await passagePreviewAcquisition.loadRecords()
+      const records = await passagePreviewAcquisition.loadRecords()
+      introducedPassagePreviewRecords = Array.isArray(records) ? records : []
+      introducedPassagePreviewRecordsLoaded = true
+      return introducedPassagePreviewRecords
     } catch (error) {
       if (isPassagePreviewOwnerAuthoritative()) throw error
       console.warn('[passage-preview] current-batch exclusion unavailable', error)
-      return []
+      return introducedPassagePreviewRecords
     }
   }
 
@@ -513,19 +734,36 @@ export function usePassagePreview({ vocabularyService, requestImportFile } = {})
     const file = event.target?.files?.[0]
     event.target.value = ''
     if (!file) return
+    const requestId = ++passagePreviewOpenRequestId
     try {
       const items = importVocabularyPreview(JSON.parse(await file.text()))
+      if (!isOpenPassagePreviewRequestCurrent(requestId)) return
       passagePreviewPreparing.value = true
       passagePreviewPreparationMessage.value = `正在准备 ${items.length} 条预习材料…`
-      const preparedItems = await preparePassagePreviewItems(items)
-      await savePassagePreviewData(preparedItems)
-      await savePassagePreviewProgress(createInitialPassagePreviewProgress())
+      const preparedItems = await preparePassagePreviewItems(items, { requestId })
+      if (!isOpenPassagePreviewRequestCurrent(requestId)) return
+      const committed = await enqueuePassagePreviewWrite(async () => {
+        await savePassagePreviewData(preparedItems)
+        if (!isOpenPassagePreviewRequestCurrent(requestId)) return false
+        const nextProgress = createProgressPreservingContacts()
+        await savePassagePreviewProgress(nextProgress)
+        return nextProgress
+      }, requestId)
+      if (!committed || !isOpenPassagePreviewRequestCurrent(requestId)) return
       passagePreviewItems.value = preparedItems
+      updatePassagePreviewContactSummary(committed, preparedItems)
       isPassagePreviewOpen.value = true
+      setPassagePreviewEntryState(PASSAGE_PREVIEW_ENTRY_STATES.READY, '', 'imported')
     } catch (error) {
-      window.alert(error?.message || '预习结果导入失败。')
+      if (!isOpenPassagePreviewRequestCurrent(requestId)) return
+      isPassagePreviewOpen.value = true
+      setPassagePreviewEntryState(
+        PASSAGE_PREVIEW_ENTRY_STATES.READ_ERROR,
+        error?.message || '预习结果导入失败；已保存内容未清空。',
+        'imported',
+      )
     } finally {
-      passagePreviewPreparing.value = false
+      if (isOpenPassagePreviewRequestCurrent(requestId)) passagePreviewPreparing.value = false
     }
   }
 
@@ -563,8 +801,6 @@ export function usePassagePreview({ vocabularyService, requestImportFile } = {})
       preloadedSentences: passagePreviewPreloaded.value.sentences,
       translations: passagePreviewPreloaded.value.translations,
     })
-    const enriched = passagePreviewItems.value.find((item) => item.id === id)
-    if (enriched) void registerPreviewItem({ item: enriched })
   }
 
   function waitForPassagePreviewAcquisitionRegistrations() {
@@ -572,19 +808,47 @@ export function usePassagePreview({ vocabularyService, requestImportFile } = {})
   }
 
   function registerPreviewItem(payload = {}) {
-    const item = payload.item || payload
-    if (!item?.lemma && !item?.word) return Promise.resolve(null)
+    const firstContact = payload.firstContact || payload.contact
+    const item = firstContact?.item || payload.item
+    if (!firstContact || !item?.id || (!item?.lemma && !item?.word)) return Promise.resolve(null)
+    const progress = payload.progress || lastPassagePreviewProgress
+    const introducedAt = firstContact.seenAt || payload.introducedAt || payload.seenAt
     if (item.id && !passagePreviewLearningRevealTimes.has(item.id)) {
       passagePreviewLearningRevealTimes.set(
         item.id,
-        payload.revealedAt || new Date().toISOString(),
+        introducedAt || new Date().toISOString(),
       )
     }
+    passagePreviewContactStatuses.value = {
+      ...passagePreviewContactStatuses.value,
+      [item.id]: 'pending',
+    }
+    updatePassagePreviewContactSummary(progress, passagePreviewItems.value)
     const operation = passagePreviewAcquisitionRegistrationPromise
       .catch(() => undefined)
-      .then(() => passagePreviewAcquisition.registerItem(item))
+      .then(() => passagePreviewAcquisition.registerItem(item, { introducedAt }))
+      .then((result) => {
+        passagePreviewContactStatuses.value = {
+          ...passagePreviewContactStatuses.value,
+          [item.id]: result?.record ? 'committed' : 'failed',
+        }
+        updatePassagePreviewContactSummary(
+          progress,
+          passagePreviewItems.value,
+          result?.record
+            ? mergeIntroducedPassagePreviewRecords([result.record])
+            : undefined,
+          { introducedRecordsLoaded: introducedPassagePreviewRecordsLoaded },
+        )
+        return result
+      })
       .catch((error) => {
         console.warn('[passage-preview] acquisition registration unavailable', error)
+        passagePreviewContactStatuses.value = {
+          ...passagePreviewContactStatuses.value,
+          [item.id]: 'failed',
+        }
+        updatePassagePreviewContactSummary(progress, passagePreviewItems.value)
         return null
       })
       .finally(() => refreshPendingPreviewSummary().catch(() => {}))
@@ -603,7 +867,9 @@ export function usePassagePreview({ vocabularyService, requestImportFile } = {})
       batchId: derivePassagePreviewBatchId(items),
       items,
       progress,
-      revealedAtByItem: Object.fromEntries(passagePreviewLearningRevealTimes),
+      revealedAtByItem: Object.fromEntries(
+        Object.entries(progress.firstContacts || {}).map(([itemId, contact]) => [itemId, contact.seenAt]),
+      ),
       timeZone: detectLocalTimeZone(),
     })
     passagePreviewLearningSavePromise = savePassagePreviewLearningSession(session).catch((error) => {
@@ -640,8 +906,15 @@ export function usePassagePreview({ vocabularyService, requestImportFile } = {})
     passagePreviewPreloaded,
     isPassagePreviewSettingsOpen,
     passagePreviewWaitingCount,
+    passagePreviewWaitingKnown,
     passagePreviewQueueNotice,
+    passagePreviewEntryState,
+    passagePreviewEntryMessage,
+    passagePreviewEntrySource,
+    passagePreviewContactStatuses,
+    passagePreviewContactSummary,
     openPassagePreview,
+    requestPassagePreviewImport: requestImportFileHandler,
     importPassagePreviewFile,
     registerPreviewItem,
     completePreviewLearningSession,

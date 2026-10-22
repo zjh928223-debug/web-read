@@ -1,5 +1,6 @@
 import { createApp } from 'vue'
 import PassagePreviewCheckPage from '../../src/features/passage-preview/PassagePreviewCheckPage.vue'
+import './passage-preview-check.css'
 
 export function mountPassagePreviewRatingLatencyHarness(target) {
   const items = [

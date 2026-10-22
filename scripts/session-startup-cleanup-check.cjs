@@ -43,7 +43,6 @@ async function main() {
     currentAudioKey: 'audio-1',
     chunkItems: [{ id: 1 }],
     hasAiChunkData: true,
-    manualChunkStates: { a: true },
     lastActiveChunkIndex: 2,
     lastAiPrevTapChunkIndex: 3,
     lastAiPrevTapAt: 4,
@@ -80,7 +79,7 @@ async function main() {
   await runtime.clearPersistedChunkSession();
   assert.deepEqual(state.chunkItems, []);
   assert.equal(state.hasAiChunkData, false);
-  assert.deepEqual(state.manualChunkStates, {});
+  assert.equal(Object.hasOwn(state, 'manualChunkStates'), false, 'cleanup must not recreate retired current state');
   assert.equal(namespace.selectedSentence, null);
   assert.equal(state.lastActiveChunkIndex, -1);
   assert.equal(state.lastAiPrevTapChunkIndex, -1);
@@ -95,7 +94,8 @@ async function main() {
   assert.equal(diagnostics[0].event, 'app.startup_clear_reader_skipped');
   assert.deepEqual(diagnostics[0].payload.scope, { audioKey: 'audio-1', documentId: 'doc-1' });
   assert.ok(removed.includes('st.chunkCnVisible'));
-  assert.ok(removed.includes('st.chunkCnHoldMode'));
+  assert.equal(removed.includes('st.chunkCnHoldMode'), false, 'startup cleanup must preserve the chosen Chinese display interaction mode');
+  assert.deepEqual(deleted, ['chunkData', 'marks'], 'normal startup must not delete additional reader content');
 
   console.log('session startup cleanup check passed');
 }

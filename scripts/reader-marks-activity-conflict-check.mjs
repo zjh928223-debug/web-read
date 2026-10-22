@@ -25,8 +25,8 @@ const clientSource = (await fs.readFile(
   /^import \{ recordBestEffortFailure \} from '\.\.\/services\/runtime\/best-effort\.js';?$/m,
   'const recordBestEffortFailure = () => null',
 )
-const panelSource = await fs.readFile(
-  new URL('../src/components/YouTubeWorkflowPanel.vue', import.meta.url),
+const persistenceSource = await fs.readFile(
+  new URL('../src/composables/use-reader-session-persistence.js', import.meta.url),
   'utf8',
 )
 const coordinatorSource = await fs.readFile(
@@ -59,10 +59,10 @@ await verifyCoordinatorJobSwitchIsolation()
 assert.match(coordinatorSource, /status === 'conflict'/, 'coordinator must retain a distinct conflict state')
 assert.match(coordinatorSource, /resolveReaderConflict/, 'coordinator must expose explicit conflict resolution')
 assert.match(coordinatorSource, /readerConflicts/, 'coordinator must retain authoritative conflict context')
-assert.match(panelSource, /useReaderSaveCoordinator/, 'panel must create the reader save coordinator')
-assert.match(panelSource, /loadReaderConflict\(/, 'panel must connect outbox conflicts to the coordinator')
-assert.match(panelSource, /readerMarksSaveState\.value = 'dirty'/, 'page close must not report marks as saved')
-assert.match(panelSource, /reader-marks-\$\{payload\.jobId\}-\$\{payload\.sessionId\}-close/, 'page close must carry a stable marks operation id')
+assert.match(persistenceSource, /useReaderSaveCoordinator/, 'persistence scope must create the reader save coordinator')
+assert.match(persistenceSource, /loadReaderConflict\(/, 'persistence scope must connect outbox conflicts to the coordinator')
+assert.match(persistenceSource, /readerMarksSaveState\.value = 'dirty'/, 'page close must not report marks as saved')
+assert.match(persistenceSource, /reader-marks-\$\{payload\.jobId\}-\$\{payload\.sessionId\}-close/, 'page close must carry a stable marks operation id')
 console.log('reader marks/activity conflict checks passed')
 
 async function verifyReaderOutboxMetadata() {

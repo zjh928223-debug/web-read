@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict'
-import fs from 'node:fs/promises'
+import { registerHooks } from 'node:module'
 
-const clientUrl = new URL('../src/composables/youtube-workflow-client.js', import.meta.url)
-const clientSource = (await fs.readFile(clientUrl, 'utf8'))
-  .replace("const DEFAULT_BASE_URL = import.meta.env?.VITE_LOCAL_SERVICE_BASE_URL\n  || 'http://127.0.0.1:8765'", "const DEFAULT_BASE_URL = 'http://127.0.0.1:8765'")
-const { createYoutubeWorkflowClient } = await import(
-  `data:text/javascript;base64,${Buffer.from(clientSource).toString('base64')}`
-)
+const esmRootUrl = new URL('../src/', import.meta.url).href
+registerHooks({ load(url, context, nextLoad) {
+  return nextLoad(url, url.startsWith(esmRootUrl) && url.endsWith('.js') ? { ...context, format: 'module' } : context)
+} })
+const { createYoutubeWorkflowClient } = await import('../src/composables/youtube-workflow-client.js')
 
 const requests = []
 const fetchImpl = async (url, init = {}) => {

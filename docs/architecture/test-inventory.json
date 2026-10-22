@@ -4,8 +4,8 @@
   "scope": "Package verification/test/release commands, executable Node scripts under scripts/, and Python gates under tools/subtitle-workflow/scripts/.",
   "categories": {
     "architecture": 115,
-    "behavior": 129,
-    "browser": 34,
+    "behavior": 128,
+    "browser": 35,
     "performance": 19,
     "release": 17
   },
@@ -603,18 +603,6 @@
         "scripts/verify-clean-room.mjs"
       ],
       "owner": "package.json#scripts.verify:clean-room"
-    },
-    {
-      "name": "verify:cloze-state",
-      "command": "node scripts/cloze-state-check.cjs",
-      "category": "behavior",
-      "layers": [
-        "behavior"
-      ],
-      "invokes": [
-        "scripts/cloze-state-check.cjs"
-      ],
-      "owner": "package.json#scripts.verify:cloze-state"
     },
     {
       "name": "verify:compatibility-consumer-map",
@@ -1337,18 +1325,6 @@
       "owner": "package.json#scripts.verify:passage-preview:session-cache"
     },
     {
-      "name": "verify:passage-preview:translation-generation",
-      "command": "node scripts/passage-preview-translation-generation-check.mjs",
-      "category": "behavior",
-      "layers": [
-        "behavior"
-      ],
-      "invokes": [
-        "scripts/passage-preview-translation-generation-check.mjs"
-      ],
-      "owner": "package.json#scripts.verify:passage-preview:translation-generation"
-    },
-    {
       "name": "verify:passage-preview:unit",
       "command": "node scripts/passage-preview-check.cjs",
       "category": "architecture",
@@ -1994,6 +1970,18 @@
       "owner": "package.json#scripts.verify:reader-session-publisher"
     },
     {
+      "name": "verify:reader-word-navigation",
+      "command": "node scripts/reader-word-navigation-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/reader-word-navigation-check.mjs"
+      ],
+      "owner": "package.json#scripts.verify:reader-word-navigation"
+    },
+    {
       "name": "verify:real-profile-rehearsal",
       "command": "node scripts/application-backup-real-profile-rehearsal.mjs",
       "category": "behavior",
@@ -2502,6 +2490,20 @@
         "scripts/srs-review-check.cjs"
       ],
       "owner": "package.json#scripts.verify:srs-review"
+    },
+    {
+      "name": "verify:srs-review-media-lifecycle-browser",
+      "command": "node scripts/srs-review-media-lifecycle-browser-check.mjs",
+      "category": "browser",
+      "layers": [
+        "architecture",
+        "browser",
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/srs-review-media-lifecycle-browser-check.mjs"
+      ],
+      "owner": "package.json#scripts.verify:srs-review-media-lifecycle-browser"
     },
     {
       "name": "verify:srs-review-policy-planner",
@@ -4536,6 +4538,7 @@
       "invocation": "direct",
       "evidence": {
         "sourceShape": [
+          "asserts-file-shape",
           "asserts-source-text",
           "includes-source-text"
         ],
@@ -4676,31 +4679,7 @@
       "invocation": "direct",
       "evidence": {
         "sourceShape": [],
-        "sourceRead": false,
-        "browser": false,
-        "performance": false,
-        "release": false,
-        "behaviorAssertions": true,
-        "executesModule": true,
-        "startsBrowser": false
-      }
-    },
-    {
-      "path": "scripts/cloze-state-check.cjs",
-      "category": "behavior",
-      "layers": [
-        "behavior"
-      ],
-      "aggregates": [],
-      "architectureEvidence": [],
-      "owner": "package.json#scripts.verify:cloze-state",
-      "owners": [
-        "package.json#scripts.verify:cloze-state"
-      ],
-      "invocation": "direct",
-      "evidence": {
-        "sourceShape": [],
-        "sourceRead": false,
+        "sourceRead": true,
         "browser": false,
         "performance": false,
         "release": false,
@@ -5201,6 +5180,7 @@
       "invocation": "direct",
       "evidence": {
         "sourceShape": [
+          "asserts-source-text",
           "includes-source-text"
         ],
         "sourceRead": true,
@@ -5568,8 +5548,8 @@
         "performance": false,
         "release": false,
         "behaviorAssertions": true,
-        "executesModule": true,
-        "startsBrowser": true
+        "executesModule": false,
+        "startsBrowser": false
       }
     },
     {
@@ -6609,30 +6589,6 @@
       "owner": "package.json#scripts.verify:passage-preview-shortcuts",
       "owners": [
         "package.json#scripts.verify:passage-preview-shortcuts"
-      ],
-      "invocation": "direct",
-      "evidence": {
-        "sourceShape": [],
-        "sourceRead": true,
-        "browser": false,
-        "performance": false,
-        "release": false,
-        "behaviorAssertions": true,
-        "executesModule": true,
-        "startsBrowser": false
-      }
-    },
-    {
-      "path": "scripts/passage-preview-translation-generation-check.mjs",
-      "category": "behavior",
-      "layers": [
-        "behavior"
-      ],
-      "aggregates": [],
-      "architectureEvidence": [],
-      "owner": "package.json#scripts.verify:passage-preview:translation-generation",
-      "owners": [
-        "package.json#scripts.verify:passage-preview:translation-generation"
       ],
       "invocation": "direct",
       "evidence": {
@@ -8085,6 +8041,30 @@
       }
     },
     {
+      "path": "scripts/reader-word-navigation-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:reader-word-navigation",
+      "owners": [
+        "package.json#scripts.verify:reader-word-navigation"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": false
+      }
+    },
+    {
       "path": "scripts/release-control-check.mjs",
       "category": "release",
       "layers": [
@@ -9419,6 +9399,35 @@
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/srs-review-media-lifecycle-browser-check.mjs",
+      "category": "browser",
+      "layers": [
+        "architecture",
+        "browser",
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:srs-review-media-lifecycle-browser",
+      "owners": [
+        "package.json#scripts.verify:srs-review-media-lifecycle-browser"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [
+          "asserts-file-shape",
+          "asserts-source-text"
+        ],
+        "sourceRead": false,
+        "browser": true,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": true
       }
     },
     {
@@ -11924,7 +11933,7 @@
         "sourceShape": [
           "asserts-source-text"
         ],
-        "sourceRead": false,
+        "sourceRead": true,
         "browser": true,
         "performance": false,
         "release": false,

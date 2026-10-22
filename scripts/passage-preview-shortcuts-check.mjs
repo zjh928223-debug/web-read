@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 
 const source = await fs.readFile(new URL('../src/features/passage-preview/passage-preview-shortcuts.js', import.meta.url), 'utf8')
+const previewCss = await fs.readFile(new URL('../src/features/passage-preview/passage-preview.css', import.meta.url), 'utf8')
 const shortcutsModule = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
 const {
   DEFAULT_PASSAGE_PREVIEW_SHORTCUTS,
@@ -11,6 +12,7 @@ const {
   PASSAGE_PREVIEW_TRANSLATION_DISPLAY_MODES,
   formatPassagePreviewShortcut,
   isEditableKeyboardTarget,
+  isComposingKeyboardEvent,
   loadPassagePreviewShortcuts,
   loadPassagePreviewTranslationDisplayMode,
   passagePreviewActionForKeyboardEvent,
@@ -19,6 +21,13 @@ const {
   savePassagePreviewTranslationDisplayMode,
   shortcutFromKeyboardEvent,
 } = shortcutsModule
+
+const translationSwitchCss = previewCss.match(/\.passage-preview-translation-mode-switch\s*\{([^}]*)\}/)?.[1] || ''
+assert.match(
+  translationSwitchCss,
+  /font:\s*inherit/,
+  'native translation mode switch should preserve its inherited button font contract'
+)
 
 const storage = createMemoryStorage()
 assert.deepEqual(loadPassagePreviewShortcuts(storage), DEFAULT_PASSAGE_PREVIEW_SHORTCUTS)
@@ -47,6 +56,16 @@ assert.equal(passagePreviewActionForKeyboardEvent(keyEvent('KeyA', 'a'), loadPas
 assert.equal(passagePreviewActionForKeyboardEvent(keyEvent('KeyD', 'd'), loadPassagePreviewShortcuts(storage)), 'nextItem')
 
 assert.equal(shortcutFromKeyboardEvent(keyEvent('Space', ' ')), 'space')
+assert.equal(isComposingKeyboardEvent({ isComposing: true, key: ' ' }), true)
+assert.equal(isComposingKeyboardEvent({ keyCode: 229, key: 'Process' }), true)
+assert.equal(isComposingKeyboardEvent({ code: 'Space', key: ' ' }), false)
+assert.equal(
+  passagePreviewActionForKeyboardEvent(
+    { isComposing: true, code: 'Space', key: ' ' },
+    loadPassagePreviewShortcuts(storage),
+  ),
+  '',
+)
 assert.equal(shortcutFromKeyboardEvent(keyEvent('ArrowLeft', 'ArrowLeft')), 'arrowleft')
 assert.equal(shortcutFromKeyboardEvent({ ...keyEvent('KeyR', 'r'), ctrlKey: true }), '')
 assert.equal(formatPassagePreviewShortcut('arrowright'), '→')

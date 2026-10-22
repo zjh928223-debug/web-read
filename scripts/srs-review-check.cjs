@@ -133,6 +133,18 @@ async function importProjectApis(repoRoot) {
         "from './best-effort.mjs'",
       ),
     )
+    const realVueUrl = pathToFileURL(require.resolve('vue/dist/vue.runtime.esm-bundler.js')).href
+    writeModule(path.join(repoRoot, 'src/features/passage-preview/sentence-translation.js'), path.join(tempDir, 'sentence-translation.mjs'))
+    for (const name of ['use-srs-review-media', 'use-srs-review-answer-translation']) {
+      writeModule(path.join(repoRoot, 'src/features/srs-review', name + '.js'), path.join(tempDir, name + '.mjs'), (source) => source
+        .replace(/from ['"]vue['"]/, 'from ' + JSON.stringify(realVueUrl))
+        .replace(/from ['"]\.\/([^'"]+)\.js['"]/g, "from './$1.mjs'")
+        .replace(/from ['"]\.\.\/passage-preview\/sentence-translation\.js['"]/, "from './sentence-translation.mjs'"))
+    }
+    const mediaModule = await import(pathToFileURL(path.join(tempDir, 'use-srs-review-media.mjs')).href)
+    const translationModule = await import(pathToFileURL(path.join(tempDir, 'use-srs-review-answer-translation.mjs')).href)
+    assert.equal(typeof mediaModule.useSrsReviewMedia, 'function', 'focused staging must load the real media owner')
+    assert.equal(typeof translationModule.useSrsReviewAnswerTranslation, 'function', 'focused staging must load the real translation owner')
     return {
       vocabulary: await import(pathToFileURL(path.join(tempDir, 'vocab-index.mjs')).href),
       reviewModule: await import(pathToFileURL(path.join(tempDir, 'useSrsReview.mjs')).href),
@@ -163,6 +175,8 @@ async function run() {
     path.join(repoRoot, 'src', 'features', 'srs-review', 'SrsReviewPage.vue'),
     'utf8',
   )
+  const mediaSource = fs.readFileSync(path.join(repoRoot, 'src/features/srs-review/use-srs-review-media.js'), 'utf8')
+  const translationSource = fs.readFileSync(path.join(repoRoot, 'src/features/srs-review/use-srs-review-answer-translation.js'), 'utf8')
   const reviewCssSource = fs.readFileSync(
     path.join(repoRoot, 'src', 'features', 'srs-review', 'srs-review.css'),
     'utf8',
@@ -176,6 +190,11 @@ async function run() {
     'utf8',
   )
   const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'App.vue'), 'utf8')
+  assert.match(reviewPageSource, /useSrsReviewMedia\([\s\S]*useSrsReviewAnswerTranslation\(/, 'the page must assemble the two real owners')
+  assert.doesNotMatch(reviewPageSource, /let (?:audioRequest|mediaActive|playbackStatusRequest|translationRequest)\b/, 'request generations must not remain duplicated in the page')
+  assert.doesNotMatch(translationSource, /let (?:audioRequest|mediaActive|playbackStatusRequest)\b|watch\(/, 'translation must consume the media owner without a duplicate active generation or watcher')
+  assert.doesNotMatch(mediaSource, /watch\(/, 'card/active watchers must remain owned by the page')
+  assert.match(translationSource, /media\.captureMediaRequest\(\)[\s\S]*media\.isCurrentMediaRequest\(mediaRequest\)/, 'translation must guard its requests with the shared media generation')
   const buttonBlocks = reviewPageSource.match(/<Button\b[^>]*>[\s\S]*?<\/Button>/g) || []
   const buttonOpening = (block) => block.match(/^<Button\b[^>]*>/)?.[0] || ''
   const assertButtonTokens = (description, blocks, tokens) => blocks.forEach((block, index) => {
@@ -198,8 +217,8 @@ async function run() {
   }
   assert.match(
     reviewPageSource,
-    /<Button\s+variant="ghost"\s+size="sm"\s+data-ui-owner="learning"\s+class="srs-review-back"/,
-    'the SRS return action should use the shared ghost/sm Button with the learning owner',
+    /<Button\s+variant="ghost"\s+size="default"\s+data-ui-owner="learning"\s+class="srs-review-back"/,
+    'the SRS return action should use the shared 36px default Button with the learning owner',
   )
   assert.match(reviewPageSource, /data-ui-theme="light"/, 'the SRS root should declare its fixed light theme')
   assert.match(
@@ -286,7 +305,7 @@ async function run() {
   )
   assert.doesNotMatch(reviewPageSource, /\busageHint\b/, 'the separate usage hint panel should stay removed')
   assert.match(
-    reviewPageSource,
+    translationSource,
     /await sourceReadyPromise[\s\S]*audioState\.value\?\.translationZh/,
     'answer reveal should wait for the local article source and prefer its translation before API fallback',
   )
@@ -302,7 +321,7 @@ async function run() {
     'the review context should retain the full-sentence Chinese translation hook',
   )
   assert.match(
-    reviewPageSource,
+    translationSource,
     /const sentenceTranslationVisible = ref\(false\)/,
     'sentence translation visibility should start hidden independently from answer reveal',
   )
@@ -354,22 +373,22 @@ async function run() {
     'the word autoplay setting should be visible and default to off',
   )
   assert.match(
-    reviewPageSource,
+    mediaSource,
     /runReviewPlaybackSequence/,
     'manual target playback should play the word before the target sentence',
   )
   assert.match(
-    reviewPageSource,
+    mediaSource,
     /await pronunciationReadyPromise/,
     'word-and-sentence playback must wait for the active word or phrase audio',
   )
   assert.match(
-    reviewPageSource,
+    mediaSource,
     /sequencePlaybackRequest/,
     'manual playback should suppress the delayed automatic pronunciation for the same card',
   )
   assert.match(
-    reviewPageSource,
+    mediaSource,
     /prefetchUpcomingPronunciations/,
     'review navigation should keep a rolling pronunciation prefetch window',
   )
@@ -395,13 +414,13 @@ async function run() {
     /<span>播放单词<\/span>[\s\S]*<span>播放原句<\/span>/,
     'word and sentence playback should use separate compact controls',
   )
-  const learningGhostSmall = ['variant="ghost"', 'size="sm"', 'data-ui-owner="learning"', 'type="button"']
-  const learningOutlineSmall = ['variant="outline"', 'size="sm"', 'data-ui-owner="learning"', 'type="button"']
+  const learningGhostDefault = ['variant="ghost"', 'size="default"', 'data-ui-owner="learning"', 'type="button"']
+  const learningOutlineDefault = ['variant="outline"', 'size="default"', 'data-ui-owner="learning"', 'type="button"']
   const learningOutlineAdaptive = ['variant="outline"', 'data-ui-owner="learning"', 'type="button"']
   const historyButton = assertButton(
     'the history toggle',
     (block) => block.includes('class="srs-review-history-toggle"'),
-    learningGhostSmall,
+    learningGhostDefault,
   )
   assert.match(historyButton, /:aria-expanded="historyOpen"[\s\S]*@click="historyOpen = !historyOpen"/)
   const shortcutButtons = assertButtonGroup(
@@ -414,25 +433,25 @@ async function run() {
     ['one shortcut control should edit the word shortcut', "beginShortcutEditing('word')"],
     ['one shortcut control should edit the sentence shortcut', "beginShortcutEditing('sentence')"],
   ]) assert.equal(shortcutButtons.filter((block) => block.includes(marker)).length, 1, description)
-  const speakerButton = assertButton('the word speaker', (block) => block.includes('class="srs-review-speaker"'), ['variant="outline"', 'size="icon-lg"', 'data-ui-owner="learning"', 'type="button"'])
+  const speakerButton = assertButton('the word speaker', (block) => block.includes('class="srs-review-speaker"'), ['variant="outline"', 'size="icon"', 'data-ui-owner="learning"', 'type="button"'])
   assert.match(speakerButton, /:disabled="!canSpeak"[\s\S]*@click="speakWord"/)
   assert.match(speakerButton, /<svg class="rw:size-\[19px\]"/)
-  const playButtons = assertButtonGroup('word and sentence playback controls', 'srs-review-play-sequence', 2, learningGhostSmall)
+  const playButtons = assertButtonGroup('word and sentence playback controls', 'srs-review-play-sequence', 2, learningGhostDefault)
   for (const [description, handler, label] of [
     ['one playback control should play the word', '@click="speakWord"', '播放单词'],
     ['one playback control should play the sentence', '@click="playSentenceOnly"', '播放原句'],
   ]) assert.equal(playButtons.filter((block) => block.includes(handler) && block.includes(label)).length, 1, description)
-  const removeButton = assertButton('the mistaken-word removal control', (block) => block.includes('class="srs-review-remove-word"'), learningGhostSmall)
+  const removeButton = assertButton('the mistaken-word removal control', (block) => block.includes('class="srs-review-remove-word"'), learningGhostDefault)
   assert.match(removeButton, /:disabled="review\.pending\.value \|\| !review\.canRemoveCurrent\.value"[\s\S]*@click="removeCurrentWord"/)
-  assertButtonGroup('retry and return states', 'srs-review-retry', 3, learningOutlineSmall)
-  assertButtonGroup('legacy migration retry', 'srs-review-migration-button', 1, learningOutlineSmall)
+  assertButtonGroup('retry and return states', 'srs-review-retry', 3, learningOutlineDefault)
+  assertButtonGroup('legacy migration retry', 'srs-review-migration-button', 1, learningOutlineDefault)
   for (const [description, handler] of [
     ['target sentence reveal', 'revealTargetSentence'],
     ['sentence translation retry', 'hydrateCurrentSentenceTranslation'],
     ['surrounding context reveal', 'revealSurroundingContext'],
     ['source audio retry', 'retrySourceAudio'],
   ]) {
-    assertButton(description, (block) => block.includes(`@click="${handler}"`), learningOutlineSmall)
+    assertButton(description, (block) => block.includes(`@click="${handler}"`), learningOutlineDefault)
   }
   assert.doesNotMatch(
     reviewPageSource,
@@ -447,18 +466,13 @@ async function run() {
   ]) {
     const compatibilitySelector = `${selector}:where(:not([data-ui-owner="learning"]))`
     const escapedSelector = compatibilitySelector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const block = reviewCssSource.match(new RegExp(`${escapedSelector}\\s*\\{[^}]*\\}`, 's'))?.[0] || ''
-    assert.match(block, /min-height:\s*28px/, `${selector} should use the shared compact height`)
-    assert.match(
-      block,
-      /color:\s*rgba\(111,\s*123,\s*142,\s*\.68\)\s*!important/,
-      `${selector} should force a visibly muted gray text color`,
-    )
-    assert.match(block, /background:\s*transparent/, `${selector} should have no default fill`)
-    assert.match(block, /box-shadow:\s*none/, `${selector} should have no default shadow`)
-    assert.match(block, /font-size:\s*11px/, `${selector} should use the shared font size`)
-    assert.match(block, /font-weight:\s*500/, `${selector} should use the shared font weight`)
+    assert.doesNotMatch(reviewCssSource, new RegExp(`${escapedSelector}\\s*\\{`), `${selector} retired compact skin should stay removed`)
   }
+  const buttonRecipe = fs.readFileSync(path.join(repoRoot, 'src', 'components', 'ui', 'button', 'button-variants.js'), 'utf8')
+  assert.match(buttonRecipe, /default: 'rw:h-9 rw:px-4 rw:py-2/, 'text buttons should retain the shared 36px recipe')
+  assert.match(buttonRecipe, /icon: 'rw:size-9'/, 'speaker should retain the shared 36px icon recipe')
+  assert.match(buttonRecipe, /rw:gap-2[\s\S]*rw:text-sm rw:font-medium/, 'shared spacing and typography should remain')
+  assert.match(learningCssSource, /color:\s*var\(--muted-foreground\)/, 'learning auxiliary controls should use the fixed-light semantic color')
   assert.match(
     reviewCssSource,
     /\.srs-review-back\s*\{[^}]*display:\s*inline-flex[^}]*width:\s*fit-content/s,
@@ -470,14 +484,14 @@ async function run() {
     'the shared return layout should keep the mobile icon-only form',
   )
   assert.match(
-    reviewCssSource,
-    /\.srs-review-remove-word:where\(:not\(\[data-ui-owner="learning"\]\)\):hover:not\(:disabled\)\s*\{[^}]*background:\s*rgba\(255,\s*255,\s*255,\s*\.62\)[^}]*box-shadow:\s*0 4px 12px/s,
-    'the removal action should only gain its button surface on hover',
+    buttonRecipe,
+    /rw:hover:bg-accent rw:hover:text-accent-foreground/,
+    'the shared ghost removal action should use semantic hover colors',
   )
   assert.match(
     reviewCssSource,
-    /\.srs-review-back:where\(:not\(\[data-ui-owner="learning"\]\)\) > \*,[\s\S]*\.srs-review-remove-word:where\(:not\(\[data-ui-owner="learning"\]\)\) > \*\s*\{[^}]*color:\s*inherit\s*!important[^}]*-webkit-text-fill-color:\s*currentColor/s,
-    'auxiliary control labels, shortcut keys, and icons should inherit the muted button color',
+    /\.srs-review-back svg\s*\{[^}]*width:\s*14px;[^}]*stroke:\s*currentColor/s,
+    'the auxiliary return icon should retain its current shared SVG size and stroke',
   )
   assert.match(reviewPageSource, /srs-review-meaning-group is-general/, 'general meanings should have a primary style hook')
   assert.match(reviewPageSource, /srs-review-meaning-group is-contextual/, 'context meanings should have a secondary style hook')
@@ -490,9 +504,9 @@ async function run() {
   assert.match(reviewPageSource, /srs-review-word-content/, 'word and meanings should share a vertically centered content group')
   assert.match(reviewPageSource, /review\.removeCurrent\(\)/, 'the removal control should update the active review queue')
   assert.match(
-    reviewCssSource,
-    /\.srs-review-remove-word:where\(:not\(\[data-ui-owner="learning"\]\)\)\s*\{[^}]*font-size:\s*11px/s,
-    'the removal control should remain visually quiet',
+    removeButton,
+    /variant="ghost"/,
+    'the removal control should retain the shared ghost variant',
   )
   assert.match(
     reviewCssSource,
@@ -501,8 +515,8 @@ async function run() {
   )
   assert.match(
     reviewCssSource,
-    /\.srs-review-actions button\s*\{[^}]*min-height:\s*44px/s,
-    'rating buttons should remain compact because keyboard shortcuts are the primary interaction',
+    /\.srs-review-actions button\[data-ui-owner="learning"\]\s*\{[^}]*flex:\s*0 1 150px;[^}]*min-width:\s*118px/s,
+    'rating buttons should retain their dedicated wrapping layout on the shared size',
   )
   assert.match(
     reviewCssSource,

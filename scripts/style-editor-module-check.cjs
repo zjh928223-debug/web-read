@@ -48,14 +48,23 @@ assert.ok(
   'reader-controls-runtime should initialize style-editor through injected deps'
 );
 
-assert.ok(
+assert.equal(
   styleEditorSource.includes('function safeParseLocalJSON'),
-  'style-editor should own safeParseLocalJSON'
+  false,
+  'retired visual style editor parser should stay removed'
 );
-
+['styleSettings', 'defaultStyles', 'createStyleControlSection', 'initStyleEditor', 'function applyStyle('].forEach((pattern) => {
+  assert.equal(
+    styleEditorSource.includes(pattern),
+    false,
+    `retired generated style editor chain should stay removed: ${pattern}`
+  );
+});
+assert.equal(styleEditorSource.includes('open-style-editor'), false, 'retired style editor entry binding should stay removed');
 assert.ok(indexSource.includes('id="chunk-style-modal"'), 'chunk style modal should remain in the DOM');
-assert.match(cssSource, /#style-editor-modal,\s*#chunk-style-modal\s*\{[\s\S]*?display:\s*none;/);
-assert.match(cssSource, /#style-editor-modal,\s*#chunk-style-modal\s*\{[\s\S]*?position:\s*fixed;/);
+assert.match(cssSource, /#chunk-style-modal\s*\{[\s\S]*?display:\s*none;/);
+assert.match(cssSource, /#chunk-style-modal\s*\{[\s\S]*?position:\s*fixed;/);
+assert.doesNotMatch(cssSource, /#style-editor-modal|#helper-panel|body\.sidebar-open/);
 assert.match(cssSource, /\.modal-backdrop\s*\{[\s\S]*?display:\s*none;/);
 
 [
@@ -93,39 +102,10 @@ assert.ok(
   workflowCssSource.includes('@source "../composables/style-editor.js";'),
   'Tailwind should scan style-editor adapter utility classes'
 );
-assert.match(cssSource, /\.close-modal:where\(:not\(\[data-ui-owner="style-controls"\]\)\):hover/);
-assert.match(cssSource, /\.style-input-num:where\(:not\(\[data-ui-owner="style-controls"\]\)\)/);
-assert.match(cssSource, /\.style-btn-toggle:where\(:not\(\[data-ui-owner="style-controls"\]\)\)/);
-
-const dynamicEditorSource = styleEditorSource.slice(
-  styleEditorSource.indexOf('function createStyleControlSection'),
-  styleEditorSource.indexOf('function openChunkStyleModal')
-);
-assert.equal(
-  dynamicEditorSource.includes('applyStyleButton'),
-  false,
-  'unreachable dynamic style editor should not receive the Button migration'
-);
-assert.equal(
-  dynamicEditorSource.includes('applyStyleColorInput'),
-  false,
-  'unreachable dynamic style editor should not receive the color input migration'
-);
-assert.equal(
-  dynamicEditorSource.includes('applyStyleNumberInput'),
-  false,
-  'unreachable dynamic style editor should not receive the number input migration'
-);
-assert.ok(
-  dynamicEditorSource.includes("eyeBtn.style.marginRight = '8px';"),
-  'unreachable dynamic style editor should retain its legacy inline layout'
-);
-
-assert.equal(
-  styleEditorSource.includes('deps.safeParseLocalJSON'),
-  false,
-  'style-editor should not receive safeParseLocalJSON from deps'
-);
+assert.ok(styleEditorSource.includes('function applyChunkStyleControlStyles'), 'chunk control styling should remain owned by style-editor');
+assert.ok(styleEditorSource.includes('function openChunkStyleModal'), 'chunk modal opener should remain available');
+assert.ok(styleEditorSource.includes('localStorage.setItem(\'chunkEnSize\''), 'chunk settings persistence should remain available');
+assert.ok(styleEditorSource.includes('window.openChunkStyleModal = openChunkStyleModal'), 'chunk global facade should remain wired');
 
 [
   "deps.processTranscript(transcriptData);",

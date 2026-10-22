@@ -1,6 +1,7 @@
 import { configureSessionStateProvider } from './session-state-provider.js'
 import { initVisualVocab } from './visual-vocab-module.js'
 import { configureRuntimeStateBindings } from './runtime-state-bindings.js'
+import { requirePiniaRuntimeStores } from '../pinia-stores/runtime-registry.js'
 import {
   configureSessionFacades,
   clearGeneratedAnnotationIndex,
@@ -38,7 +39,6 @@ export function initReaderImportRuntime(deps = {}) {
     runtimeState: deps.runtimeState,
     transcriptState: deps.transcriptState,
     chunkState: deps.chunkState,
-    clozeState: deps.clozeState,
     playbackState: deps.playbackState,
     audioIdentityApi: deps.audioIdentityApi,
     hotkeyStateApi: deps.hotkeyStateApi,
@@ -69,6 +69,7 @@ export function initReaderImportRuntime(deps = {}) {
     readFileAsText: deps.readFileAsText,
     saveToDB: deps.saveToDB,
     applyCurrentAudioMeta: deps.applyCurrentAudioMeta,
+    onAudioImported: function () { requirePiniaRuntimeStores().audio.notifyLocalImport() },
     clearGeneratedAnnotationIndex: clearGeneratedAnnotationIndex,
     restoreReaderFocus: deps.restoreReaderFocus,
     showToast: deps.showToast,
@@ -77,6 +78,11 @@ export function initReaderImportRuntime(deps = {}) {
     lblAudio: deps.lblAudio,
     lblTranscript: deps.lblTranscript,
     validateTranscriptData: deps.validateTranscriptData,
+    onTranscriptImported: function (json, file) {
+      requirePiniaRuntimeStores().audio.setLocalTranscriptTitle(
+        deps.audioIdentityApi.buildCurrentSentenceDocId(json), file.name || '已导入本地字幕'
+      )
+    },
     clearPersistedChunkSession: clearPersistedChunkSession,
     getAnnotationGenerationScope: getAnnotationGenerationScope,
     emitAnnotationDiagnostics: emitAnnotationDiagnostics,

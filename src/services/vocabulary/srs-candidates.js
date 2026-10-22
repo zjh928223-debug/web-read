@@ -246,8 +246,9 @@ export async function applySrsCandidatesToVocabulary(options = {}) {
   }
 
   if (acquisitionEnabled && pendingWrites.length) {
+    let acquisitions;
     if (typeof vocabularyService.queueVocabularyAcquisitions === 'function') {
-      await vocabularyService.queueVocabularyAcquisitions(
+      acquisitions = await vocabularyService.queueVocabularyAcquisitions(
         pendingWrites.map((item) => item.wordInput),
         {
           existingWords: pendingWrites.map((item) => item.existing),
@@ -255,12 +256,28 @@ export async function applySrsCandidatesToVocabulary(options = {}) {
         },
       );
     } else {
-      for (const item of pendingWrites) await vocabularyService.queueVocabularyAcquisition(item.wordInput);
+      acquisitions = [];
+      for (const item of pendingWrites) acquisitions.push(await vocabularyService.queueVocabularyAcquisition(item.wordInput));
     }
-    pendingWrites.forEach(({ existing }) => {
-      if (!existing) result.added += 1;
-      else if (existing.status === WORD_STATUSES.KNOWN) result.knownContextAdded += 1;
-      else result.existingContextAdded += 1;
+    const countedNewWordIds = new Set();
+    pendingWrites.forEach(({ candidate, existing }, index) => {
+      const acquisition = acquisitions?.[index];
+      if (existing && candidate.relearn
+        && acquisition?.created
+        && [WORD_STATUSES.KNOWN, WORD_STATUSES.IGNORED].includes(existing.status)) result.relearned += 1;
+      // created describes a learning unit; wordCreated/contextAdded describe
+      // actual vocabulary writes. Count each new word identity only once.
+      const wordId = acquisition?.word?.id;
+      const wordCreated = typeof acquisition?.wordCreated === 'boolean'
+        ? acquisition.wordCreated
+        : !existing;
+      if (wordCreated && (!wordId || !countedNewWordIds.has(wordId))) {
+        result.added += 1;
+        if (wordId) countedNewWordIds.add(wordId);
+      } else if (acquisition?.contextAdded !== false) {
+        if (existing?.status === WORD_STATUSES.KNOWN) result.knownContextAdded += 1;
+        else result.existingContextAdded += 1;
+      }
       result.processed += 1;
     });
   }

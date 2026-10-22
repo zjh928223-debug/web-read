@@ -51,7 +51,7 @@ assert.ok(bridgeSource.includes('export function initPiniaBridge'), 'bridge modu
 assert.ok(bridgeSource.includes('export function bridgeToPinia()'), 'bridge module should expose an explicit bridge API');
 assert.equal(bridgeSource.includes('window.bridgeToPinia'), false, 'bridge module should not publish a window bridge');
 assert.ok(bridgeSource.includes('chunkState.getSnapshot()'), 'bridge module should read chunk state owner snapshots');
-assert.ok(bridgeSource.includes('clozeState.getSnapshot()'), 'bridge module should read cloze state owner snapshots');
+assert.doesNotMatch(bridgeSource, /clozeState|clozeSnapshot|ps\.cloze/, 'retired Cloze must not be assembled or copied');
 assert.equal(interactionSource.includes('window.bridgeToPinia'), false, 'behavior checks should not depend on the retired window bridge');
 
 console.log('pinia bridge module check passed');

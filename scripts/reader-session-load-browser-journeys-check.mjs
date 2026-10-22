@@ -69,7 +69,13 @@ const server = http.createServer(async (request, response) => {
 const serverPort = await listenOnBrowserSafePort(server)
 const origin = `http://127.0.0.1:${serverPort}`
 const browser = await chromium.launch({ headless: true })
-const context = await browser.newContext()
+const context = await browser.newContext({ serviceWorkers: 'block' })
+await context.route('**/*', (route) => {
+  const url = new URL(route.request().url())
+  return url.origin === origin || ['data:', 'blob:'].includes(url.protocol)
+    ? route.continue() : route.abort('blockedbyclient')
+})
+await context.routeWebSocket('**/*', (socket) => socket.close())
 let page = await context.newPage()
 const evidence = []
 

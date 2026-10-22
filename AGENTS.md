@@ -1,5 +1,16 @@
 # AGENTS.md - Read-Web Current Project Notes
 
+
+### N3 独立收口（2026-10-05）
+
+N3 已按预先固定的十项验收独立收口。Spec 与 Standards 两轴均为有限 PASS，无阻断收口的 P0–P2 问题；当前 1,246 个源码文件与本轮 closing 身份一致。审核报告见 C:/Users/0/AppData/Local/Temp/reader-n3-independent-review-20261005-c9b691ac/review.md。本次审阅源码、消费者和既有验收证据，没有重跑业务旅程；前段独立审核 NOT_RUN 为历史阶段记录。原 FAIL 与未运行的真实 Host/AI、系统重启、完整无媒体阅读及全仓检查保留，不更新全仓 Last verified、R 状态或推广。N4 的空白启动与素材流程另行按用户批准顺序施工。
+
+### N3新审核与N4本轮有限验收（2026-10-05）
+
+用户要求先审核N3，再施工N4。N3新Spec/Standards只读审核均有限PASS，未重跑N3业务，见C:/Users/0/AppData/Local/Temp/reader-n3-fresh-review-20261005-67a5f34d/review.md；N3上段closing一致性是当时快照，当前已包含后续N4，不能再称当前树完全等于N3 closing。
+
+N4按原五步及用户简化范围完成前端施工：空白启动/保存数据保留、打开标题与成功失败反馈、本地字幕同步、单链接默认/批量展开、撤除三个时间按钮而保留内部接口、详情与同级修复/独立关闭/确认取消。关闭重开只清临时错误提示，保留可重试任务。源码/生产声明旅程各17项、生产加载、构建、focused和5184 Vite加载/播放/交互均PASS；首轮5184挂载超时等FAIL保留。Spec/Standards均有限PASS，仅按源码与声明旅程范围收口；真实Host/AI、owner/committed真存储、系统重启及全仓仍NOT_RUN/未验证。月度学习总览另案。详见C:/Users/0/AppData/Local/Temp/reader-n4-remaining-20261005/handoff.md。不更新全仓Last verified、R状态或推广，不把临时错误提示与开发验收FAIL日志混为一谈。
+
 ## Canonical Workspace
 
 `E:\read-web-next-optimization` is the only active implementation target for architecture optimization.
@@ -9,6 +20,10 @@ user explicitly approves promotion. Do not edit, build, launch, or commit from t
 behavior for a deliberate migration. Do not edit, build, launch, or commit from the historical tree.
 
 ## Optimization Workspace Isolation
+
+### 用户日常 N5 独立副本（2026-10-07）
+
+日常运行目录为 `E:\ReadWebDaily\N5-20261007`，数据为 `E:\ReadWebData\SubtitleWorkflow-Daily-N5`，Tailscale HTTPS 入口为 5194，内部 Host/能力服务为 5195/8786。开发仍用本工作区与 5184/8776。后续 N6/UI 施工不得修改、清理或重启日常副本及其数据；不得按内部 profileId=optimization 批量停止两套服务，必须核对运行目录、数据根和进程所有权。日常版本更新另行备份发布。启动说明见 `docs/operations/daily-development-isolation-2026-10-07.md`。本条不改变旧保护树、历史验收或全仓状态。
 
 - Use `config/runtime.optimization.json` for manual optimization runs.
 - Use frontend/backend ports `5184/8776`; never reuse the daily reader's `5174/8766`.
@@ -77,11 +92,15 @@ src/main.js -> configures src/pinia-stores/runtime-registry.js before importing 
 
 The deleted `src/stores/` compatibility layer must not be reintroduced. Real Pinia definitions are under `src/pinia-stores/`.
 
+The Cloze store/adapter and current `manualChunkStates` assembly, restore, snapshot, and rollback fields are retired. Existing startup cleanup of the historical `st.manualChunkStates` preference remains. The unused passage-preview query-launch helper and translation queue are retired; current preview entry, translation/preload, and AI chunk behavior remain.
+
+`runtimeState` and `bridgeToPinia` are module imports; the former `window.__state`, `window.__piniaStores`, and `window.bridgeToPinia` publications are absent. `__clozeState`, `__glassEffects`, and `__legacyControlBindings` publications are retired; glass initialization and automatic legacy control binding remain.
+
 ## ECDICT Boundary
 
 ECDICT lives under `src/dictionary/ecdict/`. Its Node SQLite service remains read-only and isolated
 from reader, vocabulary, and SRS repositories. Browser runtime code may import only the local HTTP
-client, enrichment adapter, and formatter. Article preview and the SRS answer-reveal area use those
+client and formatter. Article preview and the SRS answer-reveal area use those
 browser modules for transient suggestions. The review page receives its client through a prop and
 keeps only a session-memory cache; neither flow persists results or replaces existing meanings.
 
@@ -125,7 +144,7 @@ compatibility facades, `src/composables/legacy-control-bindings.js`, and legacy 
 - `src/composables/session-ui-settings-restore.js` - persisted UI/hotkey settings restore.
 - `src/composables/reader-feature-runtime.js` - feature runtime composition for import, controls, interactions, keyboard, app handlers, and annotation controls.
 - `src/composables/reader-feature-runtime-deps.js` - feature runtime dependency assembly for runtime context and bootstrap state.
-- `src/composables/reader-runtime-context.js` - startup context composition for bootstrap state, DOM refs, focus helpers, and retired transfer dialog compatibility access.
+- `src/composables/reader-runtime-context.js` - startup context composition for bootstrap state, DOM refs, and focus helpers.
 - `src/composables/reader-dom-refs.js` - static reader runtime DOM ref collection.
 - `src/composables/reader-bootstrap-runtime.js` - state adapter references, DB compatibility wrappers, runtime helper collection, audio identity, hotkey state, and marks state bootstrap.
 - `src/composables/reader-runtime-deps.js` - runtime utility/global helper dependency collection.
@@ -136,7 +155,7 @@ compatibility facades, `src/composables/legacy-control-bindings.js`, and legacy 
 - `src/composables/reader-keyboard-runtime.js` - keyboard module setup with mark, annotation bubble, AI chunk, seek, and panel-close injected handlers.
 - `src/composables/reader-app-runtime.js` - annotation lightweight controls, app handlers, controls loop, glass effects, and reader public facade setup.
 - `src/composables/reader-import-runtime.js` - session facade/provider setup, visual vocab setup, runtime state bindings, chunk pipeline, and audio/transcript import handler initialization.
-- `src/composables/reader-runtime-helpers.js` - focus restore and retired transfer dialog helper runtime.
+- `src/composables/reader-runtime-helpers.js` - reader focus restore helper runtime.
 - `src/composables/session-facades.js` - public session/annotation facade stubs backed by injected session runtime handlers.
 - `src/composables/reader-public-facades.js` - remaining reader public facade assignments.
 - `src/composables/annotation-bubble-resolver.js` - generated/vocab annotation bubble hit resolution.
@@ -155,7 +174,7 @@ compatibility facades, `src/composables/legacy-control-bindings.js`, and legacy 
 - `src/composables/playback-runtime-helpers.js` - playback helper behavior and sentence jump owner.
 - `src/composables/session-init.js` - thin session entry only. Do not add feature logic here.
 - `src/main.js` - Vue/Pinia mount plus adapter-to-Pinia binding.
-- `src/pinia-stores/` - 8 real Pinia stores.
+- `src/pinia-stores/` - 7 real Pinia stores (audio, transcript, chunk, marks, UI, theme, annotation).
 - `src/pinia-stores/runtime-registry.js` - explicit store access for non-component runtime modules.
 - `src/services/annotation/` - 14 ES modules for generated annotation flow.
 - Former root annotation/chunk-note artifacts were deleted after the module migration; see `docs/architecture/legacy-deletion-inventory.json` and `npm run verify:legacy-deletion` for the evidence gate.
@@ -222,7 +241,6 @@ npm run verify:annotation-lightweight-module  # Focused annotation lightweight g
 npm run verify:keyboard-boundary  # Focused keyboard boundary helper check
 npm run verify:transcript-state  # Focused transcript state adapter check
 npm run verify:chunk-state  # Focused chunk state adapter check
-npm run verify:cloze-state  # Focused cloze state adapter check
 npm run verify:playback-state  # Focused playback state adapter check
 npm run verify:playback-runtime-helpers  # Focused playback runtime helper check
 npm run verify:state-facades  # Focused window.__state owner facade check
@@ -299,3 +317,20 @@ Use `verify:vite` for the current Vite load and interaction verification.
 ## Documentation Status
 
 Use this file, `README.md`, and `PROJECT_MAP.md` as current architecture references. `ES_MODULE_PLAN.md` is historical planning context unless explicitly updated.
+
+
+N1 本文扫描清退执行记录（2026-10-04）：两个扫描/显示入口及专用生产、显示、词典富集支路已撤除；本文整理、历史来源识别和独立学习入口保留。执行验收未完成：J3 现有手工导入入口不可达，句高亮正式检查失败；独立审核 NOT_RUN，R5 未放行。具体命令、失败与未覆盖项见本轮 Temp handoff.md：C:/Users/0/AppData/Local/Temp/reader-n1-resume-20261004-582b711a/handoff.md。此记录不更新全仓 Last verified 或前轮结论。
+
+
+N1 补充执行（2026-10-04）：用户授权重定后，句高亮完整检查、匹配 target 的普通 AI/真实轻量合并与旧扫描来源/mark 保护、动画稳定的四组合生产矩阵及 drag/resize/focus、代表 loading/empty/长列表/relearn/error 对照通过。处理中 UI 已观测；补充 producer 完成响应合同错误的原 FAIL 保留，停止追加修补。原手工文件 UI 缺口不伪装为旅程通过，按方案补充范围改用既有 AI 导入链；dictionary 全入口的既有 FAIL 保留并有原 opening 复现。独立审核 NOT_RUN、R5 未放行，见 C:/Users/0/AppData/Local/Temp/reader-n1-supplement-20261004-2c83b798/handoff.md；不更新全仓 Last verified。
+
+
+### N1 独立收口（2026-10-04）
+
+**N1 独立 PASS，限于方案预先重定后的验收范围，现已收口。** 独立审核未发现阻断收口的 P0–P2 问题，见[独立审核报告](C:/Users/0/AppData/Local/Temp/reader-n1-independent-review-20261004/review.md)。最后 completion 补测已闭合精简完成、进度保存及关闭重开读取；原失败尝试保留。原手工文件 UI 旅程仍为 NOT_RUN，dictionary:test 整入口仍为既有 FAIL，按重定范围保留另案；本审核未重跑业务测试。此前执行/补充段落是各阶段历史记录，不再代表当前 N1 状态。
+
+R5 旧扫描/双入口扫描子范围标为“因功能退休取消”，不是 R5 PASS；R5 保留本文整理职责的方案仍须定稿及明确调度，尚未启动。R5 opening 应以 N1 本次收口后的当前源码及 closing 身份为基线，见 C:/Users/0/AppData/Local/Temp/reader-n1-closeout-20261004-e83a5c18/closing-manifest.json，不以 HEAD 或清退前源码代替。未更改 R9、全仓 Last verified 或推广状态。
+
+### N4 单素材真实链路补验（2026-10-05）
+
+N1、N2-A/同步补丁及 N3 收口记录已只读核对。N4 既有前端有限收口后，使用实际优化 production Host/UI 提交约19秒公开视频 Me at the zoo（任务802eb5775a5c），真实下载、WhisperX转写、Gemini real切分/翻译、保存、库中打开与播放通过；刷新及真实关闭页签再新开为空白，素材保留且显式重开正常。Spec/Standards独立证据复核均有限PASS，未重跑业务、无阻断P0–P2；执行与审核时1,253路径零漂移，本轮只追加三份状态文档，无产品代码改动。证据 C:/Users/0/AppData/Local/Temp/reader-real-chain-20261005-1330/review.md。测试服务/页签已清理，任务和素材保留。仅闭合此单素材当前设备链路；原FAIL、系统重启、长视频/批量、故障恢复、声学听辨及全仓未覆盖项保留，不更新全仓Last verified、R状态或推广。此前真实Host/AI NOT_RUN段落为补验前历史。

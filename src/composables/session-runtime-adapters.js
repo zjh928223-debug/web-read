@@ -9,8 +9,7 @@ export function createSessionRuntimeAdapters(env = {}) {
   const audioStore = requirePiniaRuntimeStores().audio;
   const bridgeToPinia = initPiniaBridge({
     transcriptState: windowObject.__transcriptState,
-    chunkState: windowObject.__chunkState,
-    clozeState: windowObject.__clozeState
+    chunkState: windowObject.__chunkState
   });
 
   function getElement(id) {
@@ -39,6 +38,8 @@ export function createSessionRuntimeAdapters(env = {}) {
       hotkeyChunkShadowInput: windowObject.hotkeyChunkShadowInput || getElement('hotkey-chunk-shadow-input'),
       hotkeyBackwardInput: windowObject.hotkeyBackwardInput || getElement('hotkey-backward-input'),
       hotkeyForwardInput: windowObject.hotkeyForwardInput || getElement('hotkey-forward-input'),
+      hotkeyPrevAnnotationWordInput: getElement('hotkey-prev-annotation-word-input'),
+      hotkeyNextAnnotationWordInput: getElement('hotkey-next-annotation-word-input'),
       highlightColorInput: windowObject.highlightColorInput || getElement('highlight-color-input'),
       sentenceColorInput: windowObject.sentenceColorInput || getElement('sentence-color-input')
     },

@@ -3,18 +3,9 @@ import { initAnnotationBackfillAiControls } from './annotation-backfill-ai-modul
 import { initVocabularyPreviewControls } from './vocabulary-preview-module.js'
 import { youtubeWorkflowClient } from './youtube-workflow-client.js'
 import { configureReaderPublicFacades } from './reader-public-facades.js'
-import { createOptionalLocalDictionaryClient } from '../dictionary/ecdict/browser/optional-local-dictionary-client.mjs'
-import { createDictionaryEnrichmentAdapter } from '../dictionary/ecdict/application/dictionary-enrichment-adapter.mjs'
 import { createLifecycleScope } from '../services/runtime/lifecycle-scope.js'
 import { createObjectUrlDownloader } from '../services/runtime/download-object-url.js'
 
-function createOptionalDictionaryEnrichmentAdapter() {
-  const client = createOptionalLocalDictionaryClient()
-  if (!client) return null
-  return createDictionaryEnrichmentAdapter({
-    client
-  })
-}
 
 export function initReaderAppRuntime(deps = {}) {
   const lifecycle = createLifecycleScope()
@@ -25,15 +16,6 @@ export function initReaderAppRuntime(deps = {}) {
     : deps.audioPlayer
   deps.annotationLightweightModule.initManualLightweightAnnotationControls({
     exportButton: deps.exportAnnotationLightweightBtn,
-    importButton: deps.importAnnotationLightweightBtn,
-    importInput: deps.importAnnotationLightweightInput,
-    getFirstFileFromEvent: deps.getFirstFileFromEvent,
-    refreshAfterImport: function () {
-      if (deps.chunkState.isChunkMode) deps.renderChunkMode()
-      else deps.renderTranscript()
-      deps.forceUpdateUI(audioPlayer.currentTime)
-    },
-    showToast: deps.showToast,
     showError: deps.showError
   })
 
@@ -57,8 +39,6 @@ export function initReaderAppRuntime(deps = {}) {
   }
 
   const vocabularyPreviewController = initVocabularyPreviewControls({
-    previewButton: deps.previewVocabularyBtn,
-    togglePreviewButton: deps.togglePreviewVocabularyBtn,
     settleButton: deps.settleArticleVocabularyBtn,
     state: deps.runtimeState,
     client: youtubeWorkflowClient,
@@ -66,7 +46,6 @@ export function initReaderAppRuntime(deps = {}) {
     showError: deps.showError,
     windowObject: globalThis,
     documentObject: globalThis.document,
-    dictionaryEnrichmentAdapter: createOptionalDictionaryEnrichmentAdapter()
   })
   if (vocabularyPreviewController && typeof vocabularyPreviewController.dispose === 'function') {
     lifecycle.add(function () { vocabularyPreviewController.dispose() })

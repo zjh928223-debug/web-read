@@ -11,6 +11,9 @@ import {
   normalizeLemma,
   normalizeLookupKey,
   normalizeNullableText,
+  createSrsReviewExclusionMarker,
+  isSrsReviewParticipationExcluded,
+  normalizeSrsReviewParticipation,
   normalizeText,
   normalizeVocabularyTags,
   toIsoString,
@@ -222,13 +225,23 @@ export function createVocabularyService(options = {}) {
     };
   }
 
-  async function upsertVocabularyEntry(input = {}) {
+  async function upsertVocabularyEntryWithWriteInfo(input = {}) {
     const normalized = normalizeWordInput(input);
     return repository.updateSnapshot((snapshot) => {
+      const wordCount = snapshot.words.length;
+      const contextCount = snapshot.contexts.length;
       const word = upsertWordInSnapshot(snapshot, input, normalized);
       addContextIfPresent(snapshot, word.id, input.context, normalized.createdAt);
-      return word;
+      return {
+        word,
+        wordCreated: snapshot.words.length > wordCount,
+        contextAdded: snapshot.contexts.length > contextCount,
+      };
     });
+  }
+
+  async function upsertVocabularyEntry(input = {}) {
+    return (await upsertVocabularyEntryWithWriteInfo(input)).word;
   }
 
   function traceLegacyCompatibility(operation, input) {
@@ -335,7 +348,7 @@ export function createVocabularyService(options = {}) {
       ? batchOptions.existingWords
       : null;
     const lookupSnapshot = suppliedExistingWords ? null : await repository.loadSnapshot();
-    const preparedWords = candidates.map((input, index) => {
+    let preparedWords = candidates.map((input, index) => {
       const normalized = normalizedCandidates[index];
       const supplied = suppliedExistingWords && suppliedExistingWords[index];
       const existing = supplied && supplied.id
@@ -345,12 +358,27 @@ export function createVocabularyService(options = {}) {
           && word.language === normalized.language
         ));
       if (existing) return cloneVocabularyValue(existing);
-      return upsertWordInSnapshot(
-        { words: [] },
-        { ...input, context: null },
-        normalized,
-      );
+      return null;
     });
+    const wordCreated = candidates.map(() => false);
+    // Reserve new word identities before any acquisition chunk can commit.
+    // A retry after a partial commit must find the same word and learning unit.
+    if (preparedWords.some((word) => !word)) {
+      const reservations = await repository.updateSnapshot((snapshot) => candidates.map((input, index) => {
+        const normalized = normalizedCandidates[index];
+        const existing = snapshot.words.find((word) => (
+          word.lookup_key === normalized.lookupKey && word.language === normalized.language
+        ));
+        return {
+          word: existing || upsertWordInSnapshot(snapshot, { ...input, context: null }, normalized),
+          wordCreated: !existing,
+        };
+      }));
+      preparedWords = reservations.map((reservation, index) => {
+        wordCreated[index] = reservation.wordCreated;
+        return reservation.word;
+      });
+    }
     const acquisitionSnapshot = typeof acquisitionRepository.loadSnapshot === 'function'
       ? await acquisitionRepository.loadSnapshot()
       : { by_learning_unit_id: {} };
@@ -407,16 +435,21 @@ export function createVocabularyService(options = {}) {
       }
     }
     await yieldControl();
-    const finalizedWords = await repository.updateSnapshot((snapshot) => candidates.map((input, index) => (
+    const finalized = await repository.updateSnapshot((snapshot) => candidates.map((input, index) => (
       upsertWordInSnapshot(snapshot, {
         ...input,
         __prepared_word_id: preparedWords[index].id,
       }, normalizedCandidates[index])
     )).map((word, index) => {
+      const contextCount = snapshot.contexts.length;
       addContextIfPresent(snapshot, word.id, candidates[index].context, normalizedCandidates[index].createdAt);
-      return word;
+      return { word, contextAdded: snapshot.contexts.length > contextCount };
     }));
-    return results.map((result, index) => ({ ...result, word: finalizedWords[index] }));
+    return results.map((result, index) => ({
+      ...result,
+      ...finalized[index],
+      wordCreated: wordCreated[index],
+    }));
   }
 
   async function completePendingArticleLearning(options = {}) {
@@ -617,7 +650,10 @@ export function createVocabularyService(options = {}) {
     }
     const normalized = normalizeWordInput(input);
     const commands = options.acquisitionCommands || acquisitionService;
-    const word = options.preparedWord || await upsertVocabularyEntry({ ...input, context: null });
+    const reservation = options.preparedWord
+      ? { word: options.preparedWord, wordCreated: false }
+      : await upsertVocabularyEntryWithWriteInfo({ ...input, context: null });
+    const word = reservation.word;
     const targetSense = createTargetSense(input, normalized);
     const targetSenseKey = deriveTargetSenseKey(targetSense);
     const existingBySenseProvided = Object.prototype.hasOwnProperty.call(options, 'existingBySense');
@@ -729,9 +765,12 @@ export function createVocabularyService(options = {}) {
       }
     }
 
-    const storedWord = options.deferVocabularyFinalization ? word : await upsertVocabularyEntry(input);
+    const finalized = options.deferVocabularyFinalization
+      ? { word, contextAdded: false }
+      : await upsertVocabularyEntryWithWriteInfo(input);
     return {
-      word: storedWord,
+      ...finalized,
+      wordCreated: reservation.wordCreated,
       learningUnit: unit,
       acquisitionState: state,
       contextEvidence: attachedContextEvidence,
@@ -793,7 +832,9 @@ export function createVocabularyService(options = {}) {
       .filter((reviewState) => Date.parse(reviewState.due_at) <= Date.parse(nowIso))
       .map((reviewState) => {
         const word = wordsById.get(reviewState.word_id);
-        if (!word || word.status === WORD_STATUSES.IGNORED) return null;
+        if (!word
+          || word.status === WORD_STATUSES.IGNORED
+          || isSrsReviewParticipationExcluded(word.review_participation)) return null;
         return {
           word: cloneVocabularyValue(word),
           reviewState: cloneVocabularyValue(reviewState),
@@ -804,6 +845,49 @@ export function createVocabularyService(options = {}) {
       })
       .filter(Boolean)
       .sort((left, right) => compareIsoAsc(left.reviewState.due_at, right.reviewState.due_at));
+  }
+
+  async function removeWordFromReview(wordId, options = {}) {
+    if (wordId && typeof wordId === 'object') {
+      options = wordId;
+      wordId = options.word_id || options.wordId;
+    }
+    const normalizedWordId = normalizeText(wordId || options.word_id || options.wordId);
+    const operationId = normalizeText(options.operation_id || options.operationId);
+    if (!normalizedWordId) throw new Error('SRS review removal word ID is required');
+    if (!operationId) throw new Error('SRS review removal operation ID is required');
+    const removedAt = toIsoString(
+      options.removed_at || options.removedAt || nowProvider(),
+    );
+    const marker = createSrsReviewExclusionMarker(operationId, removedAt);
+    return repository.updateSnapshot((snapshot) => {
+      const word = findWordOrThrow(snapshot, normalizedWordId);
+      const existing = normalizeSrsReviewParticipation(word.review_participation);
+      if (existing) {
+        if (existing.operation_id !== operationId) {
+          const error = new Error(`SRS review word is already removed: ${normalizedWordId}`);
+          error.code = 'IDEMPOTENCY_CONFLICT';
+          throw error;
+        }
+        return {
+          status: 'removed',
+          idempotent: true,
+          word_id: word.id,
+          operation_id: existing.operation_id,
+          removed_at: existing.removed_at,
+          word,
+        };
+      }
+      word.review_participation = marker;
+      return {
+        status: 'removed',
+        idempotent: false,
+        word_id: word.id,
+        operation_id: marker.operation_id,
+        removed_at: marker.removed_at,
+        word,
+      };
+    });
   }
 
   async function reviewWord(wordId, rating, reviewedAt) {
@@ -821,6 +905,12 @@ export function createVocabularyService(options = {}) {
       const word = findWordOrThrow(snapshot, wordId);
       if (word.status === WORD_STATUSES.IGNORED) {
         throw new Error(`Cannot review ignored vocabulary word: ${wordId}`);
+      }
+      if (isSrsReviewParticipationExcluded(word.review_participation)) {
+        const error = new Error(`Cannot review removed vocabulary word: ${wordId}`);
+        error.code = 'SRS_REVIEW_REMOVED';
+        error.knownNotSubmitted = true;
+        throw error;
       }
       const currentState = ensureReviewState(snapshot, word, word.created_at, scheduler);
       const beforeState = cloneVocabularyValue(currentState);
@@ -859,6 +949,12 @@ export function createVocabularyService(options = {}) {
     const markedAtIso = toIsoString(markedAt || nowProvider());
     return repository.updateSnapshot((snapshot) => {
       const word = findWordOrThrow(snapshot, wordId);
+      if (isSrsReviewParticipationExcluded(word.review_participation)) {
+        const error = new Error(`Cannot mark removed vocabulary word known: ${wordId}`);
+        error.code = 'SRS_REVIEW_REMOVED';
+        error.knownNotSubmitted = true;
+        throw error;
+      }
       const currentState = ensureReviewState(snapshot, word, word.created_at, scheduler);
       const knownState = scheduler.createKnownReviewState(currentState, markedAtIso);
       replaceReviewState(snapshot, knownState);
@@ -896,6 +992,12 @@ export function createVocabularyService(options = {}) {
     const relearnedAtIso = toIsoString(options.relearnedAt || options.relearned_at || options.updatedAt || options.updated_at || nowProvider());
     return repository.updateSnapshot((snapshot) => {
       const word = findWordOrThrow(snapshot, wordId);
+      if (isSrsReviewParticipationExcluded(word.review_participation)) {
+        const error = new Error(`Cannot relearn removed vocabulary word: ${wordId}`);
+        error.code = 'SRS_REVIEW_REMOVED';
+        error.knownNotSubmitted = true;
+        throw error;
+      }
       const reviewState = scheduler.createInitialReviewState(word.id, relearnedAtIso);
       replaceReviewState(snapshot, reviewState);
       word.status = WORD_STATUSES.LEARNING;
@@ -958,6 +1060,7 @@ export function createVocabularyService(options = {}) {
     getContextsForWord,
     getReviewLogs,
     getDueWords,
+    removeWordFromReview,
     reviewWord,
     reviewWordKnown,
     markWordKnown,

@@ -1,4 +1,4 @@
-﻿const assert = require('node:assert/strict');
+const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -99,7 +99,11 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     );
   });
 
-  const encodedSource = Buffer.from(moduleSource, 'utf8').toString('base64');
+  const lookupSource = fs.readFileSync(path.join(repoRoot, 'src', 'utils', 'playback-index.js'), 'utf8')
+    .replace(/^window.PlaybackIndexHelpers = .*;$/m, '');
+  const lookupUrl = `data:text/javascript;base64,${Buffer.from(lookupSource, 'utf8').toString('base64')}`;
+  const importableSource = moduleSource.replace("'../utils/playback-index.js'", JSON.stringify(lookupUrl));
+  const encodedSource = Buffer.from(importableSource, 'utf8').toString('base64');
   const { initReaderKeyboardRuntime } = await import(`data:text/javascript;base64,${encodedSource}#${Date.now()}`);
 
   let keyboardConfig = null;
@@ -192,6 +196,46 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.deepEqual(calls.mark.words, [{ word: 'four' }]);
   assert.equal(calls.mark.saveToDB, deps.saveToDB);
   assert.equal(calls.mark.syncAnnotationGenerationEntryStatus, deps.syncAnnotationGenerationEntryStatus);
+
+  const { bsFindActive } = await import(lookupUrl);
+  const adjacent = [{ word: 'A', start: 1, end: 2 }, { word: 'B', start: 2, end: 3 }];
+  const overlap = [{ word: 'A', start: 1, end: 3 }, { word: 'B', start: 2, end: 2.2 }];
+  for (const isChunkMode of [false, true]) {
+    for (const highlightMode of [1, 2]) {
+      Object.assign(deps.chunkState, { isChunkMode });
+      Object.assign(deps.transcriptState, {
+        words: adjacent, wordStarts: [1, 2], currentWordIndex: 0,
+        selectedAnnotationWordIndex: 0, highlightMode
+      });
+      initReaderKeyboardRuntime(deps);
+      const playingMedia = { paused: false, currentTime: 2.001 };
+      keyboardConfig.toggleMarkCurrent(playingMedia);
+      assert.equal(calls.mark.currentWordIndex, 1, 'playing key must sample time after the cached frame');
+      assert.equal(deps.transcriptState.currentWordIndex, 0, 'mark lookup must not replace playback projection');
+      assert.equal(playingMedia.currentTime, 2.001, 'mark lookup must not seek');
+
+      Object.assign(deps.transcriptState, { words: overlap, currentWordIndex: 1 });
+      keyboardConfig.toggleMarkCurrent({ paused: false, currentTime: 2.1 });
+      assert.equal(calls.mark.currentWordIndex, 1, 'two active overlaps keep latest-start priority');
+      keyboardConfig.toggleMarkCurrent({ paused: false, currentTime: 2.5 });
+      assert.equal(calls.mark.currentWordIndex, 0, 'ended later overlap must not hide earlier active word');
+
+      Object.assign(deps.transcriptState, { words: adjacent, currentWordIndex: 1 });
+      keyboardConfig.toggleMarkCurrent({ paused: false, currentTime: 3 });
+      assert.equal(calls.mark.currentWordIndex, -1, 'gap must pass no target to the existing mark owner');
+      Object.assign(deps.transcriptState, { currentWordIndex: 0 });
+      keyboardConfig.toggleMarkCurrent({ paused: true, currentTime: 2.5 });
+      assert.equal(calls.mark.currentWordIndex, 0, 'paused click/position target must remain explicit');
+    }
+  }
+  assert.equal(bsFindActive([0], [{ start: 0, end: 0 }], 0), -1, 'zero end is not missing');
+  assert.equal(bsFindActive([1], [{ start: 1 }], 2.9), 0, 'missing end keeps two-second fallback');
+  assert.equal(bsFindActive([1], [{ start: 1 }], 3), -1, 'fallback end is exclusive');
+  assert.equal(bsFindActive([1], [{ start: 1, end: 2 }], 1), 0, 'start is inclusive');
+  assert.equal(bsFindActive([1], [{ start: 1, end: 2 }], 2), -1, 'end is exclusive');
+  assert.equal(bsFindActive([], [], 0), -1);
+  assert.equal(bsFindActive([1], null, 1), -1);
+  assert.equal(bsFindActive([1], adjacent, NaN), -1);
 
   keyboardConfig.closeCustomThemePanel();
   assert.equal(calls.themeClosed, 1);

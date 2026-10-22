@@ -23,8 +23,16 @@ assert.equal(
     currentBatchCompleted: true,
     nextBatchAvailable: true,
   }).allowed,
-  false,
-  'the waiting threshold must block an already allocated next batch',
+  true,
+  'the waiting threshold must warn without blocking an already allocated next batch',
+)
+assert.equal(
+  resolveIeltsDailyPreviewContinuationGate({
+    waiting: 40,
+    currentBatchCompleted: true,
+    nextBatchAvailable: true,
+  }).reason,
+  'waiting_notice',
 )
 assert.equal(
   resolveIeltsDailyPreviewContinuationGate({
@@ -37,21 +45,21 @@ assert.equal(
 )
 assert.equal(
   resolveCompletedIeltsPreviewAction({ waiting: 40, hasBatchDate: false }).action,
-  'keep_completed',
+  'open_or_clear_undated_batch',
 )
 assert.equal(
   resolveCompletedIeltsPreviewAction({ waiting: 40, hasBatchDate: false }).notice,
-  '等待池现有 40 个词；降到 40 个以下前暂不开新一组，今天只需完成“今日复习”里的安排',
+  '等待池现有 40 个词；当前组和已有候选仍可进入，积压只作提醒',
   'the waiting-threshold action must carry the user-facing queue notice',
 )
 assert.equal(
   resolveCompletedIeltsPreviewAction({ waiting: 40, hasBatchDate: true }).action,
-  'keep_completed',
-  'a dated/preallocated next batch must also remain completed at the waiting threshold',
+  'advance_dated_batch',
+  'a dated/preallocated next batch remains available at the waiting threshold',
 )
 assert.equal(
   resolveCompletedIeltsPreviewAction({ waiting: 40, hasBatchDate: true }).notice,
-  '等待池现有 40 个词；降到 40 个以下前暂不开新一组，今天只需完成“今日复习”里的安排',
+  '等待池现有 40 个词；当前组和已有候选仍可进入，积压只作提醒',
 )
 assert.equal(
   resolveCompletedIeltsPreviewAction({ waiting: 39, hasBatchDate: false }).action,

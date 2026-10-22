@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
+from functools import lru_cache
 from hashlib import sha256
 import json
 import math
@@ -156,6 +157,7 @@ def _is_absolute_path(value: str) -> bool:
     return False
 
 
+@lru_cache(maxsize=512)
 def _forbidden_key(key: str) -> bool:
     normalized = re.sub(r"[^a-z0-9]+", "_", key.lower()).strip("_")
     if normalized in {"token", "access_token", "auth_token", "instance_token", "owner_token"} or normalized.endswith("_token"):
@@ -351,6 +353,7 @@ def _validate_record(key: str, value: Any) -> dict[str, Any]:
     if value.get("id") != key or "content" not in value:
         raise VocabularySrsOwnerError("invalid-request")
     content = _validate_record_content(key, value["content"])
+    checksum = _checksum(content)
     if "timestamp" in value:
         timestamp = value["timestamp"]
         valid_timestamp = (
@@ -371,12 +374,13 @@ def _validate_record(key: str, value: Any) -> dict[str, Any]:
     if "checksum" in value and (
         not isinstance(value["checksum"], str)
         or _SHA256.fullmatch(value["checksum"]) is None
-        or value["checksum"] != _checksum(content)
+        or value["checksum"] != checksum
     ):
         raise VocabularySrsOwnerError("corrupt")
-    result = deepcopy(value)
+    # All remaining fields have been restricted to immutable scalar values.
+    result = dict(value)
     result["content"] = content
-    result["checksum"] = _checksum(content)
+    result["checksum"] = checksum
     return result
 
 
@@ -460,6 +464,7 @@ class VocabularySrsOwner:
         self.instance_id = _identity(instance_id, "instanceId")
         self.repository = repository or DurableJsonRepository()
         self.snapshot_path = self.root / VOCABULARY_SRS_OWNER_FILE
+        self._validated_document_cache: tuple[str, dict[str, str]] | None = None
         self.receipts = receipt_store or OwnerCommitReceiptStore(
             self.root / "receipts",
             self.profile_id,
@@ -474,7 +479,7 @@ class VocabularySrsOwner:
             outcome = self.repository.read(
                 self.snapshot_path,
                 fallback=None,
-                validator=lambda value: _storage_validator(value, self.profile_id),
+                validator=self._validate_storage_document,
             )
         except VocabularySrsOwnerError as error:
             raise VocabularySrsOwnerStorageError(error.code) from error
@@ -490,6 +495,32 @@ class VocabularySrsOwner:
             "io-error": "manual-recovery",
         }.get(outcome.status, "manual-recovery")
         raise VocabularySrsOwnerStorageError(code)
+
+    def _remember_validated_document(self, digest: str, document: Mapping[str, Any]) -> None:
+        checksums = {
+            key: record["checksum"] for key, record in document["records"].items()
+        }
+        # Publish one pair so concurrent requests cannot mix two documents.
+        self._validated_document_cache = (digest, checksums)
+
+    def _validate_storage_document(self, value: Any) -> dict[str, Any]:
+        # The repository still locks and decodes the current file on every read.
+        # Hash all actual input, including metadata and claimed checksums, rather
+        # than trusting revision/mtime or the document's claimed checksum.
+        try:
+            digest = _checksum(value)
+        except VocabularySrsOwnerError as error:
+            raise JsonValidationError(str(error), status="corrupt", error_code="VOCABULARY_OWNER_CORRUPT") from error
+        cached = self._validated_document_cache
+        if cached is not None and digest == cached[0]:
+            # This freshly decoded value has no mutable objects shared with a
+            # previous caller. Preserve the existing missing-checksum normalization.
+            for key, checksum in cached[1].items():
+                value["records"][key]["checksum"] = checksum
+            return value
+        document = _storage_validator(value, self.profile_id)
+        self._remember_validated_document(digest, document)
+        return document
 
     def _current_revision_for_receipt(self, domain: str) -> int:
         if domain != VOCABULARY_SRS_DOMAIN:
@@ -599,7 +630,8 @@ class VocabularySrsOwner:
             payload = {"empty": True, "found": False, "revision": 0, "records": {}}
             return self._envelope(operation, request_id, correlation_id, "read", "not-applicable", 0, payload, _typed_error("not-found", correlation_id))
         keys = self._query_keys(operation, document["records"])
-        selected = {key: deepcopy(document["records"][key]) for key in keys}
+        # Each repository read yields private decoded data, not cached content.
+        selected = {key: document["records"][key] for key in keys}
         payload = {
             "empty": not bool(selected),
             "found": bool(selected),
@@ -608,7 +640,7 @@ class VocabularySrsOwner:
             "records": selected,
         }
         error = _typed_error("not-found", correlation_id) if not selected else None
-        return self._envelope(operation, request_id, correlation_id, "read", "not-applicable", document["revision"], payload, error)
+        return self._envelope(operation, request_id, correlation_id, "read", "not-applicable", document["revision"], payload, error, copy_payload=False)
 
     def command(
         self,
@@ -710,6 +742,7 @@ class VocabularySrsOwner:
             }
             next_document = {**core, "checksum": _checksum(core)}
             self.repository.write(self.snapshot_path, next_document, preserve_backup=True)
+            self._remember_validated_document(_checksum(next_document), next_document)
             return self._evidence(
                 context,
                 status="committed",
@@ -874,6 +907,7 @@ class VocabularySrsOwner:
         error: Mapping[str, Any] | None,
         *,
         receipt: Mapping[str, Any] | None = None,
+        copy_payload: bool = True,
     ) -> dict[str, Any]:
         return {
             "contractVersion": "windows-thin-reader-api.v1",
@@ -885,7 +919,7 @@ class VocabularySrsOwner:
             "commitStatus": commit_status,
             "revision": revision,
             "receipt": deepcopy(receipt) if receipt is not None else None,
-            "payload": deepcopy(dict(payload or {})),
+            "payload": deepcopy(dict(payload or {})) if copy_payload else dict(payload or {}),
             "error": deepcopy(dict(error)) if error is not None else None,
         }
 

@@ -88,7 +88,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   [
     'deps.processTranscript(transcriptData);',
     'deps.processChunkData(chunkData);',
-    'windowObject.toggleChunkMode(true);',
     'deps.bridgeToPinia();',
     'deps.processVisual(visualData);'
   ].forEach((pattern) => {
@@ -101,6 +100,10 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'reader-import-runtime-'));
   const tempModulePath = path.join(tempDir, 'reader-import-runtime.mjs');
   const tempSource = moduleSource
+    .replace(
+      "import { requirePiniaRuntimeStores } from '../pinia-stores/runtime-registry.js'\n",
+      'const requirePiniaRuntimeStores = () => globalThis.__readerImportRuntimeTest.stores;\n'
+    )
     .replace(
       "import { configureSessionStateProvider } from './session-state-provider.js'\n",
       "const configureSessionStateProvider = globalThis.__readerImportRuntimeTest.configureSessionStateProvider;\n"
@@ -158,6 +161,10 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   };
 
   globalThis.__readerImportRuntimeTest = {
+    stores: { audio: {
+      setLocalTranscriptTitle(docId, name) { calls.localTitle = { docId, name }; },
+      notifyLocalImport() { calls.localAudioImported = true; }
+    } },
     configureSessionStateProvider(state) { calls.stateProvider.push(state); },
     initVisualVocab(deps) {
       calls.visual.push(deps);
@@ -188,7 +195,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     runtimeState: { id: 'runtime' },
     transcriptState: { segments: [{ id: 1 }], words: [{ word: 'one' }] },
     chunkState: { isChunkMode: false },
-    clozeState: { hasClozeData: false },
     playbackState: { autoFollow: true },
     audioIdentityApi: {
       buildCurrentSentenceDocId() { return 'doc-id'; }
@@ -247,6 +253,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.deepEqual(calls.visual[0].getWords(), [{ word: 'one' }]);
   assert.equal(calls.bindings[0].visualVocabApi, fakeVisualApi);
   assert.equal(calls.bindings[0].runtimeState, deps.runtimeState);
+  assert.equal(Object.hasOwn(calls.bindings[0], 'clozeState'), false);
   assert.equal(calls.chunkPipeline[0].state, deps.runtimeState);
   calls.chunkPipeline[0].enterChunkMode();
   assert.equal(toggledChunkMode, true);
@@ -256,6 +263,10 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.equal(calls.importHandlers[0].clearGeneratedAnnotationIndex, sessionFns.clearGeneratedAnnotationIndex);
   assert.equal(calls.importHandlers[0].syncAnnotationGenerationEntryStatus, sessionFns.syncAnnotationGenerationEntryStatus);
   assert.equal(calls.importHandlers[0].buildCurrentSentenceDocId(), 'doc-id');
+  calls.importHandlers[0].onTranscriptImported({ segments: [] }, { name: 'Local.json' });
+  assert.deepEqual(calls.localTitle, { docId: 'doc-id', name: 'Local.json' });
+  calls.importHandlers[0].onAudioImported();
+  assert.equal(calls.localAudioImported, true);
   assert.equal(calls.importHandlers[0].markedMap, markedMap);
   assert.equal(calls.importHandlers[0].forceUpdateUI, undefined);
 

@@ -9,12 +9,12 @@ export function createSessionStartupCleanupRuntime(deps = {}) {
   async function clearPersistedChunkSession() {
     state.chunkItems = [];
     state.hasAiChunkData = false;
-    state.manualChunkStates = {};
     namespace.selectedSentence = null;
     state.lastActiveChunkIndex = -1;
     state.lastAiPrevTapChunkIndex = -1;
     state.lastAiPrevTapAt = 0;
     try {
+      // Retain the existing cleanup of the retired manual-chunk preference.
       localStorageApi.removeItem('st.manualChunkStates');
       localStorageApi.removeItem('st.isChunkMode');
     } catch (error) {
@@ -40,10 +40,11 @@ export function createSessionStartupCleanupRuntime(deps = {}) {
       skippedKeys: ['transcript', 'marks', 'notes', 'visual', 'chunkData']
     });
     try {
+      // Retain the existing cleanup of the retired manual-chunk preference.
       localStorageApi.removeItem('st.manualChunkStates');
       localStorageApi.removeItem('st.isChunkMode');
       localStorageApi.removeItem('st.chunkCnVisible');
-      localStorageApi.removeItem('st.chunkCnHoldMode');
+      // The hold/toggle interaction is a user preference, independent of loaded content.
     } catch (error) {
       recordBestEffortFailure(error, {
         operationId: 'session-startup-setting-cleanup',

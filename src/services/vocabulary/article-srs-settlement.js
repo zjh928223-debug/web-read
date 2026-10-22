@@ -12,7 +12,17 @@ import {
   classifySrsCandidateText,
   normalizeSrsCandidateText,
 } from './srs-candidates.js';
-import { isPreviewGeneratedItem, PREVIEW_SCAN_SOURCE } from './preview-scan.js';
+import {
+  getSettlementMeaningRefinementInputKey,
+  isSettlementSimpleMeaningValid,
+} from './settlement-meaning-refinement.js';
+export const PREVIEW_SCAN_SOURCE = 'preview-scan';
+
+export function isPreviewGeneratedItem(item) {
+  const source = normalizeText(item && (item.source || item.provider || item.source_type || item.sourceType));
+  const targetId = normalizeText(item && (item.targetId || item.target_id));
+  return source === PREVIEW_SCAN_SOURCE || targetId.startsWith('preview-');
+}
 
 export const ARTICLE_SRS_SETTLEMENT_GROUPS = Object.freeze({
   READY: 'ready',
@@ -251,7 +261,7 @@ export async function buildArticleSrsSettlement(options = {}) {
       continue;
     }
 
-    candidates.push({
+    const candidate = {
       targetId,
       target_id: targetId,
       word: lemma,
@@ -283,7 +293,12 @@ export async function buildArticleSrsSettlement(options = {}) {
         source_url: sourceUrl,
         surrounding_text: buildSurroundingTextFromItem(item),
       },
-    });
+    };
+    // Volatile provenance of the current annotation, not a second saved cache.
+    if (isSettlementSimpleMeaningValid(simpleMeaning, classification.entry_type)) {
+      candidate.annotation_simple_meaning_input_key = getSettlementMeaningRefinementInputKey(candidate, sourceId);
+    }
+    candidates.push(candidate);
   }
 
   const deduped = dedupeSettlementCandidates(candidates);

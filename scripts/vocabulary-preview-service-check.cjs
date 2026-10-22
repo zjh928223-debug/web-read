@@ -11,7 +11,7 @@ async function importVocabularyApi(repoRoot) {
     'vocabulary-persistence.js',
     'srs-candidates.js',
     'srs-pending-candidates.js',
-    'preview-scan.js',
+
     'article-srs-settlement.js',
     'article-srs-settlement-progress.js',
     'settlement-meaning-refinement.js',
@@ -74,43 +74,7 @@ async function importVocabularyApi(repoRoot) {
   }
 }
 
-function createPreviewState() {
-  const words = [
-    'The',
-    'earthquake',
-    'triggered',
-    'seismic',
-    'seismic',
-    'waves',
-    'near',
-    'California',
-    'tectonic',
-    'tectonic',
-    'plates',
-    'grill',
-  ].map((word, index) => ({ word, globalIndex: index }));
-  return {
-    currentAudioKey: 'audio-preview',
-    documentId: 'doc-preview',
-    segments: [{
-      id: 'segment-1',
-      text: 'The earthquake triggered seismic seismic waves near California tectonic tectonic plates grill.',
-      words,
-    }],
-  };
-}
 
-function createPreviewStateFromWords(tokens) {
-  return {
-    currentAudioKey: 'audio-preview-filter',
-    documentId: 'doc-preview-filter',
-    segments: [{
-      id: 'segment-filter',
-      text: tokens.join(' '),
-      words: tokens.map((word, globalIndex) => ({ word, globalIndex })),
-    }],
-  };
-}
 
 function createManualItem(targetId, markedText, meaning, extra = {}) {
   return {
@@ -140,151 +104,11 @@ async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const api = await importVocabularyApi(repoRoot);
 
-  const previewState = createPreviewState();
-  const scan = await api.buildPreviewScan({
-    state: previewState,
-    sourceId: 'article-preview',
-    sourceTitle: 'Earthquake Article',
-    sourceUrl: 'https://example.test/earthquake',
-    markedMap: new Map([[1, true]]),
-    generatedItems: [{
-      targetId: 'preview-existing',
-      source: api.PREVIEW_SCAN_SOURCE,
-      markedText: 'plates',
-      occurrenceGlobalStart: 10,
-      occurrenceGlobalEnd: 10,
-    }],
-    vocabularyService: {
-      async getWordByLemma(lemma) {
-        return lemma === 'grill' ? { id: 'word-grill', lemma: 'grill', status: 'learning' } : null;
-      },
-    },
-    maxCount: 20,
-  });
-
-  const previewLemmas = scan.candidates.map((candidate) => candidate.lemma);
-  assert.ok(previewLemmas.includes('seismic'), 'preview scan should include high-value unknown words');
-  assert.ok(previewLemmas.includes('tectonic'), 'preview scan should include repeated article vocabulary');
-  assert.ok(previewLemmas.includes('california'), 'preview scan may include likely proper nouns in a separate group');
-  assert.equal(previewLemmas.includes('earthquake'), false, 'manually marked words should not be preview-scan candidates');
-  assert.equal(previewLemmas.includes('plates'), false, 'already explained preview words should not be re-sent');
-  assert.equal(previewLemmas.includes('grill'), false, 'existing SRS entries should not be preview-scan candidates');
-  assert.equal(scan.summary.properNounCount, 1);
-  assert.ok(scan.excluded.some((item) => item.reason === 'already_explained_current_article'));
-  assert.ok(scan.excluded.some((item) => item.reason === 'vocabulary_learning'));
-
-  let previewBulkLookupCalls = 0;
-  let previewPerWordLookupCalls = 0;
-  const bulkPreviewScan = await api.buildPreviewScan({
-    state: previewState,
-    sourceId: 'article-preview-bulk',
-    vocabularyService: {
-      async getWordsAndContextsByLemmas(lemmas) {
-        previewBulkLookupCalls += 1;
-        return new Map(lemmas.map((lemma) => [lemma, {
-          word: lemma === 'grill' ? { id: 'word-grill', lemma, status: 'learning' } : null,
-          contexts: [],
-        }]));
-      },
-      async getWordByLemma() {
-        previewPerWordLookupCalls += 1;
-        return null;
-      },
-    },
-    maxCount: 20,
-  });
-  assert.equal(previewBulkLookupCalls, 1, 'preview scan should read the vocabulary snapshot once for all candidate lemmas');
-  assert.equal(previewPerWordLookupCalls, 0, 'preview scan should not reload the full vocabulary snapshot per candidate');
-  assert.equal(bulkPreviewScan.candidates.some((candidate) => candidate.lemma === 'grill'), false);
-
-  const lightweightFilterScan = await api.buildPreviewScan({
-    state: createPreviewStateFromWords([
-      'Bus',
-      'three',
-      'cars',
-      'hour',
-      'video',
-      "He'll",
-      'happened',
-      'recovering',
-      'seismic',
-      'devastating',
-      'slammed',
-      'into',
-      'Florida',
-    ]),
-    sourceId: 'article-lightweight-filter',
-    maxCount: 20,
-  });
-  const filteredLemmas = lightweightFilterScan.candidates.map((candidate) => candidate.lemma);
-  ['bus', 'three', 'car', 'hour', 'video', 'he', 'happen', 'recover'].forEach((lemma) => {
-    assert.equal(filteredLemmas.includes(lemma), false, `${lemma} should be filtered as common vocabulary`);
-  });
-  assert.ok(filteredLemmas.includes('seismic'), 'B2+ vocabulary should remain in preview candidates');
-  assert.ok(filteredLemmas.includes('devastating'), 'news-relevant vocabulary should remain in preview candidates');
-  assert.ok(filteredLemmas.includes('slam into'), 'allowlisted news expressions should remain in preview candidates');
-  assert.ok(
-    lightweightFilterScan.candidates.some((candidate) => candidate.lemma === 'florida' && candidate.group === api.PREVIEW_SCAN_GROUPS.PROPER_NOUN),
-    'proper nouns should remain in a separate preview group'
-  );
-
-  const enrichedPreviewCandidates = scan.candidates.map((candidate, index) => index === 0 ? {
-    ...candidate,
-    dictionarySuggestion: {
-      available: true,
-      matchedBy: 'exact',
-      directMatch: { word: candidate.lemma, translation: 'must stay transient' },
-      normalizedCandidates: [],
-      lemmaCandidates: [],
-    },
-  } : candidate);
-  const template = api.buildPreviewAnnotationTemplate({
-    context: scan.context,
-    candidates: enrichedPreviewCandidates,
-    articleId: 'article-preview',
-  });
-  assert.equal(template.source, api.PREVIEW_SCAN_SOURCE);
-  assert.equal(template.items.length, scan.candidates.length);
-  assert.equal(template.items.every((item) => item.previewSource === api.PREVIEW_SCAN_SOURCE), true);
-  assert.equal(JSON.stringify(template).includes('dictionarySuggestion'), false);
-  assert.equal(JSON.stringify(template).includes('must stay transient'), false);
-
-  const seismicCandidate = scan.candidates.find((candidate) => candidate.lemma === 'seismic');
-  const californiaCandidate = scan.candidates.find((candidate) => candidate.lemma === 'california');
-  const generated = api.buildPreviewGeneratedItemsFromResult({
-    candidates: enrichedPreviewCandidates,
-    result: {
-      items: [{
-        targetId: seismicCandidate.targetId,
-        markedText: seismicCandidate.markedText,
-        meaning: 'In this article, seismic means related to earthquakes.',
-        simpleMeaning: 'earthquake-related',
-      }, {
-        targetId: californiaCandidate.targetId,
-        markedText: californiaCandidate.markedText,
-        meaning: 'A location name in the article.',
-        simpleMeaning: 'a place',
-      }, {
-        targetId: 'not-requested',
-        markedText: 'ignored',
-        meaning: 'ignored',
-      }],
-    },
-  });
-  assert.equal(JSON.stringify(generated).includes('dictionarySuggestion'), false);
-  assert.equal(JSON.stringify(generated).includes('must stay transient'), false);
-  assert.deepEqual(generated.map((item) => item.targetId), [seismicCandidate.targetId, californiaCandidate.targetId]);
-  assert.equal(generated[0].source, api.PREVIEW_SCAN_SOURCE);
-  assert.equal(generated[0].simpleMeaning, 'earthquake-related');
-  assert.equal(generated[0].source_id, 'article-preview');
-  assert.deepEqual(
-    api.getPreviewWordIndexesFromGeneratedItems([
-      ...generated,
-      { ...generated[0], targetId: 'preview-seismic-2', occurrenceGlobalStart: 20, occurrenceGlobalEnd: 20 },
-      { ...generated[0], targetId: 'preview-seismic-3', occurrenceGlobalStart: 21, occurrenceGlobalEnd: 21 },
-    ], { maxPerLemma: 2 }),
-    [3, 7, 20]
-  );
+  // Historical source recognition remains; scanner production and display are retired.
+  assert.equal(api.PREVIEW_SCAN_SOURCE, 'preview-scan');
+  assert.equal(api.isPreviewGeneratedItem({ source: ' preview-scan ' }), true);
+  assert.equal(api.isPreviewGeneratedItem({ target_id: 'preview-old', source: 'manual' }), true);
+  assert.equal(api.isPreviewGeneratedItem({ source: 'manual', targetId: 'word-1' }), false);
 
   const settlementItems = [
     createManualItem('manual-word', 'seismic', 'In this sentence, seismic means earthquake-related.', { simpleMeaning: 'earthquake-related' }),
@@ -570,6 +394,49 @@ async function main() {
   assert.equal(api.getSettlementMeaningRefinementCandidates(failedRefinementSettlement.candidates).length, 1, 'failed refinement should require an explicit user retry');
   assert.equal(api.getArticleSrsSettlementProgressStatus(failedRefinementSettlement.progress), 'refinement_failed');
 
+  const inputCandidate = { targetId: 'input-target', eligible: true, markedText: 'bank', entry_type: 'word', meaning: '河岸', context: { sentence: 'They stood on the bank.', meaning: '河岸' } };
+  const inputRepository = api.createInMemoryArticleSrsSettlementProgressRepository();
+  const inputClaim = await inputRepository.claimRefinementAttempt('article-input', [inputCandidate], { automatic: true, claimToken: 'input-first' });
+  await inputRepository.recordRefinement('article-input', [{ ...inputCandidate, simple_meaning: '河岸' }], { claimToken: inputClaim.claimToken });
+  const reusedInput = api.applyArticleSrsSettlementProgress({ candidates: [inputCandidate] }, await inputRepository.getProgress('article-input'));
+  assert.equal(api.getSettlementMeaningRefinementCandidates(reusedInput.candidates, { automatic: true }).length, 0);
+  const changedInput = { ...inputCandidate, meaning: '银行', context: { sentence: 'She went to the bank.', meaning: '银行' } };
+  const changedSettlement = api.applyArticleSrsSettlementProgress({ candidates: [changedInput] }, await inputRepository.getProgress('article-input'));
+  assert.equal(changedSettlement.candidates[0].simple_meaning, undefined, 'edited sense cannot reuse same-target cached meaning');
+  assert.equal(api.getSettlementMeaningRefinementCandidates(changedSettlement.candidates, { automatic: true }).length, 1);
+  const jointAnnotation = await api.buildArticleSrsSettlement({ sourceId: 'article-input', items: [{
+    targetId: 'input-target', markedText: 'bank', meaning: '银行', sourceSentence: 'She went to the bank.', simpleMeaning: '银行',
+  }] });
+  const currentJoint = api.applyArticleSrsSettlementProgress(jointAnnotation, await inputRepository.getProgress('article-input'));
+  assert.equal(currentJoint.candidates[0].simple_meaning, '银行', 'old mismatched refinement cannot erase current annotation output');
+  assert.equal(api.getSettlementMeaningRefinementCandidates(currentJoint.candidates, { automatic: true }).length, 0, 'fresh joint short needs no separate request');
+  const staleJoint = structuredClone(jointAnnotation);
+  staleJoint.candidates[0].meaning = '新的河岸解释';
+  staleJoint.candidates[0].context.meaning = '新的河岸解释';
+  const rejectedJoint = api.applyArticleSrsSettlementProgress(staleJoint, await inputRepository.getProgress('article-input'));
+  assert.equal(rejectedJoint.candidates[0].simple_meaning, undefined, 'a copied transient provenance cannot survive an input edit');
+  const badJointAnnotation = await api.buildArticleSrsSettlement({ sourceId: 'article-input', items: [{
+    targetId: 'new-invalid-joint', markedText: 'bank', meaning: '银行', sourceSentence: 'She went to the bank.', simpleMeaning: '长'.repeat(17),
+  }] });
+  assert.equal(api.getSettlementMeaningRefinementCandidates(badJointAnnotation.candidates, { automatic: true }).length, 1, 'bad optional short only falls back to refinement, not detail');
+  const replacement = await inputRepository.claimRefinementAttempt('article-input', [changedInput], { automatic: true, claimToken: 'input-new' });
+  assert.deepEqual(replacement.claimedTargetIds, ['input-target']);
+  await inputRepository.recordRefinement('article-input', [{ ...inputCandidate, simple_meaning: '河岸' }], { claimToken: inputClaim.claimToken });
+  assert.equal((await inputRepository.getProgress('article-input')).refinements[0].attempt_token, 'input-new');
+  assert.equal((await inputRepository.getProgress('article-input')).refinements[0].simple_meaning, null);
+  await inputRepository.recordRefinement('article-input', [changedInput], { claimToken: replacement.claimToken });
+  const missingSettlement = api.applyArticleSrsSettlementProgress({ candidates: [changedInput] }, await inputRepository.getProgress('article-input'));
+  assert.equal(api.getSettlementMeaningRefinementCandidates(missingSettlement.candidates, { automatic: true }).length, 0, 'missing returned result must not auto-loop');
+  assert.equal(api.getSettlementMeaningRefinementCandidates(missingSettlement.candidates).length, 1, 'missing result permits explicit retry');
+  assert.deepEqual((await inputRepository.claimRefinementAttempt('article-input', missingSettlement.candidates, { claimToken: 'missing-retry' })).claimedTargetIds, ['input-target']);
+  assert.equal(api.getSettlementMeaningRefinementCandidates(failedRefinementSettlement.candidates, { automatic: true }).length, 0);
+  assert.equal(api.getSettlementMeaningRefinementCandidates(stalePendingSettlement.candidates, { automatic: true }).length, 0);
+  const partialCandidates = [structuredClone(inputCandidate), { ...structuredClone(changedInput), targetId: 'omitted' }];
+  assert.deepEqual(api.applySettlementMeaningRefinementResult(partialCandidates, { items: [
+    { targetId: 'input-target', simpleMeaning: '河岸' }, { targetId: 'input-target', simpleMeaning: '银行' },
+  ] }), { requested: 2, updated: 1, rejected: 0, missing: 1 });
+  assert.equal(partialCandidates[0].simple_meaning, '河岸');
+
   const firstClaim = await concurrentProgressRepository.claimApplication('article-claim', {
     candidateTargetIds: ['target-once'],
     claimToken: 'apply-first',
@@ -611,6 +478,26 @@ async function main() {
   const ownershipProgress = await concurrentProgressRepository.getProgress('article-claim-ownership');
   assert.equal(ownershipProgress.application_claims[0].claim_token, 'owner-b', 'an expired owner must not release or finalize a replacement claim');
   assert.deepEqual(ownershipProgress.applied_target_ids, []);
+
+  const recoveryRepository = api.createInMemoryArticleSrsSettlementProgressRepository();
+  await recoveryRepository.claimApplication('article-recovery', {
+    candidateTargetIds: ['saved', 'remaining'], claimToken: 'recovery',
+  });
+  await recoveryRepository.setCandidateRemoved('article-recovery', 'saved', true);
+  await recoveryRepository.claimApplication('article-other', {
+    candidateTargetIds: ['saved'], claimToken: 'other',
+  });
+  const reconciled = await recoveryRepository.recordSettlementTargets(
+    'article-recovery', ['saved', 'remaining'], { appliedTargetIds: ['saved'] },
+  );
+  assert.deepEqual(reconciled.applied_target_ids, ['saved']);
+  assert.deepEqual(reconciled.removed_target_ids, []);
+  assert.deepEqual(reconciled.application_claims.map((claim) => claim.target_id), ['remaining'],
+    'real saved context reconciliation must clear only the completed claim');
+  assert.equal((await recoveryRepository.getProgress('article-other')).application_claims[0].claim_token, 'other');
+  assert.deepEqual((await recoveryRepository.claimApplication('article-recovery', {
+    candidateTargetIds: ['saved'], claimToken: 'retry',
+  })).claimedTargetIds, [], 'reopening a saved target must not reapply it');
 
   await settlementProgressRepository.setCandidateRemoved('article-settlement', 'manual-phrase', true, {
     updatedAt: '2026-07-10T01:59:00.000Z',
@@ -929,7 +816,8 @@ async function main() {
 
   const previewModuleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'vocabulary-preview-module.js'), 'utf8');
   const progressModuleSource = fs.readFileSync(path.join(repoRoot, 'src', 'services', 'vocabulary', 'article-srs-settlement-progress.js'), 'utf8');
-  assert.ok(previewModuleSource.includes('refinementInFlight'), 'AI refinement should guard against repeated clicks while a request is in flight');
+  const dialogModuleSource = fs.readFileSync(path.join(repoRoot, 'src', 'features', 'vocabulary-preview', 'create-article-settlement-dialog.js'), 'utf8');
+  assert.ok(dialogModuleSource.includes('refinementInFlight'), 'AI refinement should guard against repeated clicks while a request is in flight');
   assert.ok(previewModuleSource.includes('singleRequest: true'), 'AI refinement payload should request a single backend call');
   assert.ok(previewModuleSource.includes('maxApiCalls: 1'), 'AI refinement payload should cap Gemini calls for one refinement run');
   assert.ok(previewModuleSource.includes('createIndexedDbArticleSrsSettlementProgressRepository'), 'article settlement should use persistent progress storage');
@@ -937,13 +825,13 @@ async function main() {
   assert.ok(previewModuleSource.includes('settlementProgressRepository.recordRefinement'), 'AI refinement results should be persisted before the dialog is closed');
   assert.ok(previewModuleSource.includes('settlementProgressRepository.recordApplication'), 'applied SRS targets should be persisted to prevent duplicate settlement');
   assert.ok(previewModuleSource.includes('settlementProgressRepository.recordSkip'), 'explicitly skipped settlement targets should stay skipped after reload');
-  assert.ok(previewModuleSource.includes('settlementProgressRepository.setCandidateRemoved'), 'per-item X selections should persist immediately instead of waiting for final apply');
+  assert.ok(previewModuleSource.includes('settlementProgressRepository.setCandidateRemoved'), 'per-item draft selections should persist immediately instead of waiting for final apply');
   assert.ok(previewModuleSource.includes('getArticleSrsSettlementProgressStatus'), 'the settlement button should reflect persisted article progress');
   assert.ok(previewModuleSource.includes('recordSettlementTargets'), 'opening a legacy settlement should backfill its durable target universe');
   assert.ok(previewModuleSource.includes('释义已精简'), 'the settlement button should expose the persisted refinement mark');
-  assert.ok(previewModuleSource.includes('已学完本篇'), 'the settlement button should expose a durable completed state');
+  assert.ok(previewModuleSource.includes('本篇已处理完'), 'the settlement button should expose processing completion without claiming every target was learned');
   assert.equal(previewModuleSource.includes('windowObject.prompt(SETTLEMENT_REFINEMENT_PROMPT'), false, 'saved system credentials should be used without a browser API-key prompt');
-  assert.ok(previewModuleSource.includes('articleId: settlement.articleId'), 'dialog actions should keep the article identity captured when the settlement was opened');
+  assert.ok(dialogModuleSource.includes('articleId: settlement.articleId'), 'dialog actions should keep the article identity captured when the settlement was opened');
   assert.ok(previewModuleSource.includes('options.articleId'), 'async settlement writes should not resolve their progress key from mutable current state after completion');
   assert.ok(previewModuleSource.includes('settlement.summary.processed > 0'), 'legacy same-article SRS contexts should also surface a persistent processed badge after opening');
   assert.ok(previewModuleSource.includes('settlementProgressRepository.claimRefinementAttempt'), 'refinement attempts should be atomically claimed before the backend request is dispatched');

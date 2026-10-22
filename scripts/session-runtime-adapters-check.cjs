@@ -36,7 +36,10 @@ async function main() {
       return { kind: 'lifecycle' };
     },
     requirePiniaRuntimeStores() { return { audio: globalThis.__sessionAudioStore }; },
-    initPiniaBridge() { return function bridgeToPinia() {}; }
+    initPiniaBridge(deps) {
+      assert.deepEqual(Object.keys(deps).sort(), ['chunkState', 'transcriptState']);
+      return function bridgeToPinia() {};
+    }
   };
   const encodedSource = Buffer.from(`${declarations}\n${executableSource}`, 'utf8').toString('base64');
   const { createSessionRuntimeAdapters } = await import(`data:text/javascript;base64,${encodedSource}#${Date.now()}`);

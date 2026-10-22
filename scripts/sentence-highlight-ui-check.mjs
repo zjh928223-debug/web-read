@@ -138,18 +138,18 @@ try {
     const runtime = window.__sentenceHighlightRuntimeState
     const store = window.__sentenceHighlightStores.transcript
     runtime.markedMap.clear()
-    runtime.markedMap.set(2, { globalIndex: 2, word: 'B-1-one', sourceType: 'check' })
-    store.previewVocabularyWordIndexes = [3]
     store.activeSegIdx = 1
     const details = document.getElementById('note-1')
     if (details) details.open = true
   })
+  // Exercise the retained mark owner; the retired preview state no longer forces a render.
+  await page.locator('#word-2').click()
+  await page.keyboard.press('m')
   await page.waitForFunction(() => {
     const active = document.querySelectorAll('#transcript-vue-container .sentence-active')
     return active.length === 1
       && active[0].id === 'segment-1'
       && document.querySelector('#word-2')?.classList.contains('marked')
-      && document.querySelector('#word-3')?.classList.contains('preview-vocabulary-word')
       && document.getElementById('note-1')?.open === true
   })
 
@@ -180,7 +180,6 @@ try {
       && chunk.querySelector('.chunk-active')?.id === 'chunk-1'
       && transcript.querySelectorAll('.sentence-active').length === 0
       && chunk.querySelector('#chunk-word-2')?.classList.contains('marked')
-      && chunk.querySelector('#chunk-word-3')?.classList.contains('preview-vocabulary-word')
   }, null, { timeout: 10_000 })
 
   await page.evaluate(() => {
@@ -276,8 +275,13 @@ try {
     const root = document.getElementById('vue-root')
     const pinia = window.__sentenceHighlightRemountPinia
     if (!root || !pinia) throw new Error('Vue app remount dependencies are unavailable')
+    const response = await fetch('/src/App.vue')
+    if (!response.ok) throw new Error('Current App module is unavailable for remount')
+    const appModule = await response.text()
+    const vueUrl = appModule.match(/from\s+["']([^"']*\/vue\.js(?:\?[^"']*)?)["']/)?.[1]
+    if (!vueUrl) throw new Error('Current Vite Vue dependency is unavailable for remount')
     const [{ createApp }, { default: App }] = await Promise.all([
-      import('/node_modules/.vite/deps/vue.js'),
+      import(vueUrl),
       import('/src/App.vue'),
     ])
     const app = createApp(App)
@@ -300,14 +304,12 @@ try {
   })
 
   await page.evaluate(() => {
-    window.__sentenceHighlightStores.transcript.previewVocabularyWordIndexes = [0]
   })
   await page.waitForFunction(() => {
     const transcript = document.getElementById('transcript-vue-container')
     const chunk = document.getElementById('chunk-vue-container')
     return chunk?.classList.contains('reader-view-hidden') === false
       && transcript?.classList.contains('reader-view-hidden') === true
-      && transcript.querySelector('#word-0')?.classList.contains('preview-vocabulary-word') === true
   })
 
   assert.deepEqual(consoleErrors, [])

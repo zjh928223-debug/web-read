@@ -1,18 +1,20 @@
 <template>
-  <section class="learning-page-load-notice" role="dialog" :aria-label="`打开${pageName}`" aria-modal="true">
+  <section class="learning-page-load-notice" data-ui-theme="light" role="dialog" :aria-label="`打开${pageName}`" aria-modal="true">
     <div class="learning-page-load-notice-card">
       <p role="status" aria-live="polite">
         {{ failed
           ? (retryFailed ? `${pageName}仍无法打开。请返回阅读器，网络恢复后手动刷新页面再试。` : `${pageName}暂时无法打开，请重试。`)
           : `正在打开${pageName}…` }}
       </p>
-      <button v-if="failed" class="small-btn" type="button" @click="$emit('retry')">重试</button>
-      <button class="small-btn" type="button" @click="$emit('close')">返回阅读器</button>
+      <Button v-if="failed" variant="outline" size="default" data-ui-owner="learning" class="learning-page-load-notice-action" type="button" @click="$emit('retry')">重试</Button>
+      <Button variant="default" size="default" data-ui-owner="learning" class="learning-page-load-notice-action" type="button" @click="$emit('close')">返回阅读器</Button>
     </div>
   </section>
 </template>
 
 <script setup>
+import { Button } from './ui/button/index.js'
+
 defineProps({ pageName: { type: String, required: true }, failed: Boolean, retryFailed: Boolean })
 defineEmits(['retry', 'close'])
 </script>
@@ -31,8 +33,10 @@ defineEmits(['retry', 'close'])
   max-width: 420px;
   padding: 24px;
   border-radius: 12px;
-  background: var(--bg-color, #fff);
-  color: var(--text-main);
+  border: 1px solid var(--learning-border);
+  background: var(--learning-background);
+  color: var(--learning-foreground);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
 }
-.small-btn + .small-btn { margin-left: 12px; }
+.learning-page-load-notice-action + .learning-page-load-notice-action { margin-left: 12px; }
 </style>

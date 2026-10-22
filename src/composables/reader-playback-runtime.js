@@ -14,7 +14,9 @@ export function initReaderPlaybackRuntime(deps = {}) {
   var annotationBubbleResolverApi = initAnnotationBubbleResolver({
     getWords() { return deps.transcriptState.words },
     markedMap: deps.markedMap,
-    vocabMatchMap: deps.vocabMatchMap
+    vocabMatchMap: deps.vocabMatchMap,
+    onTargetSelected: deps.onAnnotationTargetSelected,
+    onClose: deps.onAnnotationBubbleClose
   })
   var notifyAnnotationBubbleWordClick = annotationBubbleResolverApi.notifyAnnotationBubbleWordClick
 

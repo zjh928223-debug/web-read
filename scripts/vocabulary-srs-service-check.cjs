@@ -12,7 +12,7 @@ async function importVocabularyApi(repoRoot) {
     'vocabulary-persistence.js',
     'srs-candidates.js',
     'srs-pending-candidates.js',
-    'preview-scan.js',
+
     'article-srs-settlement.js',
     'article-srs-settlement-progress.js',
     'settlement-meaning-refinement.js',

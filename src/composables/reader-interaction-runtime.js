@@ -20,6 +20,8 @@ export function initReaderInteractionRuntime(deps = {}) {
     bsFindActiveHelper: deps.bsFindActiveHelper,
     markedMap: deps.markedMap,
     vocabMatchMap: deps.vocabMatchMap,
+    onAnnotationTargetSelected: deps.onAnnotationTargetSelected,
+    onAnnotationBubbleClose: deps.onAnnotationBubbleClose,
     getSelection: deps.getSelection,
     playbackModule: deps.playbackModule,
     getWindow: deps.getWindow

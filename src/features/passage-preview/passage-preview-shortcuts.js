@@ -93,7 +93,17 @@ export function shortcutFromKeyboardEvent(event) {
   return normalizeShortcut(key)
 }
 
+export function isComposingKeyboardEvent(event) {
+  const key = String(event?.key || '')
+  const keyCode = Number(event?.keyCode || event?.which || 0)
+  return Boolean(event?.isComposing)
+    || keyCode === 229
+    || key === 'Process'
+    || key === 'Dead'
+}
+
 export function passagePreviewActionForKeyboardEvent(event, shortcuts) {
+  if (isComposingKeyboardEvent(event)) return ''
   const shortcut = shortcutFromKeyboardEvent(event)
   if (!shortcut) return ''
   return PASSAGE_PREVIEW_SHORTCUT_ACTIONS.find((action) => shortcuts?.[action.id] === shortcut)?.id || ''

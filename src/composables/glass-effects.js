@@ -2,10 +2,12 @@
 
     function init(lockChunkDimensionsFn) {
       if (typeof activeDispose === 'function') activeDispose();
+      var targetPanelSelector = [
+        '.controls','.extra-controls','.transcript-header'
+      ].join(', ');
       var panelSelector = [
-        '.controls','.extra-controls','.transcript-header','#helper-panel',
-      '#style-editor-modal','#chunk-style-modal',
-      '#app-toast','.control-group','.hotkey-box'
+      '#chunk-style-modal',
+      '#app-toast'
       ].join(', ');
 
     var buttonSelector = [
@@ -72,11 +74,31 @@
       });
     }
 
-    function decorateExisting() {
-      document.querySelectorAll(panelSelector).forEach(function (el) {
+      function clearGlassPanel(el) {
+        if (!el) return;
+        el.classList.remove('glass-panel');
+        el.classList.remove('ui-glass-dynamic');
+        if (el.dataset) delete el.dataset.glassBound;
+        if (el.style && typeof el.style.removeProperty === 'function') {
+          el.style.removeProperty('--glass-mx');
+          el.style.removeProperty('--glass-my');
+        }
+      }
+
+      function decoratePanel(el) {
+        if (!el || !el.matches) return;
+        if (el.matches(targetPanelSelector)) {
+          clearGlassPanel(el);
+          return;
+        }
+        if (!el.matches(panelSelector)) return;
         el.classList.add('glass-panel');
         bindGlassDynamic(el);
-      });
+      }
+
+    function decorateExisting() {
+        document.querySelectorAll(targetPanelSelector).forEach(clearGlassPanel);
+        document.querySelectorAll(panelSelector).forEach(decoratePanel);
       document.querySelectorAll(buttonSelector).forEach(function (el) {
         decorateButton(el);
       });
@@ -91,18 +113,13 @@
       for (var i = 0; i < nodes.length; i++) {
           var node = nodes[i];
           if (!(node instanceof Element)) continue;
-          if (node.matches && node.matches(panelSelector)) {
-            node.classList.add('glass-panel');
-            bindGlassDynamic(node);
-          }
+           decoratePanel(node);
           if (node.matches && node.matches(buttonSelector)) {
             decorateButton(node);
           }
           if (node.querySelectorAll) {
-            node.querySelectorAll(panelSelector).forEach(function (el) {
-              el.classList.add('glass-panel');
-              bindGlassDynamic(el);
-            });
+             node.querySelectorAll(targetPanelSelector).forEach(clearGlassPanel);
+             node.querySelectorAll(panelSelector).forEach(decoratePanel);
             node.querySelectorAll(buttonSelector).forEach(function (el) {
               decorateButton(el);
             });
@@ -141,5 +158,3 @@
   export function initGlassEffects() {
     return init();
   }
-
-  window.__glassEffects = { init: init };

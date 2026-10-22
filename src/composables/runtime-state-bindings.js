@@ -12,7 +12,6 @@ export function configureRuntimeStateBindings(options) {
     runtimeState,
     transcriptState,
     chunkState,
-    clozeState,
     playbackState,
     audioIdentityApi,
     hotkeyStateApi,
@@ -28,7 +27,6 @@ export function configureRuntimeStateBindings(options) {
 
   defineRuntimeStateBinding(runtimeState, 'chunkItems', () => chunkState.chunkItems, (value) => { chunkState.chunkItems = value; });
   defineRuntimeStateBinding(runtimeState, 'hasAiChunkData', () => chunkState.hasAiChunkData, (value) => { chunkState.hasAiChunkData = value; });
-  defineRuntimeStateBinding(runtimeState, 'manualChunkStates', () => chunkState.manualChunkStates, (value) => { chunkState.manualChunkStates = value; });
   defineRuntimeStateBinding(runtimeState, 'isChunkMode', () => chunkState.isChunkMode, (value) => { chunkState.isChunkMode = value; });
   defineRuntimeStateBinding(runtimeState, 'chunkCnVisible', () => chunkState.chunkCnVisible, (value) => { chunkState.chunkCnVisible = value; });
   defineRuntimeStateBinding(runtimeState, 'chunkCnHoldMode', () => chunkState.chunkCnHoldMode, (value) => { chunkState.chunkCnHoldMode = value; });
@@ -38,9 +36,6 @@ export function configureRuntimeStateBindings(options) {
   defineRuntimeStateBinding(runtimeState, 'lastAiPrevTapChunkIndex', () => chunkState.lastAiPrevTapChunkIndex, (value) => { chunkState.lastAiPrevTapChunkIndex = value; });
   defineRuntimeStateBinding(runtimeState, 'lastAiPrevTapAt', () => chunkState.lastAiPrevTapAt, (value) => { chunkState.lastAiPrevTapAt = value; });
 
-  defineRuntimeStateBinding(runtimeState, 'hasClozeData', () => clozeState.hasClozeData, (value) => { clozeState.hasClozeData = value; });
-  defineRuntimeStateBinding(runtimeState, 'clozeItems', () => clozeState.clozeItems, (value) => { clozeState.clozeItems = value; });
-  defineRuntimeStateBinding(runtimeState, 'clozeAnswerState', () => clozeState.clozeAnswerState, (value) => { clozeState.clozeAnswerState = value; });
 
   defineRuntimeStateBinding(runtimeState, 'autoFollow', () => playbackState.autoFollow, (value) => { playbackState.autoFollow = value; });
   defineRuntimeStateBinding(runtimeState, 'userScrollSuppress', () => playbackState.userScrollSuppress, (value) => { playbackState.userScrollSuppress = value; });
@@ -60,6 +55,8 @@ export function configureRuntimeStateBindings(options) {
   defineRuntimeStateBinding(runtimeState, 'chunkShadowKey', () => hotkeyStateApi.chunkShadowKey, (value) => { hotkeyStateApi.setChunkShadowKey(value); });
   defineRuntimeStateBinding(runtimeState, 'backwardKey', () => hotkeyStateApi.backwardKey, (value) => { hotkeyStateApi.setBackwardKey(value); });
   defineRuntimeStateBinding(runtimeState, 'forwardKey', () => hotkeyStateApi.forwardKey, (value) => { hotkeyStateApi.setForwardKey(value); });
+  defineRuntimeStateBinding(runtimeState, 'prevAnnotationWordKey', () => hotkeyStateApi.prevAnnotationWordKey, (value) => { hotkeyStateApi.setPrevAnnotationWordKey(value); });
+  defineRuntimeStateBinding(runtimeState, 'nextAnnotationWordKey', () => hotkeyStateApi.nextAnnotationWordKey, (value) => { hotkeyStateApi.setNextAnnotationWordKey(value); });
 
   defineRuntimeStateBinding(runtimeState, 'markedMap', () => marksStateApi.markedMap, (value) => { marksStateApi.setMarkedMap(value); });
 

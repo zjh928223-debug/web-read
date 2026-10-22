@@ -3,7 +3,7 @@ import { cn } from './utils.js'
 
 const DEFAULT_NATIVE_BUTTON_OPTIONS = Object.freeze({
   variant: 'outline',
-  size: 'sm',
+  size: 'default',
 })
 
 function addClasses(element, className) {

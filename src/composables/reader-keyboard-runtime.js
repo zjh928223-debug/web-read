@@ -1,6 +1,9 @@
+import { bsFindActive } from '../utils/playback-index.js';
+
 export function initReaderKeyboardRuntime(deps = {}) {
-  deps.keyboardModule.init({
+  const keyboardController = deps.keyboardModule.init({
     audioPlayer: deps.audioPlayer,
+    isReaderShortcutEventAllowed: deps.isReaderShortcutEventAllowed,
     isChunkMode: function () { return deps.chunkState.isChunkMode },
     chunkCnHoldMode: function () { return deps.chunkState.chunkCnHoldMode },
     markKey: deps.hotkeyStateApi.markKey,
@@ -15,10 +18,19 @@ export function initReaderKeyboardRuntime(deps = {}) {
     getChunkShadowKey: function () { return deps.hotkeyStateApi.chunkShadowKey },
     getBackwardKey: function () { return deps.hotkeyStateApi.backwardKey },
     getForwardKey: function () { return deps.hotkeyStateApi.forwardKey },
-    toggleMarkCurrent: function () {
+    getPrevAnnotationWordKey: function () { return deps.hotkeyStateApi.prevAnnotationWordKey },
+    getNextAnnotationWordKey: function () { return deps.hotkeyStateApi.nextAnnotationWordKey },
+    navigateAnnotationWord: direction => deps.wordNavigationApi?.navigate(direction),
+    closeAnnotationNavigation: () => deps.wordNavigationApi?.close(),
+    toggleMarkCurrent: function (activeMedia = deps.audioPlayer) {
+      // Playing marks use the clock sampled in this keydown, not the UI's last frame.
+      // Paused marks keep the existing explicit click/position target.
+      const wordIndex = activeMedia?.paused === false
+        ? bsFindActive(deps.transcriptState.wordStarts, deps.transcriptState.words, activeMedia.currentTime)
+        : deps.transcriptState.currentWordIndex;
       return deps.marksStore.toggleMark(
         deps.marksStateApi.markedMap,
-        deps.transcriptState.currentWordIndex,
+        wordIndex,
         deps.transcriptState.words,
         deps.saveToDB,
         deps.syncAnnotationGenerationEntryStatus
@@ -39,6 +51,8 @@ export function initReaderKeyboardRuntime(deps = {}) {
     hotkeyAnnotationBubbleInput: deps.hotkeyAnnotationBubbleInput,
     hotkeyBackwardInput: deps.hotkeyBackwardInput,
     hotkeyForwardInput: deps.hotkeyForwardInput,
+    hotkeyPrevAnnotationWordInput: deps.hotkeyPrevAnnotationWordInput,
+    hotkeyNextAnnotationWordInput: deps.hotkeyNextAnnotationWordInput,
     hotkeyChunkCnInput: deps.hotkeyChunkCnInput,
     hotkeyChunkShadowInput: deps.hotkeyChunkShadowInput,
     highlightColorInput: deps.highlightColorInput,
@@ -50,6 +64,14 @@ export function initReaderKeyboardRuntime(deps = {}) {
     setChunkCnKey: deps.hotkeyStateApi.setChunkCnKey,
     setChunkShadowKey: deps.hotkeyStateApi.setChunkShadowKey,
     setBackwardKey: deps.hotkeyStateApi.setBackwardKey,
-    setForwardKey: deps.hotkeyStateApi.setForwardKey
+    setForwardKey: deps.hotkeyStateApi.setForwardKey,
+    setPrevAnnotationWordKey: deps.hotkeyStateApi.setPrevAnnotationWordKey,
+    setNextAnnotationWordKey: deps.hotkeyStateApi.setNextAnnotationWordKey
   })
+  return {
+    dispose() {
+      keyboardController?.dispose()
+      deps.disposeNavigation?.()
+    }
+  }
 }

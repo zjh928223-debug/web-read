@@ -29,6 +29,7 @@ const PASSAGE_PREVIEW_STORAGE_KEYS = Object.freeze([
   { key: 'vocabulary.passage-preview.shortcut.translation.v1', schemaVersion: 'passage-preview.shortcut.v1', rawText: true },
   { key: 'vocabulary.passage-preview.shortcut.context.v1', schemaVersion: 'passage-preview.shortcut.v1', rawText: true },
   { key: 'vocabulary.passage-preview.translation-display-mode.v1', schemaVersion: 'passage-preview.display-mode.v1', rawText: true },
+  { key: 'vocabulary.passage-preview.translation-display-mode.v2', schemaVersion: 'passage-preview.display-mode.v2', rawText: true },
   { key: 'vocabulary.passage-preview.acquisition.v1', schemaVersion: 'passage-preview.acquisition.v1' },
   { key: 'vocabulary.passage-preview.delayed-check.v1', schemaVersion: 'passage-preview.delayed-check.v1' },
   { key: 'vocabulary.passage-preview.reacquisition-progress.v1', schemaVersion: 'passage-preview.reacquisition-progress.v1', allowLegacyValue: true },

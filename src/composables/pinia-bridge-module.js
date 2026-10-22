@@ -7,9 +7,7 @@ export function bridgeToPinia() {
   var ps = requirePiniaRuntimeStores();
   var transcriptState = activeSources.transcriptState;
   var chunkState = activeSources.chunkState;
-  var clozeState = activeSources.clozeState;
   var chunkSnapshot = chunkState.getSnapshot();
-  var clozeSnapshot = clozeState.getSnapshot();
   ps.transcript.segments = transcriptState.segments;
   ps.transcript.words = transcriptState.words;
   ps.transcript.wordStarts = transcriptState.wordStarts;
@@ -21,16 +19,12 @@ export function bridgeToPinia() {
   ps.chunk.chunkCNHoldMode = chunkSnapshot.chunkCnHoldMode;
   ps.chunk.chunkFocusMode = chunkSnapshot.chunkCnMode === 'focus';
   ps.chunk.chunkShadowVisible = chunkSnapshot.isChunkShadowOn;
-  ps.cloze.items = clozeSnapshot.clozeItems;
-  ps.cloze.hasData = clozeSnapshot.hasClozeData;
-  ps.cloze.answerState = clozeSnapshot.clozeAnswerState;
 }
 
 export function initPiniaBridge(deps = {}) {
   activeSources = Object.freeze({
     transcriptState: deps.transcriptState,
-    chunkState: deps.chunkState,
-    clozeState: deps.clozeState
+    chunkState: deps.chunkState
   });
   return bridgeToPinia;
 }

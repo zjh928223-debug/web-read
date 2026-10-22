@@ -11,6 +11,7 @@ const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 
 const featureDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
 const appRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-app-runtime.js'), 'utf8');
 const glassEffectsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'glass-effects.js'), 'utf8');
+const stylesSource = fs.readFileSync(path.join(repoRoot, 'styles.css'), 'utf8');
 const sessionInitSource = [
   'session-runtime-assembly.js',
   'session-restore-runtime.js',
@@ -79,6 +80,30 @@ assert.ok(
   glassEffectsSource.includes("owner === 'learning'"),
   'glass-effects should leave explicitly migrated learning controls undecorated'
 );
+assert.ok(
+  glassEffectsSource.includes("var targetPanelSelector = ["),
+  'glass-effects should keep the reader control surfaces outside the glass panel owner set'
+);
+assert.equal(glassEffectsSource.includes('#helper-panel'), false, 'retired helper panel should stay outside glass effects');
+assert.equal(glassEffectsSource.includes('#style-editor-modal'), false, 'retired style editor should stay outside glass effects');
+assert.ok(
+  glassEffectsSource.includes('#chunk-style-modal') && glassEffectsSource.includes('#app-toast'),
+  'retained chunk modal and app toast should remain glass panel consumers'
+);
+assert.equal(stylesSource.includes('#helper-panel'), false, 'styles should not retain helper panel glass decoration');
+assert.equal(stylesSource.includes('#style-editor-modal'), false, 'styles should not retain retired style editor glass decoration');
+assert.ok(
+  glassEffectsSource.includes('node.querySelectorAll(targetPanelSelector).forEach(clearGlassPanel);'),
+  'glass-effects should clear target panel decoration on dynamically inserted nodes'
+);
+assert.ok(
+  stylesSource.includes('    .transcript-header::before,\n    .transcript-header::after {'),
+  'styles should explicitly suppress decorative pseudo-elements on reader control surfaces'
+);
+assert.ok(
+  stylesSource.includes('      background: var(--card-bg);\n      backdrop-filter: none;'),
+  'transcript-header should use the reader card mapping without blur'
+);
 
 function verifyGlassLifecycle() {
   class FakeElement {
@@ -87,8 +112,18 @@ function verifyGlassLifecycle() {
       this.dataset = {};
       this.listeners = new Map();
       this.children = [];
-      this.classList = { add() {}, remove() {} };
-      this.style = { setProperty() {} };
+      this.classes = new Set();
+      this.classList = {
+        add: (...names) => names.forEach((name) => this.classes.add(name)),
+        remove: (...names) => names.forEach((name) => this.classes.delete(name)),
+        contains: (name) => this.classes.has(name)
+      };
+      this.styleValues = new Map();
+      this.style = {
+        setProperty: (name, value) => this.styleValues.set(name, value),
+        removeProperty: (name) => this.styleValues.delete(name),
+        getPropertyValue: (name) => this.styleValues.get(name) || ''
+      };
     }
     matches(selector) { return selector.split(', ').some((item) => this.matchesSet.has(item)); }
     querySelectorAll(selector) { return this.children.filter((child) => child.matches(selector)); }
@@ -99,10 +134,21 @@ function verifyGlassLifecycle() {
     getBoundingClientRect() { return { left: 0, top: 0, width: 100, height: 100 }; }
   }
 
-  const panel = new FakeElement(['.controls']);
+  const panel = new FakeElement(['#chunk-style-modal']);
+  const controls = new FakeElement(['.controls']);
+  const extraControls = new FakeElement(['.extra-controls']);
+  const transcriptHeader = new FakeElement(['.transcript-header']);
+  [controls, extraControls, transcriptHeader].forEach((target) => {
+    target.classList.add('glass-panel', 'ui-glass-dynamic');
+    target.dataset.glassBound = '1';
+    target.style.setProperty('--glass-mx', '25%');
+    target.style.setProperty('--glass-my', '75%');
+  });
+  const controlGroup = new FakeElement(['.control-group']);
+  const hotkeyBox = new FakeElement(['.hotkey-box']);
   const button = new FakeElement(['button']);
   const root = new FakeElement();
-  root.children.push(panel, button);
+  root.children.push(panel, controls, extraControls, transcriptHeader, controlGroup, hotkeyBox, button);
   let observerTarget = null;
   let observerDisconnected = 0;
   const observers = [];
@@ -135,15 +181,36 @@ function verifyGlassLifecycle() {
   const deps = { listChunkNotes: () => [], getChunkNoteTagById: () => null, getChunkNoteContentBoxSize: () => null };
 
   const disposeFirst = context.__initGlassEffects(deps);
+  assert.equal(Object.hasOwn(context.window, '__glassEffects'), false, 'named initialization must not republish retired global');
   assert.equal(typeof disposeFirst, 'function');
   assert.equal(observerTarget, root, 'observer should use the bounded reader root');
   assert.equal(panel.listeners.size, 3);
+  [controls, extraControls, transcriptHeader].forEach((target) => {
+    assert.equal(target.listeners.size, 0, 'reader control surfaces should not receive glass pointer effects');
+    assert.equal(target.classList.contains('glass-panel'), false, 'reader control surfaces should not receive glass-panel');
+    assert.equal(target.classList.contains('ui-glass-dynamic'), false, 'reader control surfaces should not receive ui-glass-dynamic');
+    assert.equal(target.dataset.glassBound, undefined, 'reader control surfaces should not be marked glass-bound');
+    assert.equal(target.style.getPropertyValue('--glass-mx'), '', 'reader control surfaces should not keep pointer state');
+    assert.equal(target.style.getPropertyValue('--glass-my'), '', 'reader control surfaces should not keep pointer state');
+  });
+  assert.equal(controlGroup.listeners.size, 0, 'reader control groups should not receive glass pointer effects');
+  assert.equal(hotkeyBox.listeners.size, 0, 'reader hotkey boxes should not receive glass pointer effects');
+  const dynamicTarget = new FakeElement(['.extra-controls']);
+  const dynamicPanel = new FakeElement(['#app-toast']);
+  root.children.push(dynamicTarget, dynamicPanel);
+  observers[0].callback([{ addedNodes: [dynamicTarget, dynamicPanel] }]);
+  for (const callback of rafCallbacks.values()) callback();
+  assert.equal(dynamicTarget.listeners.size, 0, 'dynamically inserted reader control surfaces should stay undecorated');
+  assert.equal(dynamicTarget.classList.contains('glass-panel'), false);
+  assert.equal(dynamicPanel.listeners.size, 3, 'dynamically inserted retained panels should receive glass pointer effects');
   const disposeSecond = context.__initGlassEffects(deps);
   assert.equal(observerDisconnected, 1, 'reinitialization should dispose the previous observer');
   assert.equal(panel.listeners.size, 3, 'reinitialization should not duplicate pointer listeners');
+  assert.equal(dynamicPanel.listeners.size, 3, 'reinitialization should preserve one listener set on dynamic retained panels');
   disposeSecond();
   assert.equal(observerDisconnected, 2);
   assert.equal(panel.listeners.size, 0, 'dispose should remove pointer listeners');
+  assert.equal(dynamicPanel.listeners.size, 0, 'dispose should remove dynamic retained panel listeners');
 }
 
 verifyGlassLifecycle();

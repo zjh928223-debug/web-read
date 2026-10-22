@@ -1,6 +1,6 @@
 html.srs-review-standalone-document {
-  color: #17233a;
-  background: #f7f8fb;
+  color: var(--rw-ui-light-foreground);
+  background: var(--rw-ui-light-background);
   font-family: Arial, sans-serif;
   font-synthesis: none;
 }
@@ -9,7 +9,7 @@ html.srs-review-standalone-document body {
   margin: 0;
   min-width: 0;
   min-height: 100vh;
-  background: #f7f8fb;
+  background: var(--rw-ui-light-background);
 }
 
 .srs-review-page,
@@ -17,21 +17,15 @@ html.srs-review-standalone-document body {
   box-sizing: border-box;
 }
 
-.srs-review-page button:not([data-ui-owner="learning"]),
 .srs-review-page audio {
   font: inherit;
 }
 
 .srs-review-page {
-  --srs-border: #dfe4ed;
-  --srs-text: #17233a;
-  --srs-muted: #6f7b90;
-  --srs-primary: #3158c8;
-  --srs-glass-bg: rgba(229, 238, 248, .78);
-  --srs-glass-border: rgba(255, 255, 255, .72);
-  --srs-glass-shadow:
-    0 8px 22px rgba(39, 67, 112, .11),
-    inset 0 1px 0 rgba(255, 255, 255, .82);
+  --srs-border: var(--learning-border);
+  --srs-text: var(--learning-foreground);
+  --srs-muted: var(--learning-muted-foreground);
+  --srs-primary: var(--learning-primary);
   display: flex;
   flex-direction: column;
   height: 100dvh;
@@ -40,9 +34,7 @@ html.srs-review-standalone-document body {
   color: var(--srs-text);
   font-family: Arial, sans-serif;
   font-synthesis: none;
-  background:
-    radial-gradient(circle at 50% -18%, rgba(49, 88, 200, .06), transparent 34%),
-    #f7f8fb;
+  background: var(--learning-background);
 }
 
 .srs-review-page.is-overlay {
@@ -56,24 +48,6 @@ html.srs-review-standalone-document body {
   user-select: none;
 }
 
-/* 主壳 overlay 的评分控件原先依赖 styles.css 的内边距；独立 SRS 保留自身尺寸。 */
-.srs-review-page.is-overlay .srs-review-actions button {
-  padding: 5px 12px;
-}
-
-/* 主壳 overlay 发音按钮原先依赖 styles.css 的内边距；固定圆形尺寸保持不变。 */
-.srs-review-page.is-overlay .srs-review-speaker:where(:not([data-ui-owner="learning"])) {
-  padding: 5px 12px;
-}
-
-/* 主壳 overlay 的次级操作按钮原先依赖 styles.css 的最小高度；独立 SRS 不受这组补偿影响。 */
-.srs-review-page.is-overlay .srs-review-replay-shortcut:where(:not([data-ui-owner="learning"])),
-.srs-review-page.is-overlay .srs-review-retry:where(:not([data-ui-owner="learning"])),
-.srs-review-page.is-overlay .srs-review-playback-shortcut-setting button:where(:not([data-ui-owner="learning"])),
-.srs-review-page.is-overlay .srs-review-sentence-translation.is-unavailable button:where(:not([data-ui-owner="learning"])) {
-  min-height: 28px;
-}
-
 .srs-review-header {
   position: relative;
   z-index: 20;
@@ -84,9 +58,9 @@ html.srs-review-standalone-document body {
   min-height: 54px;
   padding: 4px clamp(28px, 4vw, 64px);
   border-bottom: 1px solid var(--srs-border);
-  background: rgba(255, 255, 255, .88);
-  box-shadow: 0 1px 10px rgba(28, 42, 70, .035);
-  backdrop-filter: blur(14px);
+  background: var(--learning-background);
+  box-shadow: 0 1px 8px rgba(15, 23, 42, .04);
+  backdrop-filter: none;
 }
 
 .srs-review-back {
@@ -96,29 +70,6 @@ html.srs-review-standalone-document body {
   width: fit-content;
 }
 
-.srs-review-back:where(:not([data-ui-owner="learning"])) {
-  min-height: 28px;
-  padding: 6px 8px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  appearance: none;
-  color: rgba(111, 123, 142, .68) !important;
-  background: transparent;
-  box-shadow: none;
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: border-color 140ms ease, color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
-}
-
-.srs-review-back:where(:not([data-ui-owner="learning"])):hover {
-  border-color: rgba(218, 224, 234, .72);
-  color: rgba(92, 105, 124, .94) !important;
-  background: rgba(255, 255, 255, .62);
-  box-shadow: 0 4px 12px rgba(35, 49, 76, .045);
-}
-
-:where(.srs-review-page) button:where(:not([data-ui-owner="learning"])):focus-visible,
 :where(.srs-review-page) audio:focus-visible {
   outline: 3px solid rgba(36, 84, 198, .35);
   outline-offset: 3px;
@@ -171,45 +122,48 @@ html.srs-review-standalone-document body {
   white-space: nowrap;
 }
 
-.srs-review-migration-button,
-.srs-review-migration-complete {
+.srs-review-migration-button {
   flex: 0 0 auto;
-}
-
-.srs-review-migration-button:where(:not([data-ui-owner="learning"])),
-.srs-review-migration-complete {
-  min-height: 30px;
-  padding: 6px 13px;
-  border: 1px solid rgba(49, 88, 200, .24);
-  border-radius: 999px;
-  color: #3158c8;
-  background: #fff;
-  font-size: 11px;
-  font-weight: 700;
 }
 
 .srs-review-migration-button {
   cursor: pointer;
 }
 
-.srs-review-migration-button:where(:not([data-ui-owner="learning"])):hover:not(:disabled) {
-  background: #eef3ff;
-}
-
-.srs-review-migration-button:where(:not([data-ui-owner="learning"])):disabled {
-  cursor: wait;
-  opacity: .62;
-}
-
-.srs-review-migration-complete {
-  border-color: rgba(36, 133, 83, .2);
-  color: #2e7d53;
-  background: rgba(236, 250, 241, .86);
-}
-
 .srs-review-migration-message {
   flex: 0 1 260px;
   margin: 0;
+}
+
+.srs-review-queue-banner {
+  flex: 0 0 auto;
+  padding: 9px clamp(28px, 4vw, 64px);
+  border-bottom: 1px solid rgba(49, 88, 200, .12);
+  background: rgba(247, 250, 255, .72);
+}
+
+.srs-review-queue-copy {
+  width: min(1440px, 100%);
+  margin: 0 auto;
+}
+
+.srs-review-queue-copy strong {
+  display: block;
+  color: #40547b;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.srs-review-queue-copy p {
+  margin: 2px 0 0;
+  color: #73809a;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.srs-review-queue-copy p.is-standalone {
+  color: #9a6b2f;
 }
 
 .srs-review-heading h1 {
@@ -226,6 +180,13 @@ html.srs-review-standalone-document body {
   white-space: normal;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+.srs-review-heading .srs-review-standalone-marker {
+  margin: 2px 0 0;
+  color: #9a6b2f;
+  font-size: 10px;
+  line-height: 1.35;
 }
 
 .srs-review-heading p,
@@ -255,48 +216,6 @@ html.srs-review-standalone-document body {
   align-items: center;
   justify-content: flex-end;
   gap: 7px;
-}
-
-.srs-review-history-toggle:where(:not([data-ui-owner="learning"])) {
-  min-height: 28px;
-  padding: 6px 8px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  appearance: none;
-  color: rgba(111, 123, 142, .68) !important;
-  background: transparent;
-  box-shadow: none;
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: border-color 140ms ease, color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
-  text-decoration: none;
-}
-
-.srs-review-history-toggle:where(:not([data-ui-owner="learning"])):hover,
-.srs-review-shadow-link:hover {
-  border-color: rgba(218, 224, 234, .72);
-  color: rgba(92, 105, 124, .94) !important;
-  background: rgba(255, 255, 255, .62);
-  box-shadow: 0 4px 12px rgba(35, 49, 76, .045);
-}
-
-.srs-review-back:where(:not([data-ui-owner="learning"])):focus-visible,
-.srs-review-history-toggle:where(:not([data-ui-owner="learning"])):focus-visible,
-.srs-review-shadow-link:focus-visible,
-.srs-review-play-sequence:where(:not([data-ui-owner="learning"])):focus-visible,
-.srs-review-remove-word:where(:not([data-ui-owner="learning"])):focus-visible {
-  outline-color: rgba(97, 113, 139, .24);
-  box-shadow: none;
-}
-
-.srs-review-back:where(:not([data-ui-owner="learning"])) > *,
-.srs-review-history-toggle:where(:not([data-ui-owner="learning"])) > *,
-.srs-review-shadow-link > *,
-.srs-review-play-sequence:where(:not([data-ui-owner="learning"])) > *,
-.srs-review-remove-word:where(:not([data-ui-owner="learning"])) > * {
-  color: inherit !important;
-  -webkit-text-fill-color: currentColor;
 }
 
 .srs-review-history {
@@ -347,33 +266,11 @@ html.srs-review-standalone-document body {
   border-top: 0;
 }
 
-.srs-review-playback-shortcut-setting button:where(:not([data-ui-owner="learning"])) {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 5px 8px;
-  border: 1px solid var(--srs-glass-border);
-  border-radius: 999px;
-  color: #315897;
-  background: var(--srs-glass-bg);
-  box-shadow: var(--srs-glass-shadow);
-  backdrop-filter: blur(16px) saturate(1.5);
-  cursor: pointer;
-}
-
-.srs-review-playback-shortcut-setting button:where(:not([data-ui-owner="learning"])):hover,
-.srs-review-playback-shortcut-setting button:where(:not([data-ui-owner="learning"])).is-editing {
-  color: #244ca2;
-  background: rgba(218, 232, 249, .92);
-}
-
 .srs-review-shortcut-control[data-ui-owner="learning"] {
   min-width: max-content;
   height: auto;
-  min-height: 32px;
-  padding: 5px 8px;
+  min-height: 36px;
   border-color: var(--learning-border);
-  border-radius: 999px;
   color: var(--learning-accent-foreground);
   background: var(--learning-background);
 }
@@ -479,18 +376,22 @@ html.srs-review-standalone-document body {
   text-align: center;
 }
 
-.srs-review-context-gate p {
+.srs-review-context-notice {
+  position: absolute;
+  z-index: 1;
+  top: 10px;
+  left: clamp(40px, 5vw, 78px);
+  right: 18px;
   margin: 0;
+  padding: 0 8px;
+  color: #8a5a12;
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: center;
 }
 
-.srs-review-context-gate button:where(:not([data-ui-owner="learning"])) {
-  min-height: 36px;
-  padding: 8px 14px;
-  border: 1px solid #d7ddeb;
-  border-radius: 9px;
-  color: #34466c;
-  background: #fff;
-  cursor: pointer;
+.srs-review-context-gate p {
+  margin: 0;
 }
 
 .srs-review-context-gate.is-followup {
@@ -549,16 +450,6 @@ html.srs-review-standalone-document body {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-}
-
-.srs-review-sentence-translation.is-unavailable button:where(:not([data-ui-owner="learning"])) {
-  flex: none;
-  padding: 5px 10px;
-  border: 1px solid #c9d3ec;
-  border-radius: 7px;
-  color: #405994;
-  background: #fff;
-  cursor: pointer;
 }
 
 .srs-review-actions button.is-pending {
@@ -659,17 +550,6 @@ html.srs-review-standalone-document body {
   margin: 0;
 }
 
-.srs-review-audio-notice button:where(:not([data-ui-owner="learning"])) {
-  flex: 0 0 auto;
-  min-height: 34px;
-  padding: 6px 13px;
-  border: 1px solid #e0b8b0;
-  border-radius: 9px;
-  color: #7d3027;
-  background: #fff8f6;
-  cursor: pointer;
-}
-
 .srs-review-audio label {
   display: block;
   margin-bottom: 6px;
@@ -744,17 +624,10 @@ html.srs-review-standalone-document body {
   border-radius: 50%;
 }
 
-.srs-review-speaker:where(:not([data-ui-owner="learning"])) {
-  border: 1px solid var(--srs-border);
-  border-radius: 50%;
-  color: var(--srs-primary);
-  background: #fff;
-  box-shadow: 0 5px 16px rgba(32, 50, 84, .055);
-  cursor: pointer;
-  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
-}
-
 .srs-review-speaker[data-ui-owner="learning"] {
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
   border: 1px solid var(--learning-border);
   color: var(--learning-primary);
   background: #fff;
@@ -762,23 +635,16 @@ html.srs-review-standalone-document body {
   transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
 }
 
-.srs-review-speaker:where(:not([data-ui-owner="learning"])):hover:not(:disabled),
 .srs-review-speaker[data-ui-owner="learning"]:hover:not(:disabled) {
   border-color: #b8c6eb;
   box-shadow: 0 7px 20px rgba(49, 88, 200, .11);
   transform: translateY(-1px);
 }
 
-.srs-review-speaker:where(:not([data-ui-owner="learning"])).is-playing,
 .srs-review-speaker[data-ui-owner="learning"].is-playing {
   border-color: #b8c6eb;
   color: #2b57c1;
   background: #f5f8ff;
-}
-
-.srs-review-speaker:where(:not([data-ui-owner="learning"])):disabled {
-  color: #a5adba;
-  cursor: not-allowed;
 }
 
 .srs-review-speaker[data-ui-owner="learning"]:disabled {
@@ -874,6 +740,22 @@ html.srs-review-standalone-document body {
   font-weight: 550;
 }
 
+.srs-review-meaning-group.is-target h3 {
+  color: #3158c8;
+}
+
+.srs-review-meaning-group.is-target p {
+  color: #17233a;
+}
+
+.srs-review-recall-prompt {
+  max-width: 38em;
+  margin: 0;
+  color: #66738b;
+  font-size: clamp(16px, 1.3vw, 20px);
+  line-height: 1.6;
+}
+
 .srs-review-dictionary {
   grid-column: 1 / -1;
   padding-top: 4px;
@@ -930,35 +812,6 @@ html.srs-review-standalone-document body {
   gap: 5px;
 }
 
-.srs-review-play-sequence:where(:not([data-ui-owner="learning"])) {
-  min-height: 28px;
-  padding: 6px 8px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  appearance: none;
-  box-shadow: none;
-  color: rgba(111, 123, 142, .68) !important;
-  background: transparent;
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: border-color 140ms ease, color 140ms ease, background-color 140ms ease;
-}
-
-.srs-review-play-sequence:where(:not([data-ui-owner="learning"])):hover:not(:disabled) {
-  border-color: rgba(218, 224, 234, .72);
-  color: rgba(92, 105, 124, .94) !important;
-  background: rgba(255, 255, 255, .62);
-  box-shadow: 0 4px 12px rgba(35, 49, 76, .045);
-}
-
-.srs-review-play-sequence:where(:not([data-ui-owner="learning"])):disabled {
-  box-shadow: none;
-  color: #b7bec8;
-  background: transparent;
-  cursor: not-allowed;
-}
-
 .srs-review-play-sequence svg {
   width: 14px;
   fill: none;
@@ -987,62 +840,11 @@ html.srs-review-standalone-document body {
   opacity: .72;
 }
 
-.srs-review-replay-shortcut {
-  min-width: 24px;
-  margin-left: 2px;
-  padding: 3px 6px;
-  border: 1px solid #d9dee6;
-  border-radius: 5px;
-  box-shadow: none;
-  color: inherit;
-  background: transparent;
-  cursor: pointer;
-}
-
-.srs-review-replay-shortcut:hover,
-.srs-review-replay-shortcut.is-editing {
-  color: #546172;
-  background: #f5f7fa;
-}
-
-.srs-review-replay-shortcut kbd {
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 700;
-}
-
 .srs-review-remove-word {
   grid-area: remove;
   display: inline-flex;
   align-items: center;
   gap: 5px;
-}
-
-.srs-review-remove-word:where(:not([data-ui-owner="learning"])) {
-  min-height: 28px;
-  padding: 6px 8px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  appearance: none;
-  color: rgba(111, 123, 142, .68) !important;
-  background: transparent;
-  box-shadow: none;
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: border-color 140ms ease, color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
-}
-
-.srs-review-remove-word:where(:not([data-ui-owner="learning"])):hover:not(:disabled) {
-  border-color: rgba(218, 224, 234, .72);
-  color: rgba(92, 105, 124, .94) !important;
-  background: rgba(255, 255, 255, .62);
-  box-shadow: 0 4px 12px rgba(35, 49, 76, .045);
-}
-
-.srs-review-remove-word:where(:not([data-ui-owner="learning"])):disabled {
-  cursor: not-allowed;
-  opacity: .45;
 }
 
 .srs-review-remove-word svg {
@@ -1065,27 +867,35 @@ html.srs-review-standalone-document body {
   gap: 10px;
   padding: 12px clamp(28px, 4vw, 64px) 16px;
   border-top: 1px solid rgba(223, 228, 237, .76);
-  background: rgba(255, 255, 255, .92);
+  background: var(--learning-background);
   box-shadow: 0 -8px 28px rgba(28, 42, 70, .035);
-  backdrop-filter: blur(12px);
+  backdrop-filter: none;
 }
 
-.srs-review-actions button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
+.srs-review-actions button[data-ui-owner="learning"] {
   flex: 0 1 150px;
   min-width: 118px;
-  min-height: 44px;
-  border: 1px solid;
-  border-radius: 10px;
-  background: #fff;
-  font-size: 15px;
-  font-weight: 750;
-  cursor: pointer;
-  box-shadow: 0 4px 12px rgba(35, 49, 76, .035);
-  transition: transform 120ms ease, filter 120ms ease, box-shadow 120ms ease;
+}
+
+.srs-review-rating-help {
+  flex: 0 0 100%;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px 14px;
+  padding: 2px 4px 0;
+  color: #6f7a8e;
+  font-size: 10px;
+  line-height: 1.45;
+  text-align: left;
+}
+
+.srs-review-rating-help p {
+  margin: 0;
+}
+
+.srs-review-rating-help strong {
+  color: #4e5b73;
+  font-weight: 700;
 }
 
 .srs-review-actions kbd {
@@ -1098,17 +908,6 @@ html.srs-review-standalone-document body {
   font-family: inherit;
   font-size: 11px;
   opacity: .72;
-}
-
-.srs-review-actions button:hover:not(:disabled) {
-  filter: brightness(.98);
-  box-shadow: 0 7px 18px rgba(35, 49, 76, .08);
-  transform: translateY(-1px);
-}
-
-.srs-review-actions button:disabled {
-  cursor: wait;
-  opacity: .58;
 }
 
 .srs-review-actions .is-easy {
@@ -1135,13 +934,6 @@ html.srs-review-standalone-document body {
   background: #f8f7f8;
 }
 
-.srs-review-actions .srs-review-reveal {
-  border-color: #d9d5da;
-  color: #655b67;
-  background: #f1eff2;
-  box-shadow: 0 4px 12px rgba(35, 49, 76, .035);
-}
-
 .srs-review-inline-error,
 .srs-review-inline-notice {
   flex: 0 0 auto;
@@ -1156,6 +948,90 @@ html.srs-review-standalone-document body {
 
 .srs-review-inline-notice {
   color: var(--srs-muted);
+}
+
+.srs-review-save-status {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 1.2fr);
+  gap: 12px 24px;
+  align-items: center;
+  padding: 10px clamp(28px, 4vw, 64px);
+  border-bottom: 1px solid rgba(223, 228, 237, .76);
+  color: #5f6c84;
+  background: #fbfcfe;
+}
+
+.srs-review-save-status-copy {
+  min-width: 0;
+}
+
+.srs-review-save-status-copy strong {
+  display: block;
+  color: #465675;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.srs-review-save-status-copy p {
+  margin: 2px 0 0;
+  color: #7b8799;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.srs-review-save-status-copy .srs-review-save-error,
+.srs-review-save-item-copy .srs-review-save-item-error {
+  color: #b4232b;
+}
+
+.srs-review-save-status-list {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.srs-review-save-status-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 4px 0;
+  font-size: 11px;
+}
+
+.srs-review-save-item-copy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.srs-review-save-item-copy strong,
+.srs-review-save-item-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.srs-review-save-item-copy strong {
+  color: #4d5c76;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.srs-review-save-item-copy small {
+  color: #8791a1;
+  font-size: 10px;
+}
+
+.srs-review-save-retry {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 3px 8px;
+  font-size: 11px;
 }
 
 .srs-review-completion-counts {
@@ -1188,6 +1064,12 @@ html.srs-review-standalone-document body {
   color: var(--srs-muted);
 }
 
+.srs-review-state .srs-review-standalone-state-note {
+  margin: 2px 0 0;
+  color: #9a6b2f;
+  font-size: 12px;
+}
+
 .srs-review-spinner {
   width: 34px;
   height: 34px;
@@ -1199,16 +1081,6 @@ html.srs-review-standalone-document body {
 
 .srs-review-retry {
   margin-top: 14px;
-}
-
-.srs-review-retry:where(:not([data-ui-owner="learning"])) {
-  padding: 11px 24px;
-  border: 0;
-  border-radius: 7px;
-  color: #fff;
-  background: #2454c6;
-  font-weight: 700;
-  cursor: pointer;
 }
 
 .srs-review-fatal {
@@ -1238,6 +1110,10 @@ html.srs-review-standalone-document body {
     white-space: normal;
   }
 
+  .srs-review-queue-banner {
+    padding: 8px 12px;
+  }
+
   .srs-review-header {
     grid-template-columns: auto 1fr auto;
     min-height: 62px;
@@ -1258,15 +1134,21 @@ html.srs-review-standalone-document body {
     gap: 1px;
   }
 
-  .srs-review-history-toggle:where(:not([data-ui-owner="learning"])) {
-    font-size: 12px;
-  }
-
   .srs-review-content {
     display: flex;
     flex-direction: column;
     padding: 20px 18px 14px;
     overflow-y: auto;
+  }
+
+  .srs-review-save-status {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 7px;
+    padding: 8px 12px;
+  }
+
+  .srs-review-save-status-list {
+    gap: 4px;
   }
 
   .srs-review-context {
@@ -1356,19 +1238,22 @@ html.srs-review-standalone-document body {
     position: sticky;
     bottom: 0;
     display: flex;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     gap: 5px;
     padding: 7px;
     border-top: 1px solid var(--srs-border);
-    background: rgba(255, 255, 255, .96);
+    background: var(--learning-background);
   }
 
-  .srs-review-actions button {
-    flex: 1 1 0;
+  .srs-review-actions button[data-ui-owner="learning"] {
+    flex: 1 1 calc(50% - 5px);
     min-width: 0;
-    min-height: 42px;
-    gap: 3px;
-    font-size: 12px;
+  }
+
+  .srs-review-rating-help {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px 10px;
+    padding: 3px 2px 0;
   }
 
   .srs-review-actions kbd {
@@ -1408,9 +1293,6 @@ html.srs-review-standalone-document body {
     animation-duration: 1.5s;
   }
 
-  .srs-review-actions button {
-    transition: none;
-  }
 }
 
 @keyframes srs-review-card-enter {

@@ -1,6 +1,12 @@
 export const VOCABULARY_SCHEMA_VERSION = 1;
 export const VOCABULARY_STORE_KEY = 'vocabulary.srs.store.v1';
 
+export const SRS_REVIEW_PARTICIPATION_SCHEMA_VERSION = 'srs-review-participation.v1';
+export const SRS_REVIEW_PARTICIPATION_FIELD = 'srs_review_participation';
+export const SRS_REVIEW_PARTICIPATION_STATUSES = Object.freeze({
+  EXCLUDED: 'excluded',
+});
+
 export const WORD_STATUSES = Object.freeze({
   NEW: 'new',
   LEARNING: 'learning',
@@ -143,12 +149,48 @@ export function compareIsoAsc(left, right) {
   return Date.parse(left || 0) - Date.parse(right || 0);
 }
 
+export function normalizeSrsReviewParticipation(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  if (value.status !== SRS_REVIEW_PARTICIPATION_STATUSES.EXCLUDED) return null;
+  const operationId = normalizeText(value.operation_id || value.operationId) || 'legacy-unknown';
+  let removedAt = new Date(0).toISOString();
+  try {
+    removedAt = toIsoString(value.removed_at || value.removedAt || removedAt);
+  } catch (_error) {
+    // A malformed legacy marker remains excluded; do not silently re-enter review.
+  }
+  return {
+    schema_version: SRS_REVIEW_PARTICIPATION_SCHEMA_VERSION,
+    status: SRS_REVIEW_PARTICIPATION_STATUSES.EXCLUDED,
+    operation_id: operationId,
+    removed_at: removedAt,
+  };
+}
+
+export function isSrsReviewParticipationExcluded(value) {
+  return value?.status === SRS_REVIEW_PARTICIPATION_STATUSES.EXCLUDED;
+}
+
+export function createSrsReviewExclusionMarker(operationId, removedAt) {
+  const normalizedOperationId = normalizeText(operationId);
+  if (!normalizedOperationId) throw new Error('SRS review removal operation ID is required');
+  return {
+    schema_version: SRS_REVIEW_PARTICIPATION_SCHEMA_VERSION,
+    status: SRS_REVIEW_PARTICIPATION_STATUSES.EXCLUDED,
+    operation_id: normalizedOperationId,
+    removed_at: toIsoString(removedAt),
+  };
+}
+
 function normalizeStoredWord(word) {
   if (!word || typeof word !== 'object') return null;
   const id = normalizeText(word.id);
   const lemma = normalizeLemma(word.lemma || word.word);
   if (!id || !lemma) return null;
   const createdAt = toIsoString(word.created_at || word.createdAt || new Date(0));
+  const reviewParticipation = normalizeSrsReviewParticipation(
+    word.review_participation || word.reviewParticipation,
+  );
   return {
     id,
     word: normalizeText(word.word) || lemma,
@@ -169,6 +211,7 @@ function normalizeStoredWord(word) {
     tags: normalizeVocabularyTags(word.tags),
     created_at: createdAt,
     updated_at: toIsoString(word.updated_at || word.updatedAt || createdAt),
+    ...(reviewParticipation ? { review_participation: reviewParticipation } : {}),
   };
 }
 

@@ -124,12 +124,24 @@ export function isSettlementMeaningRefinementPendingRetryable(candidate, now = n
 
 export function needsSettlementMeaningRefinement(candidate, options = {}) {
   if (!candidate || candidate.eligible === false) return false;
-  if (candidate.refinement_attempted === true
-    && candidate.refinement_status !== 'failed'
-    && !isSettlementMeaningRefinementPendingRetryable(candidate, options.now)) return false;
   if (!getCandidateTargetId(candidate)) return false;
   if (!getCandidateMeaning(candidate)) return false;
+  if (options.automatic && candidate.refinement_attempted === true) return false;
+  if (candidate.refinement_save_pending) return !options.automatic;
+  if (candidate.refinement_status === 'pending'
+    && !isSettlementMeaningRefinementPendingRetryable(candidate, options.now)) return false;
   return !isSettlementSimpleMeaningValid(getCandidateSimpleMeaning(candidate), candidate.entry_type);
+}
+
+// Exact request provenance, stored as an optional field in the existing progress
+// row. Full input identity avoids reusing a short meaning after an explanation edit.
+export function getSettlementMeaningRefinementInputKey(candidate, articleId = '') {
+  return JSON.stringify([
+    SETTLEMENT_MEANING_REFINEMENT_PROMPT_VERSION, articleId, getCandidateTargetId(candidate),
+    normalizeText(candidate?.markedText || candidate?.marked_text || candidate?.word || candidate?.lemma),
+    candidate?.entry_type || VOCABULARY_ENTRY_TYPES.WORD, getCandidateMeaning(candidate),
+    getCandidateSentence(candidate), getCandidateLocalContext(candidate),
+  ]);
 }
 
 export function getSettlementMeaningRefinementCandidates(candidates = [], options = {}) {
@@ -210,10 +222,12 @@ export function applySettlementMeaningRefinementResult(candidates = [], result =
     missing: 0,
   };
   const resultItems = Array.isArray(result && result.items) ? result.items : [];
+  const seen = new Set();
   resultItems.forEach((item) => {
     const targetId = getResultTargetId(item);
     const candidate = byTargetId.get(targetId);
-    if (!candidate) return;
+    if (!candidate || seen.has(targetId)) return;
+    seen.add(targetId);
     const simpleMeaning = getResultSimpleMeaning(item);
     if (!simpleMeaning) {
       stats.missing += 1;
@@ -233,5 +247,6 @@ export function applySettlementMeaningRefinementResult(candidates = [], result =
     }
     stats.updated += 1;
   });
+  stats.missing += byTargetId.size - seen.size;
   return stats;
 }

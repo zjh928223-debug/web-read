@@ -5,6 +5,7 @@
     </div>
     <ToastMessage />
     <YouTubeWorkflowPanel />
+    <ReaderSettingsStatus />
     <VideoPlayerFloat />
     <TranscriptContainer />
     <ChunkModeView />
@@ -12,7 +13,7 @@
       <span class="learning-entry-group">
         <Button
           variant="outline"
-          size="sm"
+          size="default"
           data-ui-owner="reader"
           class="learning-entry-button"
           type="button"
@@ -21,7 +22,7 @@
         >今日复习</Button>
         <Button
           variant="outline"
-          size="sm"
+          size="default"
           data-ui-owner="reader"
           class="learning-entry-button"
           type="button"
@@ -30,7 +31,7 @@
         >待预习</Button>
         <Button
           variant="outline"
-          size="sm"
+          size="default"
           data-ui-owner="reader"
           class="learning-entry-button"
           type="button"
@@ -56,7 +57,7 @@
         @close="closeSrsReview"
       />
       <LearningPageLoadNotice
-        v-if="isPassagePreviewOpen && passagePreviewItems.length && previewPageLoad.status"
+        v-if="isPassagePreviewOpen && previewPageLoad.status"
         page-name="预习页"
         :failed="previewPageLoad.status === 'failed'"
         :retry-failed="previewPageLoad.retryFailed"
@@ -76,27 +77,34 @@
         />
       </KeepAlive>
       <PassagePreviewPage
-        v-if="isPassagePreviewOpen && passagePreviewItems.length"
+        v-if="isPassagePreviewOpen"
         :items="passagePreviewItems"
         :pending-preview-count="passagePreviewWaitingCount"
+        :pending-preview-known="passagePreviewWaitingKnown"
+        :queue-notice="passagePreviewQueueNotice"
+        :entry-state="passagePreviewEntryState"
+        :entry-message="passagePreviewEntryMessage"
+        :entry-source="passagePreviewEntrySource"
+        :contact-summary="passagePreviewContactSummary"
+        :contact-statuses="passagePreviewContactStatuses"
+        :interaction-blocked="isPassagePreviewSettingsOpen"
         :preloaded-sentences="passagePreviewPreloaded.sentences"
         :preloaded-translations="passagePreviewPreloaded.translations"
-        @item-revealed="registerPreviewItem"
         @preview-completed="completePreviewLearningSession"
+        @item-visible="registerPreviewItem"
         @item-enriched="saveEnrichedPreviewItem"
         @open-settings="openPassagePreviewSettings"
         @open-review="openSrsReviewFromPassagePreview"
+        @request-import="requestPassagePreviewImport"
+        @retry="openPassagePreview"
         @close="closePassagePreview"
       />
       <PassagePreviewSettingsDialog
         v-if="isPassagePreviewSettingsOpen"
         @close="closePassagePreviewSettings"
       />
-      <div v-if="passagePreviewPreparing" class="passage-preview-preparing" role="status">
+      <div v-if="passagePreviewPreparing && !isPassagePreviewOpen" class="passage-preview-preparing" role="status">
         {{ passagePreviewPreparationMessage }}
-      </div>
-      <div v-if="isPassagePreviewOpen && passagePreviewQueueNotice" class="passage-preview-queue-notice" role="status" aria-live="polite">
-        {{ passagePreviewQueueNotice }}
       </div>
     </Teleport>
     <span style="display:none" data-vue-mounted>1</span>
@@ -108,6 +116,7 @@ import { defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref } from 
 import { Button } from './components/ui/button/index.js'
 import ToastMessage from './components/ToastMessage.vue'
 import YouTubeWorkflowPanel from './components/YouTubeWorkflowPanel.vue'
+import ReaderSettingsStatus from './components/ReaderSettingsStatus.vue'
 import VideoPlayerFloat from './components/VideoPlayerFloat.vue'
 import TranscriptContainer from './components/TranscriptContainer.vue'
 import ChunkModeView from './components/ChunkModeView.vue'
@@ -127,6 +136,11 @@ import { createOptionalLocalDictionaryClient } from './dictionary/ecdict/browser
 import './features/srs-review/srs-review.css'
 import './features/learning-ui/learning-ui.css'
 import './features/passage-preview/passage-preview.css'
+import { useReaderSessionPersistence } from './composables/use-reader-session-persistence.js'
+import { provideReaderSessionPersistence } from './composables/reader-session-persistence-context.js'
+
+const readerPersistence = useReaderSessionPersistence()
+provideReaderSessionPersistence(readerPersistence)
 
 function createLearningPage(loader) {
   const state = reactive({ status: '', retry: null, retryFailed: false })
@@ -180,8 +194,15 @@ const {
   passagePreviewPreloaded,
   isPassagePreviewSettingsOpen,
   passagePreviewWaitingCount,
+  passagePreviewWaitingKnown,
   passagePreviewQueueNotice,
+  passagePreviewEntryState,
+  passagePreviewEntryMessage,
+  passagePreviewEntrySource,
+  passagePreviewContactStatuses,
+  passagePreviewContactSummary,
   openPassagePreview,
+  requestPassagePreviewImport,
   importPassagePreviewFile,
   registerPreviewItem,
   completePreviewLearningSession,
@@ -336,6 +357,7 @@ async function reconcileArticleLearningInBackground() {
 }
 
 onMounted(() => {
+  readerPersistence.start()
   console.log('[vue] Phase 9 — Vue components active')
   void refreshPendingPreviewSummary().catch((error) => {
     console.warn('[passage-preview] initial pending preview summary unavailable', error)
@@ -354,6 +376,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  readerPersistence.stop()
   legacyMigrationStopped = true
   articleReconciliationStopped = true
   document.removeEventListener('visibilitychange', handleLegacyMigrationVisibilityChange)

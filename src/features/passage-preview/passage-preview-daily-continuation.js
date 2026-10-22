@@ -46,10 +46,10 @@ export function resolveIeltsDailyPreviewContinuationGate({
   }
   if (normalizedWaiting >= IELTS_DAILY_PREVIEW_WAITING_THRESHOLD) {
     return {
-      allowed: false,
-      reason: 'waiting_threshold',
+      allowed: true,
+      reason: 'waiting_notice',
       nextBatchAvailable: Boolean(nextBatchAvailable),
-      notice: `等待池现有 ${normalizedWaiting} 个词；降到 40 个以下前暂不开新一组，今天只需完成“今日复习”里的安排`,
+      notice: `等待池现有 ${normalizedWaiting} 个词；当前组和已有候选仍可进入，积压只作提醒`,
     }
   }
   return {
@@ -68,7 +68,6 @@ export function resolveCompletedIeltsPreviewAction({
     waiting,
     currentBatchCompleted: true,
   })
-  if (!gate.allowed) return { ...gate, action: 'keep_completed' }
   return {
     ...gate,
     action: hasBatchDate ? 'advance_dated_batch' : 'open_or_clear_undated_batch',
@@ -314,11 +313,17 @@ export async function commitPassagePreviewBatchTransition({
   saveData,
   saveProgress,
   saveContinuation,
+  canCommit = () => true,
 } = {}) {
+  if (!canCommit()) return null
   await saveArchive(archive)
+  if (!canCommit()) return null
   await saveData(nextItems)
+  if (!canCommit()) return null
   await saveProgress(progress)
+  if (!canCommit()) return null
   await saveContinuation(continuation)
+  if (!canCommit()) return null
   return nextItems
 }
 

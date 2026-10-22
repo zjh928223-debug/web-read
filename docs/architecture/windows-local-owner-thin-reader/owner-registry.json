@@ -191,7 +191,8 @@
         {"key": "vocabulary.passage-preview.shortcuts.v2", "schemaVersions": ["passage-preview.shortcuts.v2"]},
         {"key": "vocabulary.passage-preview.shortcut.translation.v1", "schemaVersions": ["passage-preview.shortcut.v1"]},
         {"key": "vocabulary.passage-preview.shortcut.context.v1", "schemaVersions": ["passage-preview.shortcut.v1"]},
-        {"key": "vocabulary.passage-preview.translation-display-mode.v1", "schemaVersions": ["passage-preview.display-mode.v1"]}
+        {"key": "vocabulary.passage-preview.translation-display-mode.v1", "schemaVersions": ["passage-preview.display-mode.v1"]},
+        {"key": "vocabulary.passage-preview.translation-display-mode.v2", "schemaVersions": ["passage-preview.display-mode.v2"]}
       ],
       "queryOperations": ["durable-state", "preview-batch", "progress", "continuation", "archive", "legacy-keys"],
       "commandOperations": ["state-commit", "batch-commit", "rating-apply", "transition-apply", "legacy-import", "receipt-query"],

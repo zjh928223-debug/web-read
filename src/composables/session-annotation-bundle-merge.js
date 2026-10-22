@@ -107,6 +107,13 @@ export function buildManualLightweightImportedBundle(parsed, scope, storage, dep
       const boundary = item.boundary
         || normalizeAnnotationTextValue(existing.boundary)
         || normalizeAnnotationTextValue(target.sentenceText || target.sentencePlainText || target.boundary || target.markedText);
+      const sameMeaningInput = [
+        [item.meaning, normalizeAnnotationTextValue(existing.meaning)],
+        [item.sourceSentence, normalizeAnnotationTextValue(existing.sourceSentence)],
+        [targetMarkedText, normalizeAnnotationTextValue(existing.markedText)],
+      ].every(([current, previous]) => !current || !previous || current === previous);
+      const retainedSimpleMeaning = sameMeaningInput
+        ? normalizeAnnotationTextValue(existing.simpleMeaning || existing.simple_meaning) : '';
 
       nextByTargetId.set(resolvedTargetId, {
         ...existing,
@@ -117,7 +124,8 @@ export function buildManualLightweightImportedBundle(parsed, scope, storage, dep
         boundary,
         type: item.type || normalizeAnnotationTextValue(existing.type),
         meaning: item.meaning || normalizeAnnotationTextValue(existing.meaning),
-        simpleMeaning: normalizeAnnotationTextValue(item.simpleMeaning || item.simple_meaning || existing.simpleMeaning || existing.simple_meaning),
+        simpleMeaning: normalizeAnnotationTextValue(item.simpleMeaning || item.simple_meaning || retainedSimpleMeaning),
+        ...(sameMeaningInput ? {} : { simple_meaning: '' }),
         memoryHint: item.memoryHint || normalizeAnnotationTextValue(existing.memoryHint),
         sourceSentence: normalizeAnnotationTextValue(item.sourceSentence || existing.sourceSentence || boundary),
         occurrenceKey: normalizeAnnotationTextValue(existing.occurrenceKey || target.occurrenceKey),

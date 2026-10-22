@@ -46,18 +46,9 @@ async function main() {
   assert.equal(typeof api.buildManualLightweightAnnotationTemplate, 'function');
   assert.equal(typeof api.exportManualLightweightAnnotations, 'function');
   assert.equal(typeof api.importManualLightweightAnnotations, 'function');
-  assert.equal(typeof api.buildImportSuccessMessage, 'function');
+  assert.equal(api.buildImportSuccessMessage, undefined);
   assert.equal(typeof api.initManualLightweightAnnotationControls, 'function');
 
-  assert.equal(
-    api.buildImportSuccessMessage({
-      importedCount: 3,
-      skippedCount: 1,
-      ambiguousItems: ['a', 'b'],
-      markedTextMismatchTargetIds: ['m'],
-    }),
-    '轻量回填完成 3 条，跳过 1 条，歧义未导入 2 条，markedText 校验不一致 1 条'
-  );
 
   assert.throws(() => api.exportManualLightweightAnnotations(), /not ready/);
   assert.throws(() => api.buildManualLightweightAnnotationTemplate(), /not ready/);
@@ -123,24 +114,26 @@ async function main() {
   exportButton.click();
   assert.equal(exported, true);
 
+  assert.deepEqual(importButton.listeners, {});
+  assert.deepEqual(importInput.listeners, {});
   importButton.click();
-  assert.equal(importInput.clickCount, 1);
+  assert.equal(importInput.clickCount, 0, 'retired button must not open a file picker');
   importInput.value = 'selected-file-path';
   await importInput.dispatch('change', { file, target: importInput });
-  assert.equal(importedFile, file);
-  assert.equal(importInput.value, '');
-  assert.equal(refreshed, true);
-  assert.deepEqual(toastCalls, [{ message: '轻量回填完成 2 条', type: 'success' }]);
+  assert.equal(importInput.value, 'selected-file-path');
+  assert.equal(refreshed, false);
+  assert.deepEqual(toastCalls, []);
   assert.deepEqual(errorCalls, []);
 
   api.configureManualLightweightAnnotationRuntime({
-    exportManualLightweightAnnotations: () => ({ ok: true }),
+    exportManualLightweightAnnotations: () => { throw new Error('bad export'); },
     importManualLightweightAnnotations: async () => {
       throw new Error('bad import');
     }
   });
-  await importInput.dispatch('change', { file, target: importInput });
-  assert.deepEqual(errorCalls.at(-1), { code: 'ANNOTATION_LIGHT_IMPORT', message: 'bad import' });
+  await assert.rejects(() => api.importManualLightweightAnnotations(file), /bad import/);
+  exportButton.click();
+  assert.deepEqual(errorCalls.at(-1), { code: 'ANNOTATION_LIGHT_EXPORT', message: 'bad export' });
 
   assert.equal(source.includes('__session_exportManualLightweightAnnotations'), false);
   assert.equal(source.includes('__session_importManualLightweightAnnotations'), false);

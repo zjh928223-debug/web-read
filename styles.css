@@ -1,3 +1,19 @@
+@layer reader-footprint, properties, theme, base, components, utilities;
+
+#reader-article-status-root { min-height: 54px; }
+@media (max-width: 760px) {
+  #reader-article-status-root { min-height: 72px; }
+}
+.reader-article-status {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 12px;
+  overflow-wrap: anywhere;
+}
+.reader-article-status strong { line-height: 20px; }
+.reader-article-status span { color: var(--text-secondary); font-size: 13px; line-height: 18px; }
+
     :root {
       /* === 鍏ㄥ眬鍙橀噺 === */
       --v-not-spacing: 0px;
@@ -6,56 +22,49 @@
       --v-meaning-display: block;
       --v-not-display: block;
       --v-gap: 8px; 
-      
+
       /* === 娴呰壊妯″紡鍙橀噺 (榛樿) === */
       --bg-color: #ffffff;
       --text-main: #1c1e21;
       --text-sub: #4b5563;
       --border-color: #e5e7eb;
-      
+
       --input-bg: #f9fafb;
       --input-text: #374151;
-      
+
       --btn-bg: #f3f4f6;
       --btn-hover: #e5e7eb;
       --btn-text: #000000;
       --btn-active-bg: #d1d5db;
       --btn-active-border: #9ca3af;
-      
+
       /* 楂樹寒榛樿鑹?*/
       --word-highlight-bg: #ffeb3b;
       --sentence-highlight-bg: #e5e7eb;
-      
+
       --grok-summary-arrow: #666;
       --grok-summary-arrow-active: #333;
 
       /* === 渚ц竟鏍忕壒瀹氬彉閲?=== */
-      --sidebar-bg: #f4f6f8;
-      --sidebar-border: #ddd;
       --card-bg: #ffffff;
-      --vocab-indicator-color: #858585;
 
       /* === 鍥捐В鏍峰紡鍔ㄦ€佸彉閲?(榛樿鍊? === */
       --v-word-size: 28px;
-      --v-word-color: #1c1e21;
       --v-word-weight: 900;
       --v-word-style: normal;
       --v-word-spacing: -0.5px;
-      
+
       --v-context-size: 14px;
-      --v-context-color: #555555;
       --v-context-weight: 400;
       --v-context-style: italic;
       --v-context-spacing: 0px;
 
       --v-meaning-size: 15px;
-      --v-meaning-color: #4b5563;
       --v-meaning-weight: 700;
       --v-meaning-style: normal;
       --v-meaning-spacing: 0px;
 
       --v-not-size: 12px;
-      --v-not-color: #999999;
       --v-not-weight: 400;
       --v-not-style: normal;
       --v-not-spacing: 0px;
@@ -66,38 +75,20 @@
       --chunk-gap: 20px;          /* 榛樿闂磋窛 */
       --chunk-cn-color: #4b5563;  /* 涓枃棰滆壊 */
       --chunk-active-bg: #e5e7eb; /* 楂樹寒鑳屾櫙鑹?*/
-      --chunk-annot-default: rgba(71,85,105,0.42);
 
-      /* === Liquid Glass tokens (macOS Tahoe 26 style) === */
-      --glass-bg-light: rgba(255, 255, 255, 0.56);
-      --glass-bg-medium: rgba(255, 255, 255, 0.62);
-      --glass-bg-strong: rgba(255, 255, 255, 0.72);
-      --glass-border-light: rgba(255, 255, 255, 0.58);
-      --glass-border-strong: rgba(255, 255, 255, 0.72);
-      --glass-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
-      --glass-shadow-soft: 0 2px 10px rgba(15, 23, 42, 0.10);
-      --glass-blur: blur(28px) saturate(1.8);
-      --liquid-bg: rgba(255, 255, 255, 0.25);
-      --liquid-border: rgba(255, 255, 255, 0.36);
-      --liquid-specular: inset 1px 1px 0 rgba(255, 255, 255, 0.75), inset 0 0 5px rgba(255, 255, 255, 0.75);
-      --liquid-shadow: 0 6px 6px rgba(0, 0, 0, 0.2), 0 0 20px rgba(0, 0, 0, 0.1);
-      --liquid-filter: blur(20px) saturate(1.5);
+      /* === Active glass tokens === */
       --glass-panel-bg: rgba(255, 255, 255, 0.34);
       --glass-panel-bg-strong: rgba(255, 255, 255, 0.42);
       --glass-button-bg: rgba(255, 255, 255, 0.26);
-      --glass-card-bg: rgba(255, 255, 255, 0.48);
       --glass-border: rgba(255, 255, 255, 0.52);
       --glass-highlight: rgba(255, 255, 255, 0.78);
       --glass-shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.12);
       --glass-shadow-md: 0 6px 22px rgba(15, 23, 42, 0.14);
-      --glass-shadow-lg: 0 16px 34px rgba(15, 23, 42, 0.18);
       --glass-blur-sm: blur(12px) saturate(1.35);
       --glass-blur-md: blur(20px) saturate(1.5);
-      --glass-blur-lg: blur(28px) saturate(1.7);
       --glass-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
       --glass-duration-fast: 150ms;
       --glass-duration-base: 200ms;
-      --glass-duration-slow: 220ms;
       --bg-gradient:
         radial-gradient(1200px 520px at -8% -16%, rgba(255,255,255,0.58), transparent 60%),
         radial-gradient(900px 500px at 108% 4%, rgba(214,225,241,0.42), transparent 56%),
@@ -111,9 +102,6 @@
       --pru-reading-font: Georgia, "Noto Serif SC", "Songti SC", serif;
       --pru-mono-font: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       --pru-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
-      --pru-app-bg: #f3efe6;
-      --pru-app-wash: #ebe4d7;
-      --pru-reader-bg: #fffaf1;
       --pru-reader-surface: #fffdf8;
       --pru-reader-muted: #efe7d8;
       --pru-ink: #25231f;
@@ -174,15 +162,7 @@
   --pru-accent-hover: #3b82f6;
   --pru-info: #2563eb;
   --pru-focus-ring: rgba(37, 99, 235, 0.22);
-  --pru-shell-bg: color-mix(in srgb, var(--bg-color) 92%, transparent);
-  --pru-shell-surface: var(--card-bg);
-  --pru-shell-row: color-mix(in srgb, var(--card-bg) 88%, var(--bg-color));
-  --pru-shell-row-hover: color-mix(in srgb, var(--btn-hover) 74%, var(--card-bg));
-  --pru-shell-text: var(--text-main);
-  --pru-shell-muted: var(--text-sub);
-  --pru-shell-border: color-mix(in srgb, var(--border-color) 82%, transparent);
-  --pru-row-border: color-mix(in srgb, var(--border-color) 76%, transparent);
-  --pru-reader-bg: var(--bg-color);
+  /* Shell colors belong to workflow-ui.css on these same three roots. */
   --pru-reader-muted: var(--btn-bg);
   --pru-row-active-bg: color-mix(in srgb, var(--btn-hover) 68%, var(--card-bg));
   --pru-row-failed-bg: var(--pru-shell-row);
@@ -191,8 +171,12 @@
 
 .youtube-workflow-backdrop {
   display: flex;
+  position: fixed;
+  inset: 0;
   justify-content: flex-end;
   align-items: stretch;
+  z-index: 2400;
+  pointer-events: auto;
   padding: 14px;
   background: color-mix(in srgb, #000 28%, transparent);
 }
@@ -203,20 +187,35 @@
   width: clamp(720px, 60vw, 960px);
   height: calc(100vh - 28px);
   max-height: calc(100vh - 28px);
+  padding: 0;
+  overflow: hidden;
+  display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
+  border: 1px solid var(--pru-shell-border);
+  border-radius: 22px;
+  background: var(--pru-shell-surface);
+  color: var(--pru-shell-text);
+  box-shadow: var(--pru-shadow-shell);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   font-family: var(--pru-ui-font);
 }
 
 .youtube-workflow .youtube-workflow-header {
+  position: sticky;
+  z-index: 3;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 0;
   cursor: default;
   user-select: auto;
   padding: 16px 18px;
   background: color-mix(in srgb, var(--bg-color) 86%, transparent);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.88);
   font-family: var(--pru-ui-font);
-}
-
-.youtube-workflow-layout {
-  grid-template-columns: 132px minmax(0, 1fr);
 }
 
 .youtube-workflow-content > [data-workflow-mutation-notice] {
@@ -265,8 +264,7 @@
 }
 
 .youtube-workflow .youtube-workflow-job,
-.youtube-workflow .youtube-link-card,
-.youtube-workflow .youtube-import-item {
+.youtube-workflow .youtube-link-card {
   border-radius: 14px;
   background: var(--pru-shell-row);
   box-shadow: none;
@@ -325,11 +323,32 @@
 
 .youtube-library-row-menu {
   grid-column: 1 / -1;
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, max-content);
+  align-items: start;
   justify-content: flex-end;
   gap: 7px;
   padding-top: 8px;
   border-top: 1px solid var(--pru-row-border);
+}
+
+.youtube-workflow .youtube-library-row-menu > .youtube-library-source-detail {
+  grid-column: 1 / -1;
+  min-width: 0;
+  max-width: 100%;
+  margin-right: 0;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.youtube-workflow .youtube-library-row-menu > button {
+  justify-self: start;
+}
+
+@media (max-width: 760px) {
+  .youtube-workflow .youtube-library-row-menu {
+    grid-template-columns: repeat(3, minmax(max-content, 1fr));
+  }
 }
 
 .youtube-library-load-more {
@@ -384,13 +403,13 @@
   gap: 10px;
   max-width: min(520px, calc(100vw - 32px));
   padding: 10px 10px 10px 14px;
-  border: 1px solid var(--glass-border);
+  border: 1px solid var(--rw-ui-border);
   border-radius: 16px;
-  background: color-mix(in srgb, var(--bg-color) 88%, transparent);
-  color: var(--text-main);
-  box-shadow: var(--glass-shadow-md);
-  backdrop-filter: var(--glass-blur-sm);
-  -webkit-backdrop-filter: var(--glass-blur-sm);
+  background: var(--rw-ui-card);
+  color: var(--rw-ui-foreground);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   font-size: 13px;
 }
@@ -400,28 +419,10 @@
     padding: 0;
   }
 
-  .youtube-workflow .youtube-workflow-panel {
-    width: 100vw;
-    height: 100vh;
-    max-height: 100vh;
-    border: 0;
-    border-radius: 0;
-    background: var(--bg-color);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-  }
-
-  .youtube-workflow .youtube-workflow-header {
-    background: var(--bg-color);
-  }
-
-  .youtube-workflow-layout {
-    grid-template-columns: minmax(0, 1fr);
-    max-height: calc(100vh - 76px);
-  }
-
   .youtube-workflow .youtube-workflow-section-tabs.youtube-workflow-nav {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-self: start;
+    height: auto;
   }
 
   .youtube-workflow .youtube-workflow-library-job,
@@ -447,68 +448,43 @@
       --text-main: #e0e0e0;
       --text-sub: #a0a0a0;
       --border-color: #333333;
-      
+
       --input-bg: #1e1e1e;
       --input-text: #d1d5db;
-      
+
       --btn-bg: #2d2d2d;
       --btn-hover: #3d3d3d;
       --btn-text: #e0e0e0;
       --btn-active-bg: #505050;
       --btn-active-border: #666666;
-      
+
       --word-highlight-bg: #b7950b; 
       --sentence-highlight-bg: #2d3748;
-      
+
       /* 娣辫壊妯″紡涓嬬殑鍒囧垎妯″紡榛樿鍊?*/
       --chunk-active-bg: #2d3748;
       --chunk-cn-color: #a0a0a0;
-      --chunk-annot-default: rgba(255,255,255,0.42);
-      
+
       --grok-summary-arrow: #a0a0a0;
       --grok-summary-arrow-active: #e0e0e0;
 
-      --sidebar-bg: #1a1a1a;
-      --sidebar-border: #333;
       --card-bg: #252525;
-      --vocab-indicator-color: #858585;
 
-      --v-word-color: #e0e0e0;
-      --v-context-color: #aaa;
-      --v-meaning-color: #a0a0a0;
-      --v-not-color: #666;
 
-      /* === Liquid Glass tokens (dark) === */
-      --glass-bg-light: rgba(28, 30, 38, 0.56);
-      --glass-bg-medium: rgba(28, 30, 38, 0.62);
-      --glass-bg-strong: rgba(28, 30, 38, 0.70);
-      --glass-border-light: rgba(255, 255, 255, 0.10);
-      --glass-border-strong: rgba(255, 255, 255, 0.18);
-      --glass-shadow: 0 10px 28px rgba(0, 0, 0, 0.34);
-      --glass-shadow-soft: 0 2px 10px rgba(0, 0, 0, 0.26);
-      --liquid-bg: rgba(28, 30, 38, 0.28);
-      --liquid-border: rgba(255, 255, 255, 0.18);
-      --liquid-specular: inset 1px 1px 0 rgba(255, 255, 255, 0.18), inset 0 0 5px rgba(255, 255, 255, 0.12);
-      --liquid-shadow: 0 6px 6px rgba(0, 0, 0, 0.32), 0 0 20px rgba(0, 0, 0, 0.20);
-      --liquid-filter: blur(20px) saturate(1.5);
+      /* === Active glass tokens (dark) === */
       --glass-panel-bg: rgba(29, 34, 46, 0.56);
       --glass-panel-bg-strong: rgba(34, 40, 53, 0.64);
       --glass-button-bg: rgba(42, 47, 61, 0.52);
-      --glass-card-bg: rgba(33, 38, 50, 0.66);
       --glass-border: rgba(255, 255, 255, 0.18);
       --glass-highlight: rgba(255, 255, 255, 0.16);
       --glass-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.28);
       --glass-shadow-md: 0 7px 24px rgba(0, 0, 0, 0.32);
-      --glass-shadow-lg: 0 16px 36px rgba(0, 0, 0, 0.42);
       --bg-gradient:
         radial-gradient(1200px 520px at -8% -16%, rgba(108,131,167,0.16), transparent 60%),
         radial-gradient(900px 500px at 108% 4%, rgba(72,95,133,0.20), transparent 56%),
         linear-gradient(180deg, #1b2330 0%, #202a39 100%);
 
       /* Precision Reading Utility tokens: dark mode */
-      --pru-app-bg: #0b0c0f;
-      --pru-app-wash: #111318;
-      --pru-reader-bg: #f7f4ec;
       --pru-reader-surface: #fffdf7;
       --pru-reader-muted: #eee7d8;
       --pru-ink: #24231f;
@@ -583,26 +559,6 @@ body {
   min-height: 28px;
 }
 
-#srs-review-entry-root .learning-entry-group > :is(.learning-entry-button, .small-btn) {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 100%;
-  height: auto;
-  min-height: 32px;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-  text-align: center;
-  white-space: normal;
-}
-
-.learning-model-entry {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  text-decoration: none;
-  white-space: nowrap;
-}
-
 .passage-preview-file-input {
   display: none;
 }
@@ -618,7 +574,7 @@ body {
   align-items: center;
   justify-content: flex-end;
   min-width: 172px;
-  min-height: 32px;
+  min-height: 36px;
   margin-left: auto;
 }
 
@@ -626,49 +582,13 @@ body {
   position: relative;
 }
 
-.youtube-workflow-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 1200;
-  pointer-events: auto;
-}
-
-.youtube-workflow-panel {
-  position: fixed;
-  width: min(680px, calc(100vw - 32px));
-  max-height: min(720px, calc(100vh - 32px));
-  overflow: auto;
-  background: var(--panel-bg, #ffffff);
-  color: var(--text-color, #1f2937);
-  border: 1px solid rgba(148, 163, 184, 0.55);
-  border-radius: 8px;
-  padding: 14px;
-  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.2);
-  pointer-events: auto;
-}
-
 .youtube-workflow-header,
-.youtube-workflow-row,
 .youtube-workflow-actions,
-.youtube-workflow-summary,
 .youtube-workflow-job,
 .youtube-workflow-job-actions {
   display: flex;
   gap: 10px;
   align-items: center;
-}
-
-.youtube-workflow-header {
-  position: sticky;
-  top: -14px;
-  z-index: 3;
-  justify-content: space-between;
-  margin: -14px -14px 12px;
-  padding: 14px;
-  background: var(--panel-bg, #ffffff);
-  border-bottom: 1px solid rgba(226, 232, 240, 0.88);
-  cursor: move;
-  user-select: none;
 }
 
 .youtube-window-actions {
@@ -682,16 +602,6 @@ body {
   font-size: 18px;
 }
 
-.youtube-workflow-health {
-  margin: 3px 0 0;
-  font-size: 13px;
-}
-
-.youtube-workflow-health.online {
-  color: #047857;
-}
-
-.youtube-workflow-health.offline,
 .youtube-workflow-error {
   color: #b91c1c;
 }
@@ -718,26 +628,14 @@ body {
   background: rgba(248, 250, 252, 0.94);
 }
 
-.youtube-workflow-service-checking {
-  margin: 8px 0;
-  color: var(--pru-shell-muted);
-  font-size: 13px;
-  line-height: 1.45;
-}
-
 .youtube-workflow-form,
-.youtube-import-panel,
 .youtube-workflow-queue,
-.youtube-workflow-recent,
-.youtube-workflow-history,
-.youtube-history-panel {
+.youtube-workflow-history {
   display: grid;
   gap: 10px;
 }
 
-.youtube-workflow-form label,
-.youtube-import-panel label,
-.youtube-folder-choice label {
+.youtube-workflow-form label {
   display: grid;
   gap: 4px;
   font-size: 13px;
@@ -750,10 +648,6 @@ body {
 .youtube-material-link-label > span {
   font-size: 14px;
   font-weight: 700;
-}
-
-.youtube-workflow-row > label {
-  flex: 1;
 }
 
 .youtube-link-card-list {
@@ -780,35 +674,6 @@ body {
 
 .youtube-link-card[data-valid="false"] {
   border-color: rgba(185, 28, 28, 0.34);
-}
-
-.youtube-link-index {
-  color: var(--secondary-text, #64748b);
-  font-size: 12px;
-  font-weight: 700;
-  text-align: center;
-}
-
-.youtube-link-status {
-  width: 18px;
-  height: 18px;
-  display: inline-grid;
-  place-items: center;
-  border-radius: 50%;
-  background: #e2e8f0;
-  font-weight: 800;
-  font-size: 12px;
-  line-height: 1;
-}
-
-.youtube-link-card[data-valid="true"] .youtube-link-status {
-  background: #dcfce7;
-  color: #047857;
-}
-
-.youtube-link-card[data-valid="false"] .youtube-link-status {
-  background: #fee2e2;
-  color: #b91c1c;
 }
 
 .youtube-link-main {
@@ -851,55 +716,6 @@ body {
   color: #b91c1c;
 }
 
-.youtube-import-panel {
-  padding: 10px;
-  border: 1px solid rgba(37, 99, 235, 0.18);
-  border-radius: 8px;
-  background: rgba(248, 250, 252, 0.7);
-}
-
-.youtube-import-path input {
-  background: rgba(255, 255, 255, 0.96);
-}
-
-.youtube-import-path input[readonly] {
-  color: var(--secondary-text, #64748b);
-  cursor: default;
-}
-
-.youtube-import-list {
-  display: grid;
-  gap: 6px;
-}
-
-.youtube-import-item {
-  display: grid;
-  grid-template-columns: minmax(160px, auto) minmax(0, 1fr);
-  gap: 4px 10px;
-  align-items: center;
-  padding: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.4);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.78);
-}
-
-.youtube-import-item[data-selected="true"] {
-  border-color: rgba(37, 99, 235, 0.32);
-}
-
-.youtube-import-item strong,
-.youtube-import-item small {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.youtube-import-item small {
-  color: var(--secondary-text, #64748b);
-  font-size: 12px;
-}
-
 .youtube-advanced-settings {
   display: grid;
   gap: 6px;
@@ -909,28 +725,11 @@ body {
   background: rgba(248, 250, 252, 0.75);
 }
 
-.youtube-primary-actions,
-.youtube-secondary-actions {
+.youtube-primary-actions {
   display: flex;
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
-}
-
-.youtube-recent-search {
-  min-width: 160px;
-  max-width: 240px;
-  min-height: 32px;
-  padding: 5px 10px;
-  border: 1px solid rgba(148, 163, 184, 0.45);
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.82);
-  font: inherit;
-}
-
-.youtube-workflow-check {
-  grid-template-columns: auto 1fr;
-  align-items: center;
 }
 
 .youtube-credential-actions {
@@ -945,11 +744,6 @@ body {
 .youtube-workflow-actions,
 .youtube-workflow-job-actions {
   flex-wrap: wrap;
-}
-
-.youtube-workflow-summary {
-  justify-content: space-between;
-  margin-top: 6px;
 }
 
 .youtube-workflow-job {
@@ -971,40 +765,10 @@ body {
   background: rgba(248, 251, 255, 0.96);
 }
 
-.youtube-workflow-recent {
-  margin-top: 6px;
-  padding-top: 10px;
-  border-top: 1px solid rgba(148, 163, 184, 0.28);
-}
-
-.youtube-workflow-recent-job {
-  background: rgba(248, 250, 252, 0.82);
-}
-
 .youtube-workflow-history {
   margin-top: 6px;
   padding-top: 10px;
   border-top: 1px solid rgba(148, 163, 184, 0.28);
-}
-
-.youtube-history-filters {
-  display: grid;
-  grid-template-columns: 1fr minmax(110px, 140px) auto;
-  gap: 8px;
-  align-items: center;
-}
-
-.youtube-history-filters input,
-.youtube-history-filters select {
-  min-height: 34px;
-  border: 1px solid rgba(148, 163, 184, 0.55);
-  border-radius: 7px;
-  padding: 6px 8px;
-  background: rgba(255, 255, 255, 0.92);
-}
-
-.youtube-workflow-history-job {
-  background: rgba(255, 255, 255, 0.74);
 }
 
 .youtube-quality-card {
@@ -1045,20 +809,6 @@ body {
   gap: 8px;
   align-items: center;
   min-width: 0;
-}
-
-.youtube-job-status-badge {
-  display: inline-flex;
-  align-items: center;
-  min-height: 22px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: #eef2ff;
-  color: #3730a3;
-  font-size: 12px;
-  font-weight: 800;
-  line-height: 1.2;
-  white-space: nowrap;
 }
 
 .youtube-workflow-job[data-status="queued"] .youtube-job-status-badge {
@@ -1106,33 +856,9 @@ body {
   color: #475569;
 }
 
-.youtube-job-position,
-.youtube-job-opened-state {
-  color: var(--secondary-text, #64748b);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
 .youtube-job-title {
   font-size: 14px;
   line-height: 1.35;
-}
-
-.youtube-job-log {
-  margin-top: 4px;
-  padding: 7px 9px;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  border-radius: 8px;
-  background: rgba(248, 250, 252, 0.88);
-  color: #334155;
-  font-size: 12px;
-  line-height: 1.35;
-}
-
-.youtube-job-log-title {
-  margin-bottom: 3px;
-  color: #1e293b;
-  font-weight: 800;
 }
 
 .youtube-job-log ul {
@@ -1148,26 +874,8 @@ body {
   white-space: normal;
 }
 
-.youtube-job-opened-state {
-  padding: 6px 8px;
-  border: 1px solid rgba(148, 163, 184, 0.45);
-  border-radius: 6px;
-  background: rgba(248, 250, 252, 0.88);
-}
-
 .youtube-workflow-hint[data-tone="warning"] {
   color: #b45309;
-}
-
-.youtube-video-preference {
-  width: fit-content;
-  min-height: 30px;
-  padding: 4px 8px;
-  border: 1px solid var(--pru-row-border, var(--border-color));
-  border-radius: var(--pru-radius-row, 8px);
-  background: var(--pru-shell-surface, var(--card-bg));
-  color: var(--pru-shell-text, var(--text-main));
-  white-space: nowrap;
 }
 
 .youtube-video-player {
@@ -1199,8 +907,8 @@ body {
   padding: 3px 6px 3px 9px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   background: rgba(31, 41, 51, 0.78);
-  backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
   cursor: move;
 }
 
@@ -1287,25 +995,18 @@ body {
   filter: grayscale(0.8);
 }
 
-.youtube-subwindow,
-.youtube-switch-modal-backdrop {
-  position: fixed;
+.youtube-subwindow {
+  position: absolute;
   inset: 0;
   z-index: 1400;
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: 12px;
   background: rgba(15, 23, 42, 0.28);
   backdrop-filter: blur(6px);
 }
 
-.youtube-subwindow {
-  position: absolute;
-  padding: 12px;
-}
-
-.youtube-subwindow-card,
-.youtube-switch-modal {
+.youtube-subwindow-card {
   width: min(520px, calc(100vw - 32px));
   display: grid;
   gap: 12px;
@@ -1320,15 +1021,6 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-}
-
-.youtube-switch-modal h3 {
-  margin: 0;
-  font-size: 18px;
-}
-
-.youtube-switch-modal p {
-  margin: 0;
 }
 
 @media (max-width: 640px) {
@@ -1346,10 +1038,8 @@ body {
     width: min(100%, calc(100vw - 16px));
   }
 
-  .youtube-workflow-row,
   .youtube-workflow-job,
-  .youtube-link-card,
-  .youtube-history-filters {
+  .youtube-link-card {
     display: grid;
     grid-template-columns: 1fr;
   }
@@ -1359,9 +1049,7 @@ body {
       50% { background-position: 40% 20%; }
       100% { background-position: 80% 35%; }
     }
-    .glass-panel,
-    .glass-surface,
-    .glass-card {
+    .glass-panel {
       position: relative;
       background: var(--glass-panel-bg);
       border: 1px solid var(--glass-border);
@@ -1371,9 +1059,7 @@ body {
       overflow: hidden;
       isolation: isolate;
     }
-    .glass-panel::before,
-    .glass-surface::before,
-    .glass-card::before {
+    .glass-panel::before {
       content: "";
       position: absolute;
       inset: 0;
@@ -1388,9 +1074,7 @@ body {
       transition: opacity var(--glass-duration-base) var(--glass-ease);
       z-index: 0;
     }
-    .glass-panel::after,
-    .glass-surface::after,
-    .glass-card::after {
+    .glass-panel::after {
       content: "";
       position: absolute;
       inset: 0;
@@ -1399,14 +1083,12 @@ body {
       box-shadow: inset 1px 1px 0 var(--glass-highlight), inset 0 0 6px var(--glass-highlight);
       z-index: 0;
     }
-    .ui-glass-dynamic.glass-panel::before,
-    .ui-glass-dynamic.glass-surface::before,
-    .ui-glass-dynamic.glass-card::before {
+    .ui-glass-dynamic.glass-panel::before {
       opacity: 1;
     }
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
-      #style-editor-modal, #chunk-style-modal,
+      #chunk-style-modal,
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
@@ -1417,7 +1099,7 @@ body {
     }
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
-      #style-editor-modal, #chunk-style-modal,
+      #chunk-style-modal,
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
@@ -1438,7 +1120,7 @@ body {
     }
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
-      #style-editor-modal, #chunk-style-modal,
+      #chunk-style-modal,
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
@@ -1448,7 +1130,7 @@ body {
     }
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
-      #style-editor-modal, #chunk-style-modal,
+      #chunk-style-modal,
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
@@ -1481,31 +1163,6 @@ body {
     }
 
     /* === 鍙充晶鍔╂墜鍖?=== */
-    #helper-panel { 
-      position: fixed;
-      top: 0;
-      right: 0;
-      bottom: 0;
-      width: 360px;
-      background: var(--glass-panel-bg-strong);
-      display: none;
-      flex-direction: column; 
-      height: 100vh; 
-      border-left: 1px solid var(--glass-border);
-      backdrop-filter: var(--glass-blur-lg);
-      -webkit-backdrop-filter: var(--glass-blur-lg);
-      overflow: hidden;
-      z-index: 1000;
-      box-shadow: inset 1px 1px 0 var(--glass-highlight), var(--glass-shadow-lg);
-      transition: transform var(--glass-duration-slow) var(--glass-ease), opacity var(--glass-duration-base) var(--glass-ease);
-    }
-
-    body.sidebar-open #helper-panel { display: flex; }
-    
-    @media (max-width: 600px) {
-        #helper-panel { width: 100%; }
-    }
-
     /* 涓婚鎸夐挳 */
     #theme-controls {
       position: fixed;
@@ -1518,11 +1175,11 @@ body {
       width: 156px;
       padding: 10px;
       border-radius: 14px;
-      border: 1px solid var(--glass-border);
-      background: var(--glass-panel-bg-strong);
-      backdrop-filter: var(--glass-blur-md);
-      -webkit-backdrop-filter: var(--glass-blur-md);
-      box-shadow: inset 1px 1px 0 var(--glass-highlight), var(--glass-shadow-md);
+      border: 1px solid var(--rw-ui-border);
+      background: var(--rw-ui-card);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      box-shadow: 0 6px 20px rgba(15, 23, 42, 0.12);
     }
     .theme-custom-row {
       display: flex;
@@ -1547,20 +1204,19 @@ body {
     /* === 椤堕儴鎺у埗鏍?=== */
     .controls {
       display: flex;
-      flex-wrap: nowrap;
+      flex-wrap: wrap;
       justify-content: center;
       align-items: center;
       gap: 12px;
       width: 100%;
       box-sizing: border-box;
-      overflow-x: auto;
       padding-bottom: 5px;
-      border: 1px solid var(--glass-border);
+      border: 1px solid var(--rw-ui-border);
       border-bottom: none;
-      background: var(--glass-panel-bg);
-      backdrop-filter: var(--glass-blur-md);
-      -webkit-backdrop-filter: var(--glass-blur-md);
-      box-shadow: inset 1px 1px 0 var(--glass-highlight), var(--glass-shadow-md);
+      background: var(--rw-ui-card);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
       border-radius: var(--radius-lg);
       position: relative;
       top: auto;
@@ -1568,22 +1224,20 @@ body {
       padding: 10px 5px;
       transition: box-shadow var(--glass-duration-base) var(--glass-ease), background-color var(--glass-duration-base) var(--glass-ease);
       isolation: isolate;
-      overflow: hidden;
+      overflow: visible;
+    }
+    @media (min-width: 641px) {
+      .controls {
+        padding-top: 46px;
+      }
     }
     .controls::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      border-radius: inherit;
-      pointer-events: none;
-      background: radial-gradient(160px circle at var(--glass-mx, 50%) var(--glass-my, 50%), rgba(255,255,255,0.26), rgba(255,255,255,0) 72%);
-      opacity: 0;
-      transition: opacity var(--glass-duration-base) var(--glass-ease);
+      content: none;
     }
     .controls.ui-glass-dynamic::before {
       opacity: 1;
     }
-    
+
     .controls label {
         font-size: 13px;
         font-weight: 600;
@@ -1594,8 +1248,7 @@ body {
     .controls > *,
     .extra-controls > *,
     .transcript-header > *,
-    #transcript-container > *,
-    #helper-panel > * {
+    #transcript-container > * {
       position: relative;
       z-index: 1;
     }
@@ -1645,8 +1298,8 @@ body {
     .controls .file-btn {
       background: color-mix(in srgb, var(--glass-button-bg) 78%, transparent);
       box-shadow: inset 1px 1px 0 rgba(255,255,255,0.42), 0 1px 5px rgba(0,0,0,0.08);
-      backdrop-filter: blur(8px) saturate(1.15);
       -webkit-backdrop-filter: blur(8px) saturate(1.15);
+      backdrop-filter: blur(8px) saturate(1.15);
     }
     .controls .file-btn:hover {
       background: color-mix(in srgb, var(--glass-panel-bg-strong) 78%, transparent);
@@ -1664,9 +1317,9 @@ body {
       cursor: pointer;
       list-style: none;
       padding: 6px 12px;
-      border: 1px solid rgba(148, 163, 184, 0.28);
+      border: 1px solid var(--rw-ui-border);
       border-radius: 8px;
-      background: rgba(255, 255, 255, 0.38);
+      background: var(--rw-ui-secondary);
       font-weight: 600;
       user-select: none;
     }
@@ -1701,11 +1354,11 @@ body {
       justify-content: center;
       align-items: center;
       gap: 10px;
-      background: var(--glass-panel-bg);
-      backdrop-filter: var(--glass-blur-md);
-      -webkit-backdrop-filter: var(--glass-blur-md);
-      border: 1px solid var(--glass-border);
-      box-shadow: inset 1px 1px 0 var(--glass-highlight), var(--glass-shadow-sm);
+      background: var(--rw-ui-card);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      border: 1px solid var(--rw-ui-border);
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
       border-radius: var(--radius-lg);
       padding: 9px 10px;
       position: relative;
@@ -1714,8 +1367,7 @@ body {
     }
     .extra-controls::before,
     .transcript-header::before,
-    #transcript-container::before,
-    #helper-panel::before {
+    #transcript-container::before {
       content: "";
       position: absolute;
       inset: 0;
@@ -1728,9 +1380,13 @@ body {
     }
     .extra-controls.ui-glass-dynamic::before,
     .transcript-header.ui-glass-dynamic::before,
-    #transcript-container.ui-glass-dynamic::before,
-    #helper-panel.ui-glass-dynamic::before {
+    #transcript-container.ui-glass-dynamic::before {
       opacity: 1;
+    }
+
+    .extra-controls::before,
+    .extra-controls.ui-glass-dynamic::before {
+      content: none;
     }
 
     audio {
@@ -1745,98 +1401,96 @@ body {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      background: color-mix(in srgb, var(--glass-button-bg) 84%, transparent);
-      border: 1px solid color-mix(in srgb, var(--glass-border) 74%, transparent);
+      background: var(--rw-ui-card);
+      border: 1px solid var(--rw-ui-border);
       border-radius: 14px;
       padding: 5px 8px;
-      backdrop-filter: var(--glass-blur-sm);
-      -webkit-backdrop-filter: var(--glass-blur-sm);
-      box-shadow: inset 1px 1px 0 rgba(255,255,255,0.38);
+      color: var(--rw-ui-foreground);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      box-shadow: none;
+    }
+    .control-group::before,
+    .control-group::after,
+    .hotkey-box::before,
+    .hotkey-box::after {
+      content: none;
+      display: none;
     }
 
-    /* Reserve the shared sm button content height before the module CSS
-       arrives, so the native pilot does not move the transcript header. */
     .seek-controls {
-      min-height: var(--pru-control-h-sm, 32px);
+      min-height: var(--pru-control-h, 36px);
     }
 
     /* Reserve only geometry before the module CSS and Vue Teleports finish
        loading. This low-priority layer must never own button colors, borders,
        typography, hover, focus, or active-state visuals. */
-    @layer reader-footprint, theme, base, components, utilities;
     @layer reader-footprint {
       [data-ui-owner="reader"]:where(button, [role="button"]) {
         display: inline-flex;
         align-items: center;
         justify-content: center;
         box-sizing: border-box;
-        min-height: 32px;
-        height: 32px;
+        min-height: 36px;
+        height: 36px;
         gap: 6px;
         padding: 0 12px;
       }
       [data-ui-owner="reader"]#btn-chunk-cn-hold,
       [data-ui-owner="reader"]#btn-chunk-style {
-        min-height: 24px;
-        height: 24px;
+        min-height: 36px;
+        height: 36px;
         gap: 4px;
-        padding: 0 8px;
-      }
-      [data-ui-owner="reader"]#btn-prev-sentence,
-      [data-ui-owner="reader"]#btn-next-sentence {
-        width: 68px;
-      }
-      [data-ui-owner="reader"].speed-btn {
-        width: 64px;
-      }
-      [data-ui-owner="reader"]#toggle-follow,
-      [data-ui-owner="reader"]#highlight-mode-btn {
-        width: 72px;
+        padding: 0 12px;
       }
       [data-ui-owner="reader"]#btn-annotation-backfill-ai,
-      [data-ui-owner="reader"]#btn-toggle-preview-vocabulary,
       [data-ui-owner="reader"]#btn-settle-article-vocabulary {
         min-width: 96px;
       }
-      [data-ui-owner="reader"]#btn-preview-vocabulary {
-        min-width: 82px;
-      }
-      [data-ui-owner="reader"]#btn-chunk-cn-hold {
-        width: 42px;
-      }
-      [data-ui-owner="reader"]#btn-chunk-focus {
-        width: 54px;
+            [data-ui-owner="reader"]#btn-chunk-focus {
+        min-width: 54px;
       }
       [data-ui-owner="reader"]#btn-chunk-style {
-        width: 30px;
+        min-width: 30px;
       }
       [data-ui-owner="reader"]#theme-toggle {
-        width: 32px;
+        width: 36px;
+        height: 36px;
         padding: 0;
       }
       [data-ui-owner="reader"].hotkey-input,
       [data-ui-owner="reader"].hotkey-input-wide {
-        --reader-hotkey-single-width: 42px;
-        --reader-hotkey-wide-width: 63px;
+        --reader-hotkey-single-width: 54px;
+        --reader-hotkey-wide-width: 116px;
         display: inline-block;
         box-sizing: border-box;
-        min-height: 32px;
-        height: 32px;
-        padding: 0 10px;
+        min-height: 36px;
+        height: 36px;
       }
       [data-ui-owner="reader"].hotkey-input {
         width: var(--reader-hotkey-single-width);
       }
       [data-ui-owner="reader"].hotkey-input-wide {
         width: var(--reader-hotkey-wide-width);
+        flex: 0 0 var(--reader-hotkey-wide-width);
       }
-      [data-ui-owner="reader"]#import-marks-btn { width: 68px; }
-      [data-ui-owner="reader"]#export-json { width: 76px; }
-      [data-ui-owner="reader"]#export-md-all { width: 65px; }
+      [data-ui-owner="reader"]#import-marks-btn { min-width: 68px; }
+      [data-ui-owner="reader"]#export-json { min-width: 76px; }
+      [data-ui-owner="reader"]#export-md-all { min-width: 65px; }
       [data-ui-owner="reader"]#toggle-chunk-btn { min-width: 122px; }
     }
     .speed-controls {
-      min-height: var(--pru-control-h-sm, 32px);
+      min-height: var(--pru-control-h, 36px);
+    }
+
+    @media (max-width: 640px) {
+      .control-group.seek-controls {
+        display: grid;
+        grid-template-columns: max-content 116px;
+        justify-content: center;
+        width: max-content;
+        max-width: 100%;
+      }
     }
 
     .transcript-header {
@@ -1846,18 +1500,32 @@ body {
       gap: 8px;
       flex-wrap: wrap;
       margin-top: 5px;
-      background: var(--glass-panel-bg);
-      backdrop-filter: var(--glass-blur-md);
-      -webkit-backdrop-filter: var(--glass-blur-md);
-      border: 1px solid var(--glass-border);
-      box-shadow: inset 1px 1px 0 var(--glass-highlight), var(--glass-shadow-sm);
+      background: var(--card-bg);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      border: 1px solid var(--border-color);
+      box-shadow: var(--glass-shadow-sm);
       border-radius: var(--radius-lg);
       padding: 10px;
       position: relative;
       isolation: isolate;
       overflow: visible;
     }
-    
+
+    /* Reader control surfaces are solid cards; shared glass classes must not
+       restore the decorative pseudo-elements on these three owners. */
+    .controls::before,
+    .controls::after,
+    .extra-controls::before,
+    .extra-controls::after,
+    .transcript-header::before,
+    .transcript-header::after {
+      content: none;
+      display: none;
+      background: none;
+      box-shadow: none;
+    }
+
     .transcript-actions {
         display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center;
         width: 100%;
@@ -1870,7 +1538,7 @@ body {
     .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]):not([data-ui-owner="learning"])),
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
-      #style-editor-modal, #chunk-style-modal,
+      #chunk-style-modal,
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
@@ -1903,7 +1571,7 @@ body {
     .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]):not([data-ui-owner="learning"]))::before,
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
-      #style-editor-modal, #chunk-style-modal,
+      #chunk-style-modal,
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
@@ -1922,7 +1590,7 @@ body {
     .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]):not([data-ui-owner="learning"])).ui-glass-dynamic::before,
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
-      #style-editor-modal, #chunk-style-modal,
+      #chunk-style-modal,
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
@@ -1932,7 +1600,7 @@ body {
     }
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
-      #style-editor-modal, #chunk-style-modal,
+      #chunk-style-modal,
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
@@ -1945,7 +1613,7 @@ body {
     }
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
-      #style-editor-modal, #chunk-style-modal,
+      #chunk-style-modal,
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
@@ -1957,7 +1625,7 @@ body {
     }
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
-      #style-editor-modal, #chunk-style-modal,
+      #chunk-style-modal,
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
@@ -1986,15 +1654,22 @@ body {
       display: inline-flex;
       align-items: center;
       gap: 4px;
-      border: 1px solid var(--glass-border);
+      border: 1px solid var(--rw-ui-border);
       border-radius: 12px;
       padding: 3px 10px;
-      background: var(--glass-button-bg);
+      background: var(--rw-ui-card);
       font-size: 12px;
-      color: var(--input-text);
-      box-shadow: inset 1px 1px 0 var(--glass-highlight), var(--glass-shadow-sm);
-      backdrop-filter: var(--glass-blur-sm);
-      -webkit-backdrop-filter: var(--glass-blur-sm);
+      color: var(--rw-ui-foreground);
+      box-shadow: none;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }
+    [data-ui-owner="reader"].hotkey-input,
+    [data-ui-owner="reader"].hotkey-input-wide {
+      color: var(--foreground);
+      -webkit-text-fill-color: var(--foreground);
+      background-color: var(--background);
+      caret-color: var(--foreground);
     }
     .modal-backdrop {
       display: none;
@@ -2005,7 +1680,6 @@ body {
       backdrop-filter: blur(4px);
       -webkit-backdrop-filter: blur(4px);
     }
-    #style-editor-modal,
     #chunk-style-modal {
       display: none;
       position: fixed;
@@ -2020,19 +1694,11 @@ body {
       box-sizing: border-box;
       border-radius: 18px;
     }
-    #style-editor-modal {
-      background: var(--glass-card-bg);
-      border: 1px solid var(--glass-border);
-      box-shadow: inset 1px 1px 0 var(--glass-highlight), var(--glass-shadow-lg);
-      color: var(--text-main);
-      backdrop-filter: var(--glass-blur-lg);
-      -webkit-backdrop-filter: var(--glass-blur-lg);
-    }
     #chunk-style-modal {
-      background: var(--card-bg);
-      border: 1px solid var(--border-color);
+      background: var(--rw-ui-card);
+      border: 1px solid var(--rw-ui-border);
       box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
-      color: var(--text-main);
+      color: var(--rw-ui-foreground);
       backdrop-filter: none;
       -webkit-backdrop-filter: none;
     }
@@ -2055,21 +1721,6 @@ body {
       font-weight: 700;
       line-height: 1.3;
     }
-    .close-modal:where(:not([data-ui-owner="style-controls"])) {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 28px;
-      height: 28px;
-      border-radius: 999px;
-      cursor: pointer;
-      color: var(--text-sub);
-      user-select: none;
-    }
-    .close-modal:where(:not([data-ui-owner="style-controls"])):hover {
-      background: var(--glass-button-bg);
-      color: var(--text-main);
-    }
     .style-section {
       display: flex;
       flex-direction: column;
@@ -2088,30 +1739,10 @@ body {
       min-height: 28px;
       font-size: 13px;
     }
-    .style-input-num:where(:not([data-ui-owner="style-controls"])) {
-      width: 86px;
-      height: 26px;
-      box-sizing: border-box;
-      border: 1px solid var(--border-color);
-      border-radius: 6px;
-      background: var(--input-bg);
-      color: var(--text-main);
-      padding: 2px 6px;
-      font: inherit;
-    }
-    .style-btn-toggle:where(:not([data-ui-owner="style-controls"])) {
-      min-height: 26px;
-      padding: 3px 10px;
-      border-radius: 999px;
-      border: 1px solid var(--glass-border);
-      background: var(--glass-button-bg);
-      color: var(--text-main);
-      cursor: pointer;
-    }
     [data-theme="dark"] .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]):not([data-ui-owner="learning"])),
     [data-theme="dark"] :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
-      #style-editor-modal, #chunk-style-modal,
+      #chunk-style-modal,
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
@@ -2217,9 +1848,6 @@ body {
       filter: none !important;
       background-image: none !important;
     }
-    body.highlight-sentence-mode .has-visual-data:hover {
-      background-color: transparent !important;
-    }
     #transcript-container,
     .transcript-line,
     .chunk-block,
@@ -2231,23 +1859,12 @@ body {
       border: none;
       background-image: none;
     }
-    
+
     .word-highlight {
       background-color: var(--word-highlight-bg);
       color: #000;
       padding: 2px 0;
       border-radius: 3px;
-    }
-
-    .has-visual-data {
-        border-bottom: 1px solid var(--vocab-indicator-color);
-        cursor: pointer; 
-    }
-    .has-visual-data:hover {
-        background-color: rgba(211, 84, 0, 0.1);
-    }
-    [data-theme="dark"] .has-visual-data:hover {
-        background-color: rgba(230, 126, 34, 0.2);
     }
 
     /* 闃叉姈鍔ㄤ紭鍖?*/
@@ -2262,21 +1879,8 @@ body {
         color: inherit; 
     }
 
-    .preview-vocabulary-word {
-        text-decoration-line: underline;
-        text-decoration-style: dotted;
-        text-decoration-thickness: 1.5px;
-        text-underline-offset: 0.18em;
-        cursor: pointer;
-    }
 
-    .preview-vocabulary-word:hover {
-        background-color: rgba(14, 165, 233, 0.10);
-    }
 
-    .marked.preview-vocabulary-word:hover {
-        background-color: transparent;
-    }
 
     .punct { color: var(--text-sub); }
 
@@ -2383,51 +1987,9 @@ body {
       box-sizing: border-box;
     }
 
-    /* Keep legacy reader-control compatibility until that toolbar is migrated. */
-    .youtube-reader-controls .small-btn:where(:not([data-ui-owner="workflow"])) {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: var(--pru-inline-gap);
-      min-height: var(--pru-control-h);
-      box-sizing: border-box;
-      padding: 0 12px !important;
-      font-size: 13px;
-      line-height: 1;
-      white-space: nowrap;
-      cursor: pointer;
-      transform: none !important;
-      touch-action: manipulation;
-    }
-
-    .youtube-reader-controls .small-btn:where(:not([data-ui-owner="workflow"])):active {
-      background: color-mix(in srgb, var(--pru-shell-row-hover) 78%, var(--pru-accent) 8%) !important;
-    }
-
-    .youtube-reader-controls .small-btn:where(:not([data-ui-owner="workflow"])):focus-visible {
-      outline: none !important;
-      border-color: var(--pru-accent) !important;
-      box-shadow: 0 0 0 3px var(--pru-focus-ring) !important;
-    }
-
-    .youtube-reader-controls .small-btn:where(:not([data-ui-owner="workflow"])):disabled {
-      opacity: 0.48 !important;
-      pointer-events: none;
-      cursor: default;
-      box-shadow: none !important;
-    }
-
-    .youtube-reader-controls .small-btn:where(:not([data-ui-owner="workflow"])) {
-      min-height: var(--pru-control-h-sm);
-      padding: 0 10px !important;
-      font-size: 12px;
-    }
-
-    .youtube-workflow-backdrop {
-      background: transparent;
-    }
-
     .youtube-workflow-panel {
+      position: fixed;
+      pointer-events: auto;
       box-sizing: border-box;
       width: min(380px, calc(100vw - 48px));
       max-height: min(720px, calc(100vh - 48px));
@@ -2439,8 +2001,8 @@ body {
       background: var(--pru-shell-bg);
       color: var(--pru-shell-text);
       box-shadow: var(--pru-shadow-shell);
-      backdrop-filter: blur(24px) saturate(1.25);
-      -webkit-backdrop-filter: blur(24px) saturate(1.25);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
       font-family: var(--pru-ui-font);
       letter-spacing: 0;
       overscroll-behavior: contain;
@@ -2449,18 +2011,22 @@ body {
     }
 
     .youtube-workflow-header {
+      position: sticky;
+      z-index: 3;
+      justify-content: space-between;
+      cursor: move;
+      user-select: none;
       top: 0;
       margin: 0 0 12px;
       padding: 0 0 10px;
       border-bottom: 1px solid var(--pru-shell-border);
-      background: linear-gradient(180deg, color-mix(in srgb, var(--pru-shell-bg) 92%, var(--pru-shell-surface)), color-mix(in srgb, var(--pru-shell-bg) 72%, transparent));
+      background: var(--rw-ui-background);
       color: var(--pru-shell-text);
-      backdrop-filter: blur(24px) saturate(1.22);
-      -webkit-backdrop-filter: blur(24px) saturate(1.22);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
     }
 
-    .youtube-workflow-header h2,
-    .youtube-switch-modal h3 {
+    .youtube-workflow-header h2 {
       margin: 0;
       color: var(--pru-shell-text);
       font-family: var(--pru-ui-font);
@@ -2471,85 +2037,25 @@ body {
       text-wrap: balance;
     }
 
-    .youtube-workflow-health {
-      margin: 4px 0 0;
-      color: var(--pru-shell-muted);
-      font-size: 12px;
-      line-height: 1.35;
-    }
-
-    .youtube-workflow-health.online {
-      color: var(--pru-success);
-    }
-
-    .youtube-workflow-health.offline,
     .youtube-workflow-error {
       color: var(--pru-danger);
     }
 
     .youtube-workflow-form,
-    .youtube-import-panel,
     .youtube-workflow-queue,
-    .youtube-workflow-recent,
     .youtube-workflow-history,
     .youtube-workflow-process-view,
-    .youtube-workflow-library-view,
-    .youtube-history-panel {
+    .youtube-workflow-library-view {
       display: grid;
       gap: var(--pru-row-gap);
       color: var(--pru-shell-text);
     }
 
-    .youtube-workflow-recent,
     .youtube-workflow-queue,
     .youtube-workflow-history {
       margin-top: 0;
       padding-top: 14px;
       border-top: 1px solid var(--pru-shell-border);
-    }
-
-    .youtube-workflow-recent {
-      padding-top: 0;
-      border-top: 0;
-    }
-
-    .youtube-workflow-summary {
-      min-height: var(--pru-control-h);
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 4px 8px;
-      align-items: center;
-      margin-top: 0;
-      color: var(--pru-shell-muted);
-      font-size: 12px;
-      line-height: 1.4;
-    }
-
-    .youtube-workflow-summary strong {
-      color: var(--pru-shell-text);
-      font-size: 15px;
-      font-weight: 650;
-      line-height: 1.35;
-    }
-
-    .youtube-workflow-summary span {
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .youtube-workflow-summary .youtube-recent-search {
-      grid-column: 1;
-      width: 100%;
-      max-width: none;
-      min-width: 0;
-      margin-top: 8px;
-    }
-
-    .youtube-workflow-summary .youtube-recent-search + button {
-      grid-column: 2;
-      margin-top: 8px;
     }
 
     .youtube-workflow-section-tabs {
@@ -2561,9 +2067,7 @@ body {
       background: color-mix(in srgb, var(--pru-reader-muted) 72%, var(--pru-shell-surface));
     }
 
-    .youtube-workflow-form label,
-    .youtube-import-panel label,
-    .youtube-folder-choice label {
+    .youtube-workflow-form label {
       gap: 6px;
       color: var(--pru-shell-muted);
       font-size: 12px;
@@ -2577,33 +2081,6 @@ body {
       border-top: 1px solid var(--pru-shell-border);
     }
 
-    .youtube-workflow-check {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      min-width: 0;
-      color: var(--pru-shell-muted);
-      font-size: 12px;
-      font-weight: 600;
-      line-height: 1.35;
-    }
-
-    .youtube-workflow-check span {
-      min-width: 0;
-    }
-
-    .youtube-recent-search {
-      width: clamp(160px, 22vw, 240px);
-      min-width: 160px;
-      max-width: 240px;
-      height: var(--pru-control-h-sm);
-      min-height: var(--pru-control-h-sm);
-      padding: 0 10px;
-      border-radius: var(--pru-radius-control) !important;
-      background: var(--pru-shell-surface);
-    }
-
-    .youtube-import-panel,
     .youtube-advanced-settings,
     .youtube-workflow-alert,
     .youtube-workflow-empty {
@@ -2613,7 +2090,6 @@ body {
       box-shadow: none;
     }
 
-    .youtube-import-panel,
     .youtube-advanced-settings {
       padding: 11px;
       background: color-mix(in srgb, var(--pru-shell-surface) 66%, transparent);
@@ -2630,19 +2106,10 @@ body {
 
     .youtube-workflow-hint,
     .youtube-link-main small,
-    .youtube-advanced-settings p,
-    .youtube-import-item small,
-    .youtube-job-position,
-    .youtube-job-opened-state {
+    .youtube-advanced-settings p {
       color: var(--pru-shell-muted);
       font-size: 12px;
       line-height: 1.4;
-    }
-
-    .youtube-workflow-summary span,
-    .youtube-job-position,
-    .youtube-job-status-badge {
-      font-variant-numeric: tabular-nums;
     }
 
     .youtube-workflow-hint[data-tone="warning"] {
@@ -2650,8 +2117,7 @@ body {
     }
 
     .youtube-workflow-job,
-    .youtube-link-card,
-    .youtube-import-item {
+    .youtube-link-card {
       border: 1px solid var(--pru-row-border);
       border-radius: var(--pru-radius-row);
       background: var(--pru-shell-row);
@@ -2674,28 +2140,8 @@ body {
       --pru-current-badge-text: var(--pru-badge-neutral-text);
     }
 
-    .youtube-workflow-recent-job {
-      min-height: 84px;
-      padding-left: 12px;
-      box-shadow: inset 3px 0 0 var(--pru-accent);
-    }
-
-    .youtube-workflow-recent-job[data-status="in-progress"] {
-      box-shadow: inset 3px 0 0 var(--pru-accent);
-    }
-
-    .youtube-workflow-recent-job[data-status="finished"],
-    .youtube-workflow-recent-job[data-status="completed"] {
-      box-shadow: inset 3px 0 0 var(--pru-success);
-    }
-
-    .youtube-workflow-recent-job[data-status="not-started"] {
-      box-shadow: inset 3px 0 0 color-mix(in srgb, var(--pru-shell-muted) 34%, transparent);
-    }
-
     .youtube-workflow-job:hover,
-    .youtube-link-card:hover,
-    .youtube-import-item:hover {
+    .youtube-link-card:hover {
       background: var(--pru-shell-row-hover);
     }
 
@@ -2771,6 +2217,7 @@ body {
     }
 
     .youtube-job-status-badge {
+      font-variant-numeric: tabular-nums;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -2824,8 +2271,7 @@ body {
       --pru-current-badge-text: var(--pru-badge-neutral-text);
     }
 
-    .youtube-link-card-list,
-    .youtube-import-list {
+    .youtube-link-card-list {
       gap: var(--pru-row-gap);
     }
 
@@ -2835,32 +2281,12 @@ body {
       grid-template-columns: 18px 22px minmax(0, 1fr) auto auto;
     }
 
-    .youtube-link-status {
-      width: 18px;
-      height: 18px;
-      border-radius: var(--pru-radius-pill);
-      background: var(--pru-badge-neutral-bg);
-      color: var(--pru-badge-neutral-text);
-      font-size: 11px;
-      font-weight: 800;
-    }
-
     .youtube-link-card[data-valid="true"] {
       border-color: color-mix(in srgb, var(--pru-success) 34%, var(--pru-row-border));
     }
 
-    .youtube-link-card[data-valid="true"] .youtube-link-status {
-      background: var(--pru-badge-success-bg);
-      color: var(--pru-badge-success-text);
-    }
-
     .youtube-link-card[data-valid="false"] {
       border-color: color-mix(in srgb, var(--pru-danger) 34%, var(--pru-row-border));
-    }
-
-    .youtube-link-card[data-valid="false"] .youtube-link-status {
-      background: var(--pru-badge-danger-bg);
-      color: var(--pru-badge-danger-text);
     }
 
     .youtube-link-main strong {
@@ -2877,37 +2303,11 @@ body {
       color: var(--pru-danger);
     }
 
-    .youtube-import-item {
-      padding: 8px 10px;
-      grid-template-columns: minmax(160px, auto) minmax(0, 1fr);
-    }
-
-    .youtube-import-item[data-selected="true"] {
-      border-color: color-mix(in srgb, var(--pru-accent) 34%, var(--pru-row-border));
-      background: var(--pru-row-active-bg);
-    }
-
-    .youtube-history-filters {
-      grid-template-columns: minmax(0, 1fr) minmax(112px, 144px) auto;
-      gap: var(--pru-row-gap);
-    }
-
     .youtube-primary-actions,
-    .youtube-secondary-actions,
     .youtube-workflow-actions,
     .youtube-workflow-job-actions {
       gap: var(--pru-inline-gap);
       align-items: center;
-    }
-
-    .youtube-workflow-panel-footer {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr);
-      gap: 4px;
-      margin-top: 4px;
-      padding-top: 10px;
-      border-top: 1px solid var(--pru-shell-border);
-      color: var(--pru-shell-muted);
     }
 
     .youtube-workflow-job-actions {
@@ -2915,15 +2315,7 @@ body {
       flex: 0 0 auto;
     }
 
-    .youtube-job-opened-state {
-      padding: 6px 8px;
-      border: 1px solid var(--pru-row-border);
-      border-radius: var(--pru-radius-row);
-      background: var(--pru-shell-row);
-    }
-
-    .youtube-workflow .youtube-subwindow,
-    .youtube-workflow .youtube-switch-modal-backdrop {
+    .youtube-workflow .youtube-subwindow {
       position: fixed;
       inset: 0;
       z-index: 1400;
@@ -2941,8 +2333,7 @@ body {
       padding: 16px;
     }
 
-    .youtube-workflow .youtube-subwindow-card,
-    .youtube-workflow .youtube-switch-modal {
+    .youtube-workflow .youtube-subwindow-card {
       width: min(520px, calc(100vw - 32px));
       display: grid;
       gap: 12px;
@@ -2958,7 +2349,6 @@ body {
       letter-spacing: 0;
     }
 
-    .youtube-switch-modal p,
     .youtube-subwindow-card p,
     .youtube-quality-card li {
       margin: 0;
@@ -2967,20 +2357,18 @@ body {
       line-height: 1.5;
     }
 
-    .youtube-workflow .youtube-switch-modal .youtube-workflow-actions,
     .youtube-workflow .youtube-quality-card .youtube-workflow-actions {
       justify-content: flex-end;
     }
 
-    [data-theme="dark"] .youtube-workflow .youtube-subwindow,
-    [data-theme="dark"] .youtube-workflow .youtube-switch-modal-backdrop {
+    [data-theme="dark"] .youtube-workflow .youtube-subwindow {
       background: rgba(0, 0, 0, 0.52);
     }
 
     [data-theme="dark"] .youtube-workflow-panel,
     [data-theme="dark"] .youtube-workflow-header {
-      backdrop-filter: blur(24px) saturate(1.35);
-      -webkit-backdrop-filter: blur(24px) saturate(1.35);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
     }
 
     @media (max-width: 640px) {
@@ -3002,10 +2390,7 @@ body {
         padding: 12px;
       }
 
-      .youtube-workflow-summary,
-      .youtube-link-card,
-      .youtube-import-item,
-      .youtube-history-filters {
+      .youtube-link-card {
         display: grid;
         grid-template-columns: minmax(0, 1fr);
         align-items: stretch;
@@ -3016,16 +2401,9 @@ body {
         align-items: flex-start;
       }
 
-      .youtube-recent-search {
-        width: 100%;
-        min-width: 0;
-        max-width: none;
-      }
-
       .youtube-workflow-job-actions,
       .youtube-workflow-actions,
-      .youtube-primary-actions,
-      .youtube-secondary-actions {
+      .youtube-primary-actions {
         justify-content: flex-start;
       }
 
@@ -3035,17 +2413,11 @@ body {
         width: auto;
       }
 
-      .youtube-workflow-recent-job .youtube-workflow-job-actions {
-        align-self: flex-start;
-        justify-content: flex-end;
-      }
     }
 
     @media (prefers-reduced-motion: reduce) {
-      .youtube-reader-controls .small-btn:where(:not([data-ui-owner="workflow"])),
       .youtube-workflow-job,
-      .youtube-link-card,
-      .youtube-import-item {
+      .youtube-link-card {
         transition: none !important;
       }
     }
@@ -3090,8 +2462,8 @@ body {
       background: var(--annotation-bubble-glass-bg);
       color: var(--text-main);
       box-shadow: var(--annotation-bubble-glass-shadow);
-      backdrop-filter: blur(28px) saturate(1.75) brightness(1.04);
       -webkit-backdrop-filter: blur(28px) saturate(1.75) brightness(1.04);
+      backdrop-filter: blur(28px) saturate(1.75) brightness(1.04);
       user-select: text;
       animation: annotationBubblePopIn 170ms cubic-bezier(.34,1.3,.64,1) both;
     }
@@ -3124,6 +2496,9 @@ body {
     }
 
     .annotation-bubble__close {
+      /* Keep the inherited glass recipe in both CSS transform stages. */
+      -webkit-backdrop-filter: var(--glass-blur-sm);
+      backdrop-filter: var(--glass-blur-sm);
       width: 30px;
       height: 30px;
       padding: 0;
@@ -3298,10 +2673,9 @@ body {
       color: var(--learning-foreground);
       box-shadow:
         0 24px 70px rgba(15,23,42,0.18),
-        0 8px 24px rgba(15,23,42,0.10),
-        inset 0 1px 0 rgba(255,255,255,0.72);
-      backdrop-filter: blur(22px) saturate(1.25);
-      -webkit-backdrop-filter: blur(22px) saturate(1.25);
+        0 8px 24px rgba(15,23,42,0.10);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
       overflow: hidden;
     }
 
@@ -3601,11 +2975,11 @@ body {
       transform: translate(-50%, -50%);
       border: 1px solid var(--learning-border);
       border-radius: 18px;
-      background: color-mix(in srgb, var(--learning-background) 94%, transparent);
+      background: var(--learning-background);
       color: var(--learning-foreground);
       box-shadow: 0 24px 70px rgba(15,23,42,0.18), 0 8px 24px rgba(15,23,42,0.10);
-      backdrop-filter: blur(22px) saturate(1.25);
-      -webkit-backdrop-filter: blur(22px) saturate(1.25);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
       overflow: hidden;
       display: grid;
       grid-template-rows: auto minmax(0, 1fr);
@@ -3637,18 +3011,10 @@ body {
       font-weight: 650;
     }
 
-    .vocabulary-preview-dialog__form,
     .vocabulary-preview-dialog--settlement {
       gap: 13px;
     }
 
-    .vocabulary-preview-dialog__form {
-      display: grid;
-      grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
-      min-height: 0;
-      overflow: hidden;
-      padding: 16px 20px 18px;
-    }
 
     .vocabulary-preview-dialog--settlement {
       width: min(760px, calc(100vw - 32px));
@@ -3666,17 +3032,7 @@ body {
       user-select: none;
     }
 
-    .vocabulary-preview-dialog__field {
-      display: grid;
-      gap: 7px;
-    }
 
-    .vocabulary-preview-dialog__label {
-      color: rgba(71,85,105,0.88);
-      font-size: 12px;
-      line-height: 1.25;
-      font-weight: 800;
-    }
 
     .vocabulary-preview-dialog__status {
       min-width: 0;
@@ -3692,17 +3048,7 @@ body {
       overflow-wrap: anywhere;
     }
 
-    .vocabulary-preview-dialog__form .vocabulary-preview-dialog__status {
-      margin: 0;
-    }
 
-    .vocabulary-preview-dialog__hint {
-      margin: 0;
-      color: var(--learning-muted-foreground);
-      font-size: 12px;
-      line-height: 1.5;
-      font-weight: 600;
-    }
 
     .vocabulary-preview-dialog__status[data-state="working"] {
       color: #0369a1;
@@ -3807,18 +3153,7 @@ body {
       gap: 8px;
     }
 
-    .vocabulary-preview-dialog:not(.vocabulary-preview-dialog--settlement) .vocabulary-preview-dialog__item-main {
-      flex-wrap: wrap;
-    }
 
-    .vocabulary-preview-dialog__dictionary-suggestion {
-      flex-basis: 100%;
-      color: var(--learning-accent-foreground);
-      font-size: 12px;
-      line-height: 1.45;
-      font-weight: 650;
-      overflow-wrap: anywhere;
-    }
 
     .vocabulary-preview-dialog__item-main strong {
       font-size: 14px;
@@ -4059,58 +3394,8 @@ body {
       opacity: 1;
     }
 
-    /* Material Center V2: focused left navigation and readable task tables */
-    .youtube-reader-controls .youtube-reader-video-priority {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .youtube-reader-video-priority-check {
-      display: inline-grid;
-      place-items: center;
-      width: 18px;
-      height: 18px;
-      border: 1px solid color-mix(in srgb, var(--pru-shell-muted) 34%, var(--pru-shell-border));
-      border-radius: 4px;
-      background: var(--pru-shell-surface);
-      color: #fff;
-      font-size: 13px;
-      font-weight: 800;
-      line-height: 1;
-    }
-
-    .youtube-reader-video-priority[data-active="true"] .youtube-reader-video-priority-check {
-      border-color: var(--pru-accent);
-      background: var(--pru-accent);
-    }
-
-    .youtube-workflow .youtube-workflow-panel {
-      width: min(720px, calc(100vw - 48px));
-      height: min(860px, calc(100vh - 48px));
-      max-height: min(860px, calc(100vh - 48px));
-      padding: 0;
-      overflow: hidden;
-      display: grid;
-      grid-template-rows: auto auto minmax(0, 1fr);
-    }
-
-    .youtube-workflow .youtube-workflow-header {
-      position: sticky;
-      z-index: 3;
-      top: 0;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 14px;
-      margin: 0;
-      padding: 18px 18px 14px;
-      background: color-mix(in srgb, var(--pru-shell-bg) 92%, var(--pru-reader-bg));
-    }
-
     .youtube-workflow-layout {
       display: grid;
-      grid-template-columns: 112px minmax(0, 1fr);
       min-height: 0;
       height: 100%;
       overflow: hidden;
@@ -4181,43 +3466,14 @@ body {
       font: 500 12px/1.45 var(--pru-ui-font);
     }
 
-    .youtube-setting-chips {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-      gap: 6px;
-      max-width: 260px;
-    }
-
-    .youtube-setting-chips span {
-      max-width: 100%;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      padding: 5px 8px;
-      border: 1px solid var(--pru-shell-border);
-      border-radius: var(--pru-radius-pill);
-      background: var(--pru-shell-surface);
-      color: var(--pru-shell-muted);
-      font: 650 11px/1.2 var(--pru-ui-font);
-    }
-
     .youtube-workflow-toolbar,
-    .youtube-history-filters,
     .youtube-primary-actions,
-    .youtube-mode-options,
-    .youtube-secondary-actions,
     .youtube-credential-actions {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
       align-items: center;
       min-width: 0;
-    }
-
-    .youtube-history-filters {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 132px auto;
     }
 
     .youtube-filter-tabs {
@@ -4231,8 +3487,6 @@ body {
     }
 
     .youtube-workflow-form,
-    .youtube-import-panel,
-    .youtube-workflow-settings-strip,
     .youtube-advanced-settings {
       display: grid;
       gap: 10px;
@@ -4243,7 +3497,6 @@ body {
     }
 
     .youtube-workflow-form,
-    .youtube-workflow-recent,
     .youtube-workflow-queue,
     .youtube-workflow-history {
       margin-top: 0;
@@ -4258,8 +3511,7 @@ body {
     }
 
     .youtube-workflow .youtube-workflow-job,
-    .youtube-workflow .youtube-link-card,
-    .youtube-workflow .youtube-import-item {
+    .youtube-workflow .youtube-link-card {
       display: grid;
       border-color: var(--pru-row-border);
       background: color-mix(in srgb, var(--pru-shell-surface) 70%, var(--pru-shell-row));
@@ -4354,86 +3606,37 @@ body {
       max-width: 190px;
     }
 
-    .youtube-workflow .youtube-workflow-history-job {
-      grid-template-columns: minmax(0, 1fr) minmax(150px, auto);
-    }
-
-    .youtube-history-detail {
-      grid-column: 1 / -1;
-      display: grid;
-      grid-template-columns: minmax(0, 1fr);
-      gap: 8px;
-      margin-top: 2px;
-      padding: 10px;
-      border: 1px solid var(--pru-shell-border);
-      border-radius: 7px;
-      background: color-mix(in srgb, var(--pru-shell-surface) 86%, var(--pru-reader-muted));
-      color: var(--pru-shell-muted);
-      font-size: 12px;
-      line-height: 1.4;
-    }
-
-    .youtube-history-detail span {
-      min-width: 0;
-      overflow-wrap: anywhere;
-    }
-
-    .youtube-danger-actions {
-      display: flex;
-      justify-content: flex-end;
-      gap: 6px;
-      grid-column: 1 / -1;
-    }
-
     .youtube-link-card {
       grid-template-columns: 18px 20px minmax(0, 1fr) auto auto;
       align-items: center;
     }
 
-    .youtube-mode-options {
-      justify-content: space-between;
-      padding: 8px 10px;
-      border: 1px solid var(--pru-shell-border);
-      border-radius: 8px;
-      background: color-mix(in srgb, var(--pru-shell-bg) 78%, var(--pru-reader-bg));
-      color: var(--pru-shell-muted);
-      font: 500 12px/1.4 var(--pru-ui-font);
-    }
-
-    .youtube-workflow-mode-check {
-      color: var(--pru-shell-text);
-      font-weight: 750;
-    }
-
-    .youtube-import-item {
-      grid-template-columns: minmax(150px, auto) minmax(0, 1fr);
-      align-items: center;
-    }
-
-    .youtube-workflow-panel-footer {
-      margin: 0;
-      padding: 10px 16px;
-      border-top: 1px solid var(--pru-shell-border);
-      background: color-mix(in srgb, var(--pru-shell-bg) 92%, var(--pru-reader-bg));
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 12px;
-    }
-
     @media (max-width: 760px) {
       .youtube-workflow .youtube-workflow-panel {
-        width: min(100vw - 16px, 720px);
-        max-height: calc(100vh - 16px);
+        width: 100vw;
+        height: 100vh;
+        max-height: 100vh;
+        border: 0;
+        border-radius: 0;
+        background: var(--pru-shell-surface);
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+      }
+
+      .youtube-workflow .youtube-workflow-header {
+        background: var(--bg-color);
       }
 
       .youtube-workflow-layout {
         grid-template-columns: minmax(0, 1fr);
-        max-height: calc(100vh - 96px);
+        grid-template-rows: auto minmax(0, 1fr);
+        max-height: calc(100vh - 76px);
       }
 
       .youtube-workflow .youtube-workflow-section-tabs.youtube-workflow-nav {
-        grid-template-columns: repeat(5, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        align-self: start;
+        height: auto;
         padding: 8px;
         border-right: 0;
         border-bottom: 1px solid var(--pru-shell-border);
@@ -4444,9 +3647,7 @@ body {
       }
 
       .youtube-workflow-page-head,
-      .youtube-workflow .youtube-workflow-job,
-      .youtube-workflow .youtube-workflow-history-job,
-      .youtube-history-filters {
+      .youtube-workflow .youtube-workflow-job {
         grid-template-columns: minmax(0, 1fr);
       }
 
@@ -4459,47 +3660,12 @@ body {
         justify-content: flex-start;
       }
 
-      .youtube-history-detail {
-        grid-template-columns: minmax(0, 1fr);
-      }
     }
 
-/* Material center cascade lock: keep the accepted fixed-panel design above legacy rules. */
-.youtube-workflow-backdrop {
-  display: flex;
-  justify-content: flex-end;
-  align-items: stretch;
-  padding: 14px;
-  background: color-mix(in srgb, #000 28%, transparent);
-  z-index: 2400;
-}
-
-.youtube-workflow .youtube-workflow-panel {
-  position: relative;
-  inset: auto;
-  width: clamp(720px, 60vw, 960px);
-  height: calc(100vh - 28px);
-  max-height: calc(100vh - 28px);
-  grid-template-rows: auto auto minmax(0, 1fr);
-  border: 1px solid var(--pru-shell-border);
-  border-radius: 22px;
-  background: var(--pru-shell-surface);
-  color: var(--pru-shell-text);
-  box-shadow: var(--pru-shadow-shell);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  font-family: var(--pru-ui-font);
-}
-
-.youtube-workflow .youtube-workflow-header {
-  cursor: default;
-  padding: 16px 18px;
-  background: color-mix(in srgb, var(--bg-color) 86%, transparent);
-  font-family: var(--pru-ui-font);
-}
-
-.youtube-workflow-layout {
-  grid-template-columns: 132px minmax(0, 1fr);
+@media (min-width: 761px) {
+  .youtube-workflow-layout {
+    grid-template-columns: 132px minmax(0, 1fr);
+  }
 }
 
 .youtube-workflow .youtube-workflow-section-tabs.youtube-workflow-nav {
@@ -4511,8 +3677,7 @@ body {
 }
 
 .youtube-workflow .youtube-workflow-job,
-.youtube-workflow .youtube-link-card,
-.youtube-workflow .youtube-import-item {
+.youtube-workflow .youtube-link-card {
   border-radius: 14px;
   background: var(--pru-shell-row);
   box-shadow: none;
@@ -4524,39 +3689,6 @@ body {
   border-color: var(--pru-row-border);
   background: var(--pru-shell-row);
   box-shadow: none;
-}
-
-@media (max-width: 760px) {
-  .youtube-workflow-backdrop {
-    padding: 0;
-  }
-
-  .youtube-workflow .youtube-workflow-panel {
-    width: 100vw;
-    height: 100vh;
-    max-height: 100vh;
-    border: 0;
-    border-radius: 0;
-    background: var(--pru-shell-surface);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-  }
-
-  .youtube-workflow .youtube-workflow-header {
-    background: var(--bg-color);
-  }
-
-  .youtube-workflow-layout {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
-    max-height: calc(100vh - 76px);
-  }
-
-  .youtube-workflow .youtube-workflow-section-tabs.youtube-workflow-nav {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    align-self: start;
-    height: auto;
-  }
 }
 
 .youtube-workflow .youtube-add-material-form,
@@ -4571,7 +3703,7 @@ body {
 }
 
 .youtube-add-submit-row {
-  justify-content: flex-start;
+  justify-content: flex-end;
 }
 
 .youtube-add-submit-row button {
@@ -4690,10 +3822,34 @@ body {
 }
 
 .youtube-quality-backdrop .youtube-quality-card {
-  background: var(--pru-shell-surface);
-  border-color: var(--pru-shell-border);
+  background: var(--rw-ui-card);
+  border-color: var(--rw-ui-border);
   border-radius: 18px;
-  color: var(--pru-shell-text);
+  color: var(--rw-ui-foreground);
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+}
+
+.youtube-batch-input-toggle {
+  justify-self: start;
+}
+
+.youtube-quality-repair {
+  display: grid;
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rw-ui-border);
+}
+
+.youtube-quality-close-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.youtube-quality-statistics {
+  color: var(--rw-ui-muted-foreground);
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .youtube-workflow .youtube-job-progress span,
@@ -4712,4 +3868,78 @@ body {
   .youtube-add-credential-needed {
     align-items: flex-start;
   }
+}
+/* Annotation browsing is a separate cursor from the audio playback highlight. */
+.reading-area .annotation-word-selected {
+    outline: 2px solid var(--text-main, currentColor);
+    outline-offset: 2px;
+    border-radius: 3px;
+}
+.annotation-navigation-controls {
+    flex-wrap: wrap;
+}
+#annotation-navigation-status {
+    font-size: 0.8rem;
+    color: var(--text-sub, inherit);
+}
+
+.reader-mode-switch,
+.reader-settings-row,
+.annotation-navigation-controls {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.reader-mode-status { color: var(--text-sub); font-size: 0.9rem; }
+.reader-settings {
+    display: block;
+    min-width: 0;
+    color: var(--text-main);
+}
+.reader-settings > summary { width: fit-content; }
+.reader-settings > summary:focus-visible {
+    outline: 2px solid var(--text-main);
+    outline-offset: 3px;
+}
+.reader-settings-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 12px;
+}
+.reader-settings-group {
+    min-width: 0;
+    padding: 14px;
+    border: 1px solid var(--rw-ui-border);
+    border-radius: var(--radius-lg);
+    background: var(--rw-ui-card);
+}
+.reader-settings-group h3 { margin: 0 0 10px; font-size: 0.95rem; }
+.reader-settings-group p {
+    margin: 10px 0 0;
+    font-size: 0.82rem;
+    line-height: 1.6;
+    color: var(--text-sub);
+    overflow-wrap: anywhere;
+}
+.reader-settings .deprecated-file-entry-actions { margin-left: 0; display: flex; }
+.reader-settings-hotkeys {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 12px;
+}
+.reader-settings-hotkeys label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
+    font-size: 0.85rem;
+}
+.reader-settings-files { grid-column: 1 / -1; }
+@media (max-width: 760px) {
+    .reader-settings-grid { grid-template-columns: minmax(0, 1fr); }
+    .reader-settings-files { grid-column: auto; }
 }

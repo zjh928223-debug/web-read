@@ -221,10 +221,11 @@ function verifyNoReviewOrDictionaryCoupling() {
   assert.match(previewCss, /text-decoration-line:\s*underline/)
   assert.match(previewCss, /background:\s*transparent/)
   assert.match(previewCss, /font-size:\s*clamp\(21px,\s*1\.8vw,\s*28px\)/)
-  assert.match(previewCss, /\.passage-preview-shortcut-open[\s\S]*border:\s*0[\s\S]*opacity:\s*\.46/)
-  assert.match(previewCss, /\.passage-preview-shortcut-open[\s\S]*display:\s*inline-flex/)
-  assert.match(previewCss, /\.passage-preview-shortcut-open[\s\S]*align-items:\s*center/)
-  assert.match(previewCss, /\.passage-preview-shortcut-open[\s\S]*justify-content:\s*center/)
+  assert.doesNotMatch(previewCss, /\.passage-preview-shortcut-open\s*\{/)
+  assert.match(
+    previewCss,
+    /\.passage-preview-translation-mode-switch\s*\{[\s\S]*font:\s*inherit/,
+  )
   assert.match(previewCss, /\.passage-preview-word-line\s*\{[\s\S]*display:\s*grid/)
 }
 

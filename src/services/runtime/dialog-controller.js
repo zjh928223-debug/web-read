@@ -112,7 +112,7 @@ export function createDialogController(options = {}) {
     disposed = true
   }
 
-  const api = Object.freeze({ open, close, setBusy, dispose })
+  const api = Object.freeze({ open, close, setBusy, dispose, isTopmost })
   return api
 }
 

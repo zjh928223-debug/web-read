@@ -3,7 +3,7 @@ import { cn } from './utils.js'
 
 const DEFAULT_NATIVE_INPUT_OPTIONS = Object.freeze({
   owner: 'reader',
-  size: 'sm',
+  size: 'default',
   interaction: 'hotkey',
 })
 

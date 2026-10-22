@@ -330,7 +330,8 @@
         { "key": "vocabulary.passage-preview.shortcuts.v2", "storage": "localStorage", "schemaVersion": "passage-preview.shortcuts.v2", "classification": "UI preference" },
         { "key": "vocabulary.passage-preview.shortcut.translation.v1", "storage": "localStorage", "schemaVersion": "passage-preview.shortcut.v1", "classification": "UI preference/raw text" },
         { "key": "vocabulary.passage-preview.shortcut.context.v1", "storage": "localStorage", "schemaVersion": "passage-preview.shortcut.v1", "classification": "UI preference/raw text" },
-        { "key": "vocabulary.passage-preview.translation-display-mode.v1", "storage": "localStorage", "schemaVersion": "passage-preview.display-mode.v1", "classification": "UI preference/raw text" }
+        { "key": "vocabulary.passage-preview.translation-display-mode.v1", "storage": "localStorage", "schemaVersion": "passage-preview.display-mode.v1", "classification": "UI preference/raw text" },
+        { "key": "vocabulary.passage-preview.translation-display-mode.v2", "storage": "localStorage", "schemaVersion": "passage-preview.display-mode.v2", "classification": "UI preference/raw text" }
       ],
       "backupAdapter": {
         "name": "localStorage passage-preview key-spec adapter",

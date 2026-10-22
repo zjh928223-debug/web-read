@@ -4,6 +4,9 @@ import { initReaderKeyboardRuntime } from './reader-keyboard-runtime.js'
 import { initReaderAppRuntime } from './reader-app-runtime.js'
 import { initReaderImportRuntime } from './reader-import-runtime.js'
 import { requirePiniaRuntimeStores } from '../pinia-stores/runtime-registry.js'
+import { watch } from 'vue'
+import { createReaderWordNavigation } from './reader-word-navigation.js'
+import { isReaderShortcutEventAllowed } from './reader-shortcut-scope.js'
 
 function createThemeStoreAdapter(themeStore) {
   return {
@@ -34,11 +37,11 @@ export function createReaderFeatureAdapters(deps) {
   const runtimeStores = requirePiniaRuntimeStores()
   const themeStore = createThemeStoreAdapter(runtimeStores.theme)
   const marksStore = createMarksStoreAdapter(runtimeStores.marks)
+  let wordNavigationApi = null
   const shared = {
     runtimeState: deps.runtimeState,
     transcriptState: bootstrap.transcriptState,
     chunkState: bootstrap.chunkState,
-    clozeState: bootstrap.clozeState,
     playbackState: bootstrap.playbackState,
     audioIdentityApi: bootstrap.audioIdentityApi,
     hotkeyStateApi: bootstrap.hotkeyStateApi,
@@ -119,6 +122,8 @@ export function createReaderFeatureAdapters(deps) {
       bsFindActiveHelper: helpers.bsFindActiveHelper,
       markedMap: shared.marksStateApi.markedMap,
       vocabMatchMap: visualVocabApi.vocabMatchMap,
+      onAnnotationTargetSelected: span => wordNavigationApi?.selectSpan(span),
+      onAnnotationBubbleClose: () => wordNavigationApi?.clearSelection(),
       getSelection: () => globalObject.getSelection && globalObject.getSelection(),
       playbackModule: globalObject.__playbackModule,
       getWindow: () => globalObject,
@@ -127,8 +132,25 @@ export function createReaderFeatureAdapters(deps) {
   }
 
   function startKeyboard({ chunkControlsApi, interactionRuntime }) {
+    const resolver = interactionRuntime.playbackRuntime.annotationBubbleResolverApi
+    wordNavigationApi = createReaderWordNavigation({
+      documentObject: globalObject.document,
+      selectionStore: runtimeStores.transcript,
+      getWords: () => shared.transcriptState.words,
+      getPlaybackWordIndex: () => shared.transcriptState.currentWordIndex,
+      isChunkMode: () => shared.chunkState.isChunkMode,
+      getNavigableWordIndices: resolver.getNavigableWordIndices,
+      notifyAnnotationBubbleWordClick: resolver.notifyAnnotationBubbleWordClick,
+      closeBubble: () => resolver.getAnnotationBubble()?.hide(),
+    })
+    const stopWatching = watch(
+      () => [runtimeStores.transcript.words, resolver.getScopeKey()],
+      () => { wordNavigationApi.clearSelection(); resolver.clear() },
+      { flush: 'sync' }
+    )
     return initReaderKeyboardRuntime({
       keyboardModule: globalObject.__keyboardModule,
+      isReaderShortcutEventAllowed,
       marksStore,
       themeStore,
       audioPlayer: dom.audioPlayer,
@@ -143,10 +165,19 @@ export function createReaderFeatureAdapters(deps) {
       toggleAnnotationBubble: interactionRuntime.toggleAnnotationBubble,
       handleBackwardClick: interactionRuntime.handleBackwardClick,
       handleForwardClick: interactionRuntime.handleForwardClick,
+      wordNavigationApi,
+      disposeNavigation() {
+        stopWatching()
+        wordNavigationApi.dispose()
+        resolver.clear()
+        resolver.dispose()
+      },
       hotkeyInput: dom.hotkeyInput,
       hotkeyAnnotationBubbleInput: dom.hotkeyAnnotationBubbleInput,
       hotkeyBackwardInput: dom.hotkeyBackwardInput,
       hotkeyForwardInput: dom.hotkeyForwardInput,
+      hotkeyPrevAnnotationWordInput: dom.hotkeyPrevAnnotationWordInput,
+      hotkeyNextAnnotationWordInput: dom.hotkeyNextAnnotationWordInput,
       hotkeyChunkCnInput: dom.hotkeyChunkCnInput,
       hotkeyChunkShadowInput: dom.hotkeyChunkShadowInput,
       highlightColorInput: dom.highlightColorInput,
@@ -182,11 +213,7 @@ export function createReaderFeatureAdapters(deps) {
       toggleFollowBtn: dom.toggleFollowBtn,
       mainAppArea: dom.mainAppArea,
       exportAnnotationLightweightBtn: dom.exportAnnotationLightweightBtn,
-      importAnnotationLightweightBtn: dom.importAnnotationLightweightBtn,
-      importAnnotationLightweightInput: dom.importAnnotationLightweightInput,
       annotationBackfillAiBtn: dom.annotationBackfillAiBtn,
-      previewVocabularyBtn: dom.previewVocabularyBtn,
-      togglePreviewVocabularyBtn: dom.togglePreviewVocabularyBtn,
       settleArticleVocabularyBtn: dom.settleArticleVocabularyBtn,
       exportJsonBtn: dom.exportJsonBtn,
       exportMdAllBtn: dom.exportMdAllBtn,

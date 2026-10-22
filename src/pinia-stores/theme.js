@@ -9,16 +9,11 @@ const CUSTOM_THEME_DEFAULTS = {
 const CUSTOM_THEME_VAR_NAMES = [
   '--bg-color','--text-main','--text-sub','--border-color','--input-bg','--input-text',
   '--btn-bg','--btn-hover','--btn-text','--btn-active-bg','--btn-active-border',
-  '--sidebar-bg','--sidebar-border','--card-bg','--vocab-indicator-color',
-  '--v-word-color','--v-context-color','--v-meaning-color','--v-not-color',
-  '--chunk-active-bg','--chunk-cn-color','--chunk-note-color','--chunk-note-glass-bg',
-  '--chunk-note-glass-border','--chunk-note-connector-default','--chunk-note-connector-shadow',
-  '--chunk-annot-default','--glass-bg-light','--glass-bg-medium','--glass-bg-strong',
-  '--glass-border-light','--glass-border-strong','--glass-shadow','--glass-shadow-soft',
-  '--liquid-bg','--liquid-border','--liquid-specular','--liquid-shadow',
-  '--glass-panel-bg','--glass-panel-bg-strong','--glass-button-bg','--glass-card-bg',
+  '--card-bg',
+  '--chunk-active-bg','--chunk-cn-color',
+  '--glass-panel-bg','--glass-panel-bg-strong','--glass-button-bg',
   '--glass-border','--glass-highlight','--glass-shadow-sm','--glass-shadow-md',
-  '--glass-shadow-lg','--bg-gradient'
+  '--bg-gradient'
 ]
 
 function clampByte(v) { return Math.max(0, Math.min(255, Math.round(v))) }
@@ -85,12 +80,9 @@ export const useThemeStore = defineStore('theme', () => {
     var isDark = getColorLuminance(colors.bg) < 0.45
     var sc = isDark ? 'rgba(0,0,0,0.34)' : 'rgba(15,23,42,0.12)'
     var ssc = isDark ? 'rgba(0,0,0,0.26)' : 'rgba(15,23,42,0.10)'
-    var ssc2 = isDark ? 'rgba(0,0,0,0.42)' : 'rgba(15,23,42,0.18)'
     var hc = isDark ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.78)'
-    var sb = mixHex(colors.bg, colors.text, isDark ? 0.12 : 0.04)
     var cb = mixHex(colors.bg, colors.button, 0.32)
     var cab = mixHex(colors.bg, colors.text, isDark ? 0.18 : 0.1)
-    var gb = isDark ? mixHex(colors.bg, '#101418', 0.24) : mixHex(colors.bg, '#ffffff', 0.38)
     var pb = isDark ? mixHex(colors.bg, colors.button, 0.2) : mixHex(colors.bg, colors.button, 0.42)
     var ra = hexToRgba(mixHex(colors.button, '#ffffff', isDark ? 0.08 : 0.45), isDark ? 0.2 : 0.42)
     var rb = hexToRgba(mixHex(colors.border, colors.button, 0.4), isDark ? 0.18 : 0.3)
@@ -103,37 +95,14 @@ export const useThemeStore = defineStore('theme', () => {
       '--btn-text': colors.text,
       '--btn-active-bg': mixHex(colors.button, colors.text, isDark ? 0.3 : 0.2),
       '--btn-active-border': mixHex(colors.border, colors.text, isDark ? 0.22 : 0.08),
-      '--sidebar-bg': sb, '--sidebar-border': colors.border, '--card-bg': cb,
-      '--vocab-indicator-color': colors.sub, '--v-word-color': colors.text,
-      '--v-context-color': colors.sub, '--v-meaning-color': colors.sub,
-      '--v-not-color': mixHex(colors.sub, colors.bg, 0.22),
+      '--card-bg': cb,
       '--chunk-active-bg': cab, '--chunk-cn-color': colors.sub,
-      '--chunk-note-color': colors.text,
-      '--chunk-note-glass-bg': hexToRgba(pb, isDark ? 0.82 : 0.84),
-      '--chunk-note-glass-border': hexToRgba(colors.border, isDark ? 0.28 : 0.4),
-      '--chunk-note-connector-default': hexToRgba(colors.text, isDark ? 0.48 : 0.32),
-      '--chunk-note-connector-shadow': hexToRgba(isDark ? '#000' : '#fff', isDark ? 0.22 : 0.55),
-      '--chunk-annot-default': hexToRgba(colors.text, isDark ? 0.42 : 0.3),
-      '--glass-bg-light': hexToRgba(gb, 0.56), '--glass-bg-medium': hexToRgba(gb, 0.62),
-      '--glass-bg-strong': hexToRgba(gb, 0.72),
-      '--glass-border-light': hexToRgba(colors.border, isDark ? 0.16 : 0.58),
-      '--glass-border-strong': hexToRgba(colors.border, isDark ? 0.24 : 0.72),
-      '--glass-shadow': '0 8px 24px ' + sc, '--glass-shadow-soft': '0 2px 10px ' + ssc,
-      '--liquid-bg': hexToRgba(gb, isDark ? 0.28 : 0.25),
-      '--liquid-border': hexToRgba(colors.border, isDark ? 0.2 : 0.36),
-      '--liquid-specular': isDark
-        ? 'inset 1px 1px 0 rgba(255,255,255,0.18), inset 0 0 5px rgba(255,255,255,0.12)'
-        : 'inset 1px 1px 0 rgba(255,255,255,0.75), inset 0 0 5px rgba(255,255,255,0.75)',
-      '--liquid-shadow': isDark
-        ? '0 6px 6px rgba(0,0,0,0.32), 0 0 20px rgba(0,0,0,0.20)'
-        : '0 6px 6px rgba(0,0,0,0.2), 0 0 20px rgba(0,0,0,0.1)',
       '--glass-panel-bg': hexToRgba(pb, isDark ? 0.56 : 0.34),
       '--glass-panel-bg-strong': hexToRgba(pb, isDark ? 0.64 : 0.42),
       '--glass-button-bg': hexToRgba(colors.button, isDark ? 0.52 : 0.26),
-      '--glass-card-bg': hexToRgba(cb, isDark ? 0.66 : 0.48),
       '--glass-border': hexToRgba(colors.border, isDark ? 0.22 : 0.52),
       '--glass-highlight': hc, '--glass-shadow-sm': '0 2px 8px ' + ssc,
-      '--glass-shadow-md': '0 6px 22px ' + sc, '--glass-shadow-lg': '0 16px 34px ' + ssc2,
+      '--glass-shadow-md': '0 6px 22px ' + sc,
       '--bg-gradient': 'radial-gradient(1200px 520px at -8% -16%, ' + ra + ', transparent 60%), radial-gradient(900px 500px at 108% 4%, ' + rb + ', transparent 56%), linear-gradient(180deg, ' + mixHex(colors.bg, '#fff', isDark ? 0.04 : 0.16) + ' 0%, ' + mixHex(colors.bg, '#000', isDark ? 0.12 : 0.04) + ' 100%)'
     }
   }

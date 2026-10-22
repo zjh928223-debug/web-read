@@ -1,11 +1,13 @@
 <template>
-  <div class="passage-preview-shortcut-backdrop" @pointerdown.self="close">
+  <div class="passage-preview-shortcut-backdrop" @pointerdown.self.prevent="close">
     <section
+      ref="dialogRoot"
       class="passage-preview-shortcut-dialog passage-preview-learning-settings-dialog"
       data-ui-theme="light"
       role="dialog"
       aria-modal="true"
       aria-labelledby="passage-preview-learning-settings-title"
+      :aria-busy="saving ? 'true' : 'false'"
     >
       <header>
         <div>
@@ -15,7 +17,7 @@
         <Button
           type="button"
           variant="ghost"
-          size="icon-sm"
+          size="icon"
           class="rw:text-xl"
           data-ui-owner="learning"
           aria-label="关闭预习设置"
@@ -40,7 +42,7 @@
             inputmode="numeric"
             data-ui-owner="learning"
             class="rw:text-foreground"
-            :class="inputVariants({ size: 'sm' })"
+            :class="inputVariants({ size: 'default' })"
             aria-label="每组预习数量"
             :disabled="loading || saving"
             @keydown.enter.prevent="save"
@@ -52,8 +54,8 @@
         {{ notice || (loading ? '正在读取设置…' : '') }}
       </p>
       <footer>
-        <Button type="button" variant="outline" size="sm" data-ui-owner="learning" :disabled="saving" @click="close">取消</Button>
-        <Button type="button" variant="default" size="sm" data-ui-owner="learning" :disabled="loading || saving" @click="save">
+        <Button type="button" variant="outline" size="default" data-ui-owner="learning" :disabled="saving" @click="close">取消</Button>
+        <Button type="button" variant="default" size="default" data-ui-owner="learning" :disabled="loading || saving" @click="save">
           {{ saving ? '保存中…' : '保存设置' }}
         </Button>
       </footer>
@@ -62,9 +64,10 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { Button } from '../../components/ui/button/index.js'
 import { inputVariants } from '../../components/ui/input/input-styles.js'
+import { createDialogController } from '../../services/runtime/dialog-controller.js'
 import {
   loadPassagePreviewLearningSettings,
   PASSAGE_PREVIEW_MAX_BATCH_SIZE,
@@ -74,6 +77,8 @@ import {
 } from './passage-preview-learning-history.js'
 
 const emit = defineEmits(['close', 'saved'])
+const dialogRoot = ref(null)
+const dialogController = createDialogController()
 const batchSizeDraft = ref(PASSAGE_PREVIEW_DEFAULT_BATCH_SIZE)
 const loading = ref(true)
 const saving = ref(false)
@@ -95,6 +100,7 @@ function close() {
 }
 
 async function save() {
+  if (loading.value || saving.value) return
   const batchSize = Number(batchSizeDraft.value)
   if (!Number.isInteger(batchSize) || batchSize < PASSAGE_PREVIEW_MIN_BATCH_SIZE || batchSize > PASSAGE_PREVIEW_MAX_BATCH_SIZE) {
     notice.value = `请输入 ${PASSAGE_PREVIEW_MIN_BATCH_SIZE}–${PASSAGE_PREVIEW_MAX_BATCH_SIZE} 之间的整数。`
@@ -113,5 +119,13 @@ async function save() {
   }
 }
 
-onMounted(loadSettings)
+onMounted(() => {
+  dialogController.open(dialogRoot.value, {
+    initialFocus: dialogRoot.value.querySelector('[aria-label="关闭预习设置"]'),
+    // The close guard rejects saving-time Escape while the controller consumes it.
+    onRequestClose: close,
+  })
+  loadSettings()
+})
+onBeforeUnmount(() => dialogController.dispose())
 </script>

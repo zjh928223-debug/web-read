@@ -235,6 +235,7 @@ async function importModule(filePath) {
       'export const getWindowsOwnerVocabularySrsIntegration = () => null\n',
     );
     const rewriteSource = (source) => source
+      .replace(/(from\s+['"])(\.{1,2}\/[^'"]+)\.js(['"])/g, '$1$2.mjs$3')
       .replace(/from '\.\.\/services\/vocabulary\/([^']+)\.js'/g, "from '../services/vocabulary/$1.mjs'")
       .replace(/from '\.\.\/components\/([^']+)\.js'/g, "from '../components/$1.mjs'")
       .replace(/from '\.\.\/lib\/([^']+)\.js'/g, "from '../lib/$1.mjs'")
@@ -247,6 +248,12 @@ async function importModule(filePath) {
       path.join(tempComposables, 'annotation-backfill-ai-module.mjs'),
       rewriteSource(fs.readFileSync(filePath, 'utf8'))
     );
+    const tempAnnotationFeatures = path.join(tempDir, 'src', 'features', 'annotation-backfill');
+    fs.mkdirSync(tempAnnotationFeatures, { recursive: true });
+    for (const file of ['create-annotation-backfill-dialog.js', 'annotation-backfill-template.js']) {
+      fs.writeFileSync(path.join(tempAnnotationFeatures, file.replace(/\.js$/, '.mjs')),
+        rewriteSource(fs.readFileSync(path.join(repoRoot, 'src', 'features', 'annotation-backfill', file), 'utf8')));
+    }
     ['native-control-styles.js', 'native-input-styles.js', 'utils.js'].forEach((file) => {
       fs.writeFileSync(
         path.join(tempLib, file.replace(/\.js$/, '.mjs')),
@@ -261,7 +268,7 @@ async function importModule(filePath) {
       path.join(tempInput, 'input-styles.mjs'),
       rewriteSource(fs.readFileSync(path.join(repoRoot, 'src', 'components', 'ui', 'input', 'input-styles.js'), 'utf8')),
     );
-    ['vocabulary-models.js', 'vocabulary-repository.js', 'vocabulary-persistence.js', 'srs-candidates.js', 'srs-pending-candidates.js', 'preview-scan.js', 'article-srs-settlement.js', 'article-srs-settlement-progress.js', 'settlement-meaning-refinement.js', 'srs-scheduler.js', 'ielts-learning-pools.js', 'vocabulary-learning-models.js', 'vocabulary-acquisition-repository.js', 'vocabulary-context-evidence.js', 'vocabulary-learning-events.js', 'legacy-vocabulary-audit.js', 'vocabulary-learning-uow.js', 'vocabulary-acquisition-service.js', 'srs-review-session-ledger.js', 'srs-review-service-v2.js', 'exam-vocabulary-importer.js', 'exam-vocabulary-context-matcher.js', 'legacy-vocabulary-reassessment.js', 'legacy-vocabulary-migration.js', 'vocabulary-service.js', 'index.js'].forEach((file) => {
+    ['vocabulary-models.js', 'vocabulary-repository.js', 'vocabulary-persistence.js', 'srs-candidates.js', 'srs-pending-candidates.js', 'article-srs-settlement.js', 'article-srs-settlement-progress.js', 'settlement-meaning-refinement.js', 'srs-scheduler.js', 'ielts-learning-pools.js', 'vocabulary-learning-models.js', 'vocabulary-acquisition-repository.js', 'vocabulary-context-evidence.js', 'vocabulary-learning-events.js', 'legacy-vocabulary-audit.js', 'vocabulary-learning-uow.js', 'vocabulary-acquisition-service.js', 'srs-review-session-ledger.js', 'srs-review-service-v2.js', 'exam-vocabulary-importer.js', 'exam-vocabulary-context-matcher.js', 'legacy-vocabulary-reassessment.js', 'legacy-vocabulary-migration.js', 'vocabulary-service.js', 'index.js'].forEach((file) => {
       const sourcePath = path.join(repoRoot, 'src', 'services', 'vocabulary', file);
       if (fs.existsSync(sourcePath)) {
         fs.writeFileSync(path.join(tempVocabulary, file.replace(/\.js$/, '.mjs')), rewriteSource(fs.readFileSync(sourcePath, 'utf8')));
@@ -294,7 +301,7 @@ async function importModule(filePath) {
     );
     fs.copyFileSync(
       path.join(repoRoot, 'src', 'services', 'runtime', 'dialog-controller.js'),
-      path.join(tempRuntime, 'dialog-controller.js'),
+      path.join(tempRuntime, 'dialog-controller.mjs'),
     );
     return await import(`${pathToFileURL(path.join(tempComposables, 'annotation-backfill-ai-module.mjs')).href}#${Date.now()}`);
   } finally {
@@ -524,27 +531,32 @@ async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const modulePath = path.join(repoRoot, 'src', 'composables', 'annotation-backfill-ai-module.js');
   const source = fs.readFileSync(modulePath, 'utf8');
+  const dialogSource = fs.readFileSync(path.join(repoRoot, 'src', 'features', 'annotation-backfill', 'create-annotation-backfill-dialog.js'), 'utf8');
   const api = await importModule(modulePath);
   const learningCss = fs.readFileSync(path.join(repoRoot, 'src', 'features', 'learning-ui', 'learning-ui.css'), 'utf8');
   const workflowCss = fs.readFileSync(path.join(repoRoot, 'src', 'styles', 'workflow-ui.css'), 'utf8');
   const stylesCss = fs.readFileSync(path.join(repoRoot, 'styles.css'), 'utf8');
   assert.equal(typeof api.createAnnotationBackfillAiController, 'function');
-  assert.ok(source.includes('function createAnnotationBackfillDialog'), 'AI annotation backfill should provide a configuration/progress dialog');
-  assert.ok(source.includes('annotation-backfill-dialog'), 'AI annotation backfill dialog should have scoped CSS hooks');
-  assert.ok(source.includes('annotation-backfill-dialog__records'), 'AI annotation dialog should include a compact current-article annotation record list');
-  assert.ok(source.includes('annotation-backfill-dialog__record-tab'), 'AI annotation dialog should render saved explanation runs as selectable tabs');
-  assert.ok(source.includes('annotation-backfill-dialog__record-current'), 'AI annotation dialog should mark which saved model is currently imported');
-  assert.ok(source.includes('row.disabled = busy'), 'saved explanation run tabs should be disabled while AI explanation is running');
-  assert.ok(source.includes('cancelButton.disabled = busy'), 'the in-dialog cancel button should be disabled while AI explanation is running');
+  assert.ok(dialogSource.includes('function createAnnotationBackfillDialog'), 'AI annotation backfill should provide a configuration/progress dialog');
+  assert.ok(dialogSource.includes('annotation-backfill-dialog'), 'AI annotation backfill dialog should have scoped CSS hooks');
+  assert.ok(dialogSource.includes('annotation-backfill-dialog__records'), 'AI annotation dialog should include a compact current-article annotation record list');
+  assert.ok(dialogSource.includes('annotation-backfill-dialog__record-tab'), 'AI annotation dialog should render saved explanation runs as selectable tabs');
+  assert.ok(dialogSource.includes('annotation-backfill-dialog__record-current'), 'AI annotation dialog should mark which saved model is currently imported');
+  assert.ok(dialogSource.includes('模型与来源'), 'AI annotation dialog should distinguish selection, submission, and run provenance');
+  assert.ok(dialogSource.includes('本次运行记录模型'), 'AI annotation dialog should label the model recorded for the selected run');
+  assert.ok(dialogSource.includes('实际执行/路由模型：'), 'AI annotation dialog should state when final routing evidence is unavailable');
+  assert.ok(dialogSource.includes('row.disabled = busy'), 'saved explanation run tabs should be disabled while AI explanation is running');
+  assert.ok(dialogSource.includes('cancelButton.disabled = busy'), 'the in-dialog cancel button should be disabled while AI explanation is running');
   assert.ok(source.includes('apiKey: runOptions.apiKey'), 'AI annotation backfill should pass per-run API key without relying on queue credentials');
   assert.ok(source.includes('ANNOTATION_BACKFILL_MODEL_STORAGE_KEY'), 'AI annotation model should persist in localStorage');
   assert.ok(source.includes('mergeWithLatest'), 'incremental AI backfill should ask the backend to merge new items with latest saved result');
   assert.ok(source.includes('addSrsCandidates'), 'AI annotation backfill should expose SRS candidate actions');
-  assert.ok(source.includes('applyNativeControlStyles'), 'AI annotation actions should use the shared native button recipe');
-  assert.ok(source.includes('applyNativeInputStyles'), 'AI annotation fields should use the shared native input recipe');
-  assert.ok(source.includes("interaction: 'text'"), 'model and API key fields should retain text selection interaction');
+  assert.ok(dialogSource.includes('applyNativeControlStyles'), 'AI annotation actions should use the shared native button recipe');
+  assert.ok(dialogSource.includes('applyNativeInputStyles'), 'AI annotation fields should use the shared native input recipe');
+  assert.ok(dialogSource.includes("interaction: 'text'"), 'model and API key fields should retain text selection interaction');
   assert.ok(learningCss.includes('.annotation-backfill-dialog[data-ui-theme=\"light\"]'), 'the learning palette should scope to the fixed-light dialog');
   assert.ok(workflowCss.includes('@source \"../composables/annotation-backfill-ai-module.js\";'), 'Tailwind should scan the dynamic dialog module');
+  assert.ok(workflowCss.includes('@source \"../features/annotation-backfill/create-annotation-backfill-dialog.js\";'), 'Tailwind should scan the extracted dynamic dialog');
   assert.match(stylesCss, /\.annotation-backfill-dialog\s*\{[^}]*--text-main:\s*var\(--learning-foreground\)[^}]*background:\s*var\(--learning-background\)/s, 'the dialog should map legacy text and surface to learning tokens');
 
   {
@@ -589,7 +601,7 @@ async function main() {
     assert.ok(modelInput.classList.contains('rw:h-9'));
     assert.ok(modelInput.classList.contains('rw:cursor-text'));
     assert.equal(closeButton.getAttribute('data-ui-owner'), 'learning');
-    assert.ok(closeButton.classList.contains('rw:size-8'));
+    assert.ok(closeButton.classList.contains('rw:size-9'));
     assert.equal(cancelButton.getAttribute('data-ui-owner'), 'learning');
     assert.ok(cancelButton.classList.contains('rw:border'));
     assert.equal(startButton.getAttribute('data-ui-owner'), 'learning');
@@ -598,6 +610,11 @@ async function main() {
     assert.equal(recordRows.length, 2, 'the dialog should retain both saved explanation records');
     assert.equal(recordRows[0].getAttribute('data-ui-owner'), 'learning');
     assert.equal(recordRows[0].dataset.current, 'true');
+    assert.ok(controller.getStatusSnapshot().modelProvenance.currentSelection);
+    assert.notEqual(controller.getStatusSnapshot().modelProvenance.currentSelection, 'gemini-current');
+    assert.equal(controller.getStatusSnapshot().modelProvenance.runRecordModel, 'gemini-current');
+    assert.equal(controller.getStatusSnapshot().modelProvenance.runRecordId, 'run-current');
+    assert.equal(controller.getStatusSnapshot().modelProvenance.routeModel, '当前记录未提供');
     assert.equal(root.findByClass('annotation-backfill-dialog__srs').hidden, true, 'the inline SRS area should remain hidden by default');
     button.focus();
     await controller.openDialog();
@@ -609,6 +626,98 @@ async function main() {
     assert.equal(documentObject.activeElement, button, 'closing should restore focus to the original trigger');
     assert.equal(calls.length, 0, 'opening and closing must not submit an AI request');
     controller.dispose();
+  }
+
+  {
+    const documentObject = new FakeDocument();
+    const button = documentObject.createElement('button');
+    documentObject.body.appendChild(button);
+    const storage = new FakeStorage({ 'annotationBackfillAi.model': 'model-A' });
+    const windowObject = createWindowObject({ documentObject, localStorage: storage });
+    let resolveConfig;
+    const configPending = new Promise((resolve) => { resolveConfig = resolve; });
+    const inputController = createController(api, {
+      documentObject,
+      windowObject,
+      button,
+      client: {
+        getConfig: () => configPending,
+        credentialStatus: async () => ({ stored: true }),
+        maintenance: async () => ({ jobStatuses: {} }),
+        getAnnotationBackfillResult: async () => { throw new Error('not found'); },
+        getAnnotationBackfillRunResult: async () => { throw new Error('not found'); },
+      },
+    });
+    const opening = inputController.controller.openDialog();
+    await Promise.resolve();
+    const root = documentObject.body.findByClass('annotation-backfill-dialog');
+    const modelInput = root.findByClass('annotation-backfill-dialog__input');
+    modelInput.value = 'model-B';
+    await modelInput.dispatchEvent('input');
+    assert.equal(inputController.controller.getStatusSnapshot().values.model, 'model-B');
+    assert.equal(inputController.controller.getStatusSnapshot().modelProvenance.currentSelection, 'model-B', 'editing the model field should immediately update current selection');
+    resolveConfig({ model: 'model-A' });
+    await opening;
+    const snapshot = inputController.controller.getStatusSnapshot();
+    assert.equal(snapshot.values.model, 'model-B', 'a late context response must not overwrite the protected model input');
+    assert.equal(snapshot.modelProvenance.currentSelection, 'model-B', 'a late context response must not relabel the current selection');
+    assert.equal(snapshot.modelProvenance.finalSubmittedModel, '', 'a stale context response must not invent a final submission');
+    inputController.controller.dispose();
+  }
+
+  {
+    const documentObject = new FakeDocument();
+    const state = {
+      currentAudioMeta: { source: 'youtube-workflow', jobId: 'job-a' },
+      currentAudioKey: 'audio-a',
+    };
+    const storage = new FakeStorage({ 'annotationBackfillAi.model': 'model-A' });
+    const template = createTemplate(['target-1']);
+    const sourceModule = {
+      buildManualLightweightAnnotationTemplate: () => {
+        if (state.currentAudioMeta.jobId === 'job-b') throw new Error('template unavailable for controlled empty-summary path');
+        return template;
+      },
+      importManualLightweightAnnotations: async () => ({ importedCount: 1 }),
+    };
+    const sourceController = createController(api, {
+      state,
+      template,
+      documentObject,
+      windowObject: createWindowObject({ localStorage: storage }),
+      annotationLightweightModule: sourceModule,
+      client: {
+        getConfig: async () => ({ model: 'model-A' }),
+        credentialStatus: async () => ({ stored: true }),
+        maintenance: async () => ({ jobStatuses: {} }),
+        getAnnotationBackfillResult: async () => ({
+          result: createResult(['target-1']),
+          history: [{ runId: 'run-a', model: 'model-A', itemCount: 1, generatedAt: '2026-09-26T00:00:00Z' }],
+        }),
+        getAnnotationBackfillRunResult: async () => ({ result: createResult(['target-1']) }),
+      },
+    });
+    await sourceController.controller.openDialog();
+    assert.equal(sourceController.controller.getStatusSnapshot().modelProvenance.runRecordId, 'run-a');
+    const dialogRoot = documentObject.body.findByClass('annotation-backfill-dialog');
+    const modelInput = dialogRoot.findByClass('annotation-backfill-dialog__input');
+    modelInput.value = 'model-B';
+    await modelInput.dispatchEvent('input');
+    state.currentAudioMeta = { source: 'youtube-workflow', jobId: 'job-b' };
+    state.currentAudioKey = 'audio-b';
+    await sourceController.controller.openDialog();
+    const snapshot = sourceController.controller.getStatusSnapshot();
+    assert.equal(snapshot.modelProvenance.currentSelection, 'model-B');
+    assert.equal(snapshot.modelProvenance.finalSubmittedModel, '');
+    assert.equal(snapshot.modelProvenance.runRecordModel, '');
+    assert.equal(snapshot.modelProvenance.runRecordId, '');
+    assert.equal(snapshot.modelProvenance.runRecordGeneratedAt, '');
+    assert.equal(snapshot.modelProvenance.runRecordState, '未记录');
+    assert.equal(snapshot.modelProvenance.autoSwitchText, '');
+    assert.equal(snapshot.modelProvenance.reuseText, '');
+    assert.equal(snapshot.modelProvenance.mergeText, '');
+    assert.deepEqual(snapshot.annotationSummary.records, [], 'an unavailable B template must not retain A history rows');
+    sourceController.controller.dispose();
   }
 
   {
@@ -729,6 +838,8 @@ async function main() {
     assert.deepEqual(calls, [], 'fully covered saved result from the selected model should be imported without calling Gemini');
     assert.deepEqual(imported, [cached]);
     assert.ok(notices.some((notice) => notice.type === 'success' && /未调用/.test(notice.message)));
+    assert.match(controller.getStatusSnapshot().modelProvenance.finalSubmittedState, /未提交/);
+    assert.match(controller.getStatusSnapshot().modelProvenance.reuseText, /复用已有结果/);
   }
 
   {
@@ -780,12 +891,14 @@ async function main() {
             itemCount: 2,
             templateItemCount: 2,
             generatedAt: '2026-06-26T03:10:00Z',
+            mergeWithLatest: false,
           }, {
             runId: 'old-run',
             model: 'gemini-old-model',
             itemCount: 1,
             templateItemCount: 1,
             generatedAt: '2026-06-26T03:00:00Z',
+            mergeWithLatest: true,
           }],
         }),
         getAnnotationBackfillRunResult: async (jobId, runId) => {
@@ -798,6 +911,7 @@ async function main() {
               itemCount: runId === 'old-run' ? 1 : 2,
               templateItemCount: runId === 'old-run' ? 1 : 2,
               generatedAt: runId === 'old-run' ? '2026-06-26T03:00:00Z' : '2026-06-26T03:10:00Z',
+              mergeWithLatest: runId === 'old-run',
             },
           };
         },
@@ -812,6 +926,7 @@ async function main() {
     assert.deepEqual(summary.records.map((record) => record.runId), ['new-run', 'old-run']);
     assert.deepEqual(summary.records.map((record) => record.model), ['gemini-latest-model', 'gemini-old-model']);
     assert.equal(summary.records[0].generatedAt, '2026-06-26T03:10:00Z');
+    assert.equal(controller.getStatusSnapshot().modelProvenance.mergeText, '', 'a non-merge history record should not inherit a merge explanation');
     assert.equal(typeof controller.importSavedBackfillRun, 'function');
     await controller.importSavedBackfillRun('old-run');
     assert.deepEqual(runResultCalls, [{ jobId: 'job-1', runId: 'old-run' }]);
@@ -819,6 +934,86 @@ async function main() {
     assert.deepEqual(calls, [], 'selecting a saved explanation tab should not call Gemini');
     assert.equal(controller.getStatusSnapshot().annotationSummary.selectedRunId, 'old-run');
     assert.equal(controller.getStatusSnapshot().annotationSummary.records[1].current, true);
+    assert.match(controller.getStatusSnapshot().modelProvenance.mergeText, /合并已有结果/);
+    await controller.importSavedBackfillRun('new-run');
+    assert.deepEqual(runResultCalls, [
+      { jobId: 'job-1', runId: 'old-run' },
+      { jobId: 'job-1', runId: 'new-run' },
+    ]);
+    assert.equal(controller.getStatusSnapshot().annotationSummary.selectedRunId, 'new-run');
+    assert.equal(controller.getStatusSnapshot().modelProvenance.mergeText, '', 'switching to a non-merge history record should clear merge text');
+  }
+
+  {
+    const documentObject = new FakeDocument();
+    const button = documentObject.createElement('button');
+    documentObject.body.appendChild(button);
+    let resolveSelectedRun;
+    let selectedRunStarted = false;
+    const selectedResult = createResult(['target-1']);
+    const latestPayload = {
+      result: createResult(['target-1']),
+      history: [
+        { runId: 'run-a', model: 'model-A', itemCount: 1, generatedAt: '2026-09-26T00:00:00Z' },
+        { runId: 'run-c', model: 'model-C', itemCount: 1, generatedAt: '2026-09-27T00:00:00Z' },
+      ],
+    };
+    const deferredController = createController(api, {
+      documentObject,
+      button,
+      client: {
+        getConfig: async () => ({ model: 'model-B' }),
+        credentialStatus: async () => ({ stored: true }),
+        maintenance: async () => ({ jobStatuses: {} }),
+        getAnnotationBackfillResult: async () => latestPayload,
+        getAnnotationBackfillRunResult: async () => {
+          selectedRunStarted = true;
+          return new Promise((resolve) => { resolveSelectedRun = resolve; });
+        },
+      },
+    });
+    await deferredController.controller.openDialog();
+    const importing = deferredController.controller.importSavedBackfillRun('run-c');
+    for (let index = 0; index < 20 && !selectedRunStarted; index += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    assert.equal(selectedRunStarted, true);
+    deferredController.controller.closeDialog();
+    await deferredController.controller.openDialog();
+    assert.equal(deferredController.controller.isDialogOpen(), true, 'the same material should reopen while history import is pending');
+    resolveSelectedRun({
+      result: selectedResult,
+      metadata: { runId: 'run-c', model: 'model-C', itemCount: 1, generatedAt: '2026-09-27T00:00:00Z' },
+    });
+    const importOutcome = await importing;
+    assert.equal(importOutcome.stale, undefined, 'reopening the same dialog must not cancel the pending history import');
+    assert.equal(deferredController.controller.getStatusSnapshot().annotationSummary.selectedRunId, 'run-c');
+    assert.equal(deferredController.controller.getStatusSnapshot().annotationSummary.records[1].current, true);
+    assert.equal(deferredController.controller.getStatusSnapshot().modelProvenance.runRecordModel, 'model-C');
+    deferredController.controller.dispose();
+  }
+
+  {
+    const storage = new FakeStorage({ 'annotationBackfillAi.selectedRun.job-1': 'missing-run' });
+    const { controller } = createController(api, {
+      windowObject: createWindowObject({ localStorage: storage }),
+      client: {
+        getConfig: async () => ({ model: 'gemini-current-config' }),
+        credentialStatus: async () => ({ stored: true }),
+        maintenance: async () => ({ jobStatuses: {} }),
+        getAnnotationBackfillResult: async () => ({
+          result: createResult(['target-1']),
+          history: [{ runId: 'run-known', itemCount: 1, generatedAt: '2026-06-26T03:00:00Z' }],
+        }),
+      },
+    });
+    await controller.openDialog();
+    const snapshot = controller.getStatusSnapshot();
+    assert.equal(snapshot.annotationSummary.selectedRunMismatch, true, 'a stored run id absent from history should remain visibly unmatched');
+    assert.equal(snapshot.annotationSummary.records[0].model, '未记录', 'missing historical model should remain unrecorded');
+    assert.equal(snapshot.annotationSummary.records[0].current, false, 'an unmatched run must not relabel another history row as current');
+    assert.match(snapshot.modelProvenance.runRecordState, /未找到匹配运行记录/);
+    assert.equal(snapshot.modelProvenance.routeModel, '当前记录未提供');
   }
 
   {
@@ -887,6 +1082,10 @@ async function main() {
     assert.equal(calls[0].payload.model, 'gemini-3.1-flash-lite', 'bulk annotation should avoid gemini-3.5-flash high-demand failures');
     assert.equal(storage.getItem('annotationBackfillAi.model'), 'gemini-3.1-flash-lite');
     assert.ok(notices.some((notice) => notice.type === 'warning' && /gemini-3\.1-flash-lite/.test(notice.message)));
+    const provenance = controller.getStatusSnapshot().modelProvenance;
+    assert.equal(provenance.currentSelection, 'gemini-3.5-flash');
+    assert.equal(provenance.finalSubmittedModel, 'gemini-3.1-flash-lite');
+    assert.match(provenance.autoSwitchText, /原选择 gemini-3\.5-flash.*最终提交 gemini-3\.1-flash-lite/);
   }
 
   {
@@ -1017,6 +1216,7 @@ async function main() {
     assert.equal(calls.length, 1);
     assert.deepEqual(calls[0].payload.template.items.map((item) => item.targetId), ['target-3']);
     assert.equal(calls[0].payload.mergeWithLatest, true);
+    assert.match(controller.getStatusSnapshot().modelProvenance.mergeText, /合并已有结果/);
   }
 
   {
@@ -1280,6 +1480,74 @@ async function main() {
     await pending;
     assert.deepEqual(switchedImports, []);
     assert.equal(switchedNotices.at(-1).type, 'warning');
+  }
+
+  {
+    const template = createTemplate(['target-1']);
+    const mergeResult = createResult(['target-1']);
+    const missingMergeFieldResult = createResult(['target-1']);
+    const historyPayload = {
+      result: mergeResult,
+      metadata: {
+        runId: 'history-a',
+        model: 'model-A',
+        itemCount: 1,
+        templateItemCount: 1,
+        generatedAt: '2026-10-20T01:00:00Z',
+        mergeWithLatest: true,
+      },
+      history: [
+        {
+          runId: 'history-a',
+          model: 'model-A',
+          itemCount: 1,
+          templateItemCount: 1,
+          generatedAt: '2026-10-20T01:00:00Z',
+          mergeWithLatest: true,
+        },
+        {
+          runId: 'history-c',
+          model: 'model-C',
+          itemCount: 1,
+          templateItemCount: 1,
+          generatedAt: '2026-10-20T02:00:00Z',
+        },
+      ],
+    };
+    const { controller } = createController(api, {
+      template,
+      client: {
+        getConfig: async () => ({ model: 'model-current' }),
+        credentialStatus: async () => ({ stored: true }),
+        maintenance: async () => ({ jobStatuses: {} }),
+        getAnnotationBackfillResult: async () => historyPayload,
+        getAnnotationBackfillRunResult: async (_jobId, runId) => ({
+          result: missingMergeFieldResult,
+          metadata: {
+            runId,
+            model: runId === 'history-c' ? 'model-C' : 'model-unlisted',
+            itemCount: 1,
+            templateItemCount: 1,
+            generatedAt: '2026-10-20T02:00:00Z',
+            ...(runId === 'unlisted-history' ? { mergeWithLatest: true } : {}),
+          },
+        }),
+      },
+    });
+    await controller.openDialog();
+    assert.match(controller.getStatusSnapshot().modelProvenance.mergeText, /合并已有结果/);
+
+    await controller.importSavedBackfillRun('history-c');
+    let snapshot = controller.getStatusSnapshot();
+    assert.equal(snapshot.annotationSummary.selectedRunId, 'history-c');
+    assert.equal(snapshot.annotationSummary.records[1].current, true);
+    assert.equal(snapshot.modelProvenance.mergeText, '', 'a history record without mergeWithLatest must clear the prior merge explanation');
+
+    await controller.importSavedBackfillRun('unlisted-history');
+    snapshot = controller.getStatusSnapshot();
+    assert.equal(snapshot.annotationSummary.selectedRunMismatch, true);
+    assert.equal(snapshot.modelProvenance.mergeText, '', 'a run without a matching history record must not retain a prior merge explanation');
+    controller.dispose();
   }
 
   console.log('annotation backfill AI module check passed');

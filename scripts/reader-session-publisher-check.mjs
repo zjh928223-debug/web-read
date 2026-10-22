@@ -27,7 +27,6 @@ function oldState() {
     chunkCnHoldMode: false,
     isChunkShadowOn: false,
     chunkCnMode: 'global',
-    manualChunkStates: { 0: true },
     lastActiveChunkIndex: 0,
     lastAiPrevTapChunkIndex: 0,
     lastAiPrevTapAt: 12,
@@ -92,6 +91,7 @@ function makeHarness(failStage = '') {
     applyReaderMarks(value) { state.markedMap = new Map(value.map((mark) => [mark.globalIndex, mark])); fail('marks') },
     resetChunkDisplay() { state.chunkCnVisible = false; fail('reset') },
   })
+  assert.equal(Object.hasOwn(publisher.captureVisibleSession().state.fields, 'manualChunkStates'), false, 'rollback snapshot must not retain retired manual state')
   return { state, audio, media, publisher, fail }
 }
 

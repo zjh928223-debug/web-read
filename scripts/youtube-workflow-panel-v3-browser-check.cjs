@@ -45,19 +45,31 @@ function json(body) {
 
 async function mockService(page) {
   let revision = 4
+  let configReadMode = 'success'
+  let configSaveMode = 'success'
+  let configGetCount = 0
+  const backendConfig = {
+    model: 'gemini-test',
+    baseUrl: '',
+    proxyUrl: '',
+    cookiesPath: '',
+    outputDir: 'C:/workflow-output',
+    ytDlpPath: 'yt-dlp.exe',
+    whisperxPath: 'whisperx.exe',
+  }
   const queue = [
     {
       jobId: 'active-one', status: 'translating', stage: 'translating', title: 'Active material',
-      updatedAt: '2026-08-18T08:00:00.000Z', request: { url: 'https://youtu.be/Active12345' },
+      updatedAt: '2026-08-18T08:00:00.000Z', request: { url: 'https://youtu.be/Active12345', model: 'gemini-queue-a', geminiMode: 'mock' },
     },
     {
       jobId: 'failed-old', status: 'failed', stage: 'translating', title: 'Failed material',
-      updatedAt: '2026-08-17T08:00:00.000Z', request: { url: 'https://youtu.be/Failed12345' },
+      updatedAt: '2026-08-17T08:00:00.000Z', request: { url: 'https://youtu.be/Failed12345', model: 'gemini-failed-old', geminiMode: 'off' },
       error: { category: 'gemini', message: 'AI response was invalid' },
     },
     {
       jobId: 'failed-new', status: 'failed', stage: 'translating', title: 'Failed material',
-      updatedAt: '2026-08-18T07:00:00.000Z', request: { url: 'https://youtube.com/watch?v=Failed12345' },
+      updatedAt: '2026-08-18T07:00:00.000Z', request: { url: 'https://youtube.com/watch?v=Failed12345', model: 'gemini-failed-new', geminiMode: 'real' },
       error: { category: 'gemini', message: 'AI response was invalid again' },
     },
   ]
@@ -65,12 +77,26 @@ async function mockService(page) {
     jobId: `library-${index}`,
     title: `Library material ${index + 1}`,
     url: `https://youtube.com/watch?v=Library${String(index).padStart(4, '0')}`,
+    request: {
+      url: `https://youtube.com/watch?v=Library${String(index).padStart(4, '0')}`,
+      model: `gemini-history-${index}`,
+      geminiMode: index % 2 === 0 ? 'real' : 'mock',
+    },
     lastActivityAt: new Date(Date.UTC(2026, 7, 18, 10, 0, 0) - index * 3600000).toISOString(),
   }))
   const observed = {
     credentialPayloads: [],
     configPayloads: [],
     createPayloads: [],
+    setConfigReadMode(mode) {
+      configReadMode = mode
+    },
+    setConfigSaveMode(mode) {
+      configSaveMode = mode
+    },
+    get configGetCount() {
+      return configGetCount
+    },
   }
   await page.route('**/oembed**', (route) => route.fulfill(json({})))
   await page.route('**/api/**', async (route) => {
@@ -87,9 +113,18 @@ async function mockService(page) {
     if (url.pathname === '/api/config' && request.method() === 'POST') {
       const payload = request.postDataJSON()
       observed.configPayloads.push(payload)
-      return route.fulfill(json(payload))
+      if (configSaveMode === 'fail') {
+        return route.fulfill({ ...json({ detail: 'controlled config save failure' }), status: 503 })
+      }
+      return route.fulfill(json({ ...backendConfig, ...payload }))
     }
-    if (url.pathname === '/api/config') return route.fulfill(json({ model: 'gemini-test' }))
+    if (url.pathname === '/api/config') {
+      configGetCount += 1
+      if (configReadMode === 'fail') {
+        return route.fulfill({ ...json({ detail: 'controlled config read failure' }), status: 503 })
+      }
+      return route.fulfill(json(backendConfig))
+    }
     if (url.pathname === '/api/credentials/gemini/status') return route.fulfill(json({ stored: true, provider: 'test' }))
     const sessionMatch = url.pathname.match(/^\/api\/jobs\/(library-\d+)\/session$/)
     if (sessionMatch) {
@@ -203,7 +238,7 @@ async function main() {
     })
     assert.equal(openButtonStyle.owner, 'workflow')
     assert.equal(openButtonStyle.variant, 'outline')
-    assert.equal(openButtonStyle.size, 'sm')
+    assert.equal(openButtonStyle.size, 'default')
     assert.equal(openButtonStyle.borderRadius, '6px')
     assert.equal(openButtonStyle.backgroundImage, 'none')
     assert.equal(openButtonStyle.fontWeight, '500')
@@ -223,7 +258,7 @@ async function main() {
     })
     assert.equal(activeNavigationStyle.owner, 'workflow')
     assert.equal(activeNavigationStyle.variant, 'secondary')
-    assert.equal(activeNavigationStyle.size, 'sm')
+    assert.equal(activeNavigationStyle.size, 'default')
     assert.equal(activeNavigationStyle.fontWeight, '500')
     assert.equal(activeNavigationStyle.backgroundImage, 'none')
 
@@ -233,7 +268,7 @@ async function main() {
     })
     assert.equal(filterStyle.owner, 'workflow')
     assert.equal(filterStyle.variant, 'secondary')
-    assert.equal(filterStyle.size, 'xs')
+    assert.equal(filterStyle.size, 'default')
     assert.equal(filterStyle.fontWeight, '500')
     assert.equal(filterStyle.backgroundImage, 'none')
 
@@ -243,15 +278,20 @@ async function main() {
     })
     assert.equal(iconStyle.owner, 'workflow')
     assert.equal(iconStyle.variant, 'ghost')
-    assert.equal(iconStyle.size, 'icon-sm')
+    assert.equal(iconStyle.size, 'icon')
     assert.equal(iconStyle.borderRadius, '6px')
     assert.equal(iconStyle.fontWeight, '500')
 
     await firstLibraryRow.getByRole('button', { name: '更多操作' }).click()
     assert.match(await firstLibraryRow.innerText(), /YouTube · Library0000/)
+    assert.match(await firstLibraryRow.innerText(), /任务请求模型：gemini-history-0/)
+    assert.match(await firstLibraryRow.innerText(), /请求模式：真实模式/)
+    assert.match(await firstLibraryRow.innerText(), /实际执行\/路由模型：当前记录未提供/)
     await firstLibraryRow.getByRole('button', { name: '查看处理详情' }).click()
     const qualityDialog = page.getByRole('dialog', { name: '质量报告' })
     await qualityDialog.waitFor({ state: 'visible' })
+    assert.match(await qualityDialog.innerText(), /任务请求模型：gemini-history-0/)
+    assert.match(await qualityDialog.innerText(), /实际执行\/路由模型：当前记录未提供/)
     const qualityLayer = await page.locator('.youtube-quality-backdrop').evaluate((backdrop) => Number(getComputedStyle(backdrop).zIndex))
     const materialLayer = await page.locator('.youtube-workflow-backdrop').evaluate((backdrop) => Number(getComputedStyle(backdrop).zIndex))
     assert.ok(qualityLayer > materialLayer, `quality layer ${qualityLayer} should be above material layer ${materialLayer}`)
@@ -278,6 +318,13 @@ async function main() {
     assert.equal(await page.locator('.youtube-workflow-queue-job').count(), 2)
     assert.match(await page.locator('.youtube-workflow-queue').innerText(), /2 次尝试/)
     assert.match(await page.locator('.youtube-workflow-queue').innerText(), /3\/4 · AI 切分与翻译/)
+    const attemptHistory = page.locator('.youtube-task-attempt-details')
+    assert.equal(await attemptHistory.count(), 1, 'the repeated failure should expose one attempt-history disclosure')
+    await attemptHistory.locator('summary').click()
+    assert.equal(await attemptHistory.locator('p').count(), 1, 'opening the disclosure should show the previous attempt')
+    assert.match(await attemptHistory.innerText(), /AI response was invalid/)
+    console.log('youtube queue attempt history opened and prior attempt was visible')
+    await attemptHistory.locator('summary').click()
     const failedDeleteButton = page.locator('.youtube-workflow-queue-job[data-status="failed"] button[data-ui-owner="workflow"][data-variant="destructive"]').first()
     await page.keyboard.press('Tab')
     await failedDeleteButton.focus()
@@ -292,7 +339,7 @@ async function main() {
     })
     assert.equal(destructiveFocusStyle.focusVisible, true, 'destructive action should use keyboard-visible focus')
     assert.match(destructiveFocusStyle.boxShadow, /0px 0px 0px 3px/, 'destructive action should retain the component focus ring')
-    assert.match(destructiveFocusStyle.ringColor, /destructive|207|cf3d4b/i, 'destructive action should retain its semantic focus color')
+    assert.match(destructiveFocusStyle.ringColor, /oklch\(0\.577 0\.245 27\.325\)|oklch\(57\.7% \.245 27\.325\)|207|cf3d4b/i, 'destructive action should retain its semantic focus color')
     await failedDeleteButton.click()
     await page.waitForSelector('.youtube-workflow-queue-job[data-status="failed"]', { state: 'hidden' })
     assert.equal(await page.locator('.youtube-workflow-queue-job[data-status="failed"]').count(), 0)
@@ -347,19 +394,45 @@ async function main() {
     assert.match(await page.locator('.youtube-workflow-queue').innerText(), /Created after delete/)
 
     await page.locator('.youtube-workflow-nav button[data-view="settings"]').click()
+    await page.waitForSelector('[data-workflow-config-status]')
+    await page.waitForTimeout(30)
     const compactSettingsText = await page.locator('.youtube-workflow-content').innerText()
     assert.match(compactSettingsText, /Gemini API Key/)
     assert.doesNotMatch(compactSettingsText, /管理素材处理使用的 Gemini API Key/)
-    assert.doesNotMatch(compactSettingsText, /^模型$/m)
+    assert.match(compactSettingsText, /素材处理模型/)
+    for (const purposeText of ['素材转写', '素材切分', '素材翻译', '文章解释', '短义精简', '句子即时翻译']) {
+      assert.match(compactSettingsText, new RegExp(purposeText), `${purposeText} should be visible without opening advanced settings`)
+    }
+    const modelInput = page.locator('input[name="youtube-workflow-settings-model"]')
+    assert.equal(await modelInput.count(), 1, 'material model should have one effective input')
+    assert.equal(await modelInput.inputValue(), 'gemini-test')
+    assert.equal(await page.locator('.youtube-advanced-settings input[name="youtube-workflow-settings-model"]').count(), 0)
+    const configStatus = page.locator('[data-workflow-config-status]')
+    assert.equal(await configStatus.getAttribute('data-config-read-state'), 'loaded')
+    const configSaveButton = page.locator('[data-workflow-config-save]')
+    assert.equal(await configSaveButton.isDisabled(), false)
+    await modelInput.focus()
+    await modelInput.press('Tab')
+    assert.equal(await page.evaluate(() => document.activeElement?.matches('[data-workflow-config-save]')), true, 'settings model should tab to its save action')
+    await modelInput.fill('gemini-next')
+    await modelInput.press('Tab')
+    assert.match(await configStatus.innerText(), /尚未保存/)
+    assert.equal(await observed.configPayloads.length, 0, 'editing and tabbing should not submit config')
+    await configSaveButton.click()
+    await page.waitForTimeout(30)
+    assert.equal(observed.configPayloads.at(-1).model, 'gemini-next')
+    assert.equal(Object.keys(observed.configPayloads.at(-1)).sort().join(','), ['baseUrl', 'cookiesPath', 'model', 'outputDir', 'proxyUrl', 'whisperxPath', 'ytDlpPath'].sort().join(','))
+    assert.equal(await configStatus.getAttribute('data-config-save-state'), 'saved')
+    assert.match(await configStatus.innerText(), /已确认保存/)
     const advancedToggle = page.getByRole('button', { name: /高级设置/ })
     assert.equal((await advancedToggle.innerText()).trim(), '高级设置')
     assert.equal(await advancedToggle.getAttribute('data-ui-owner'), 'workflow')
     assert.equal(await advancedToggle.getAttribute('data-variant'), 'outline')
-    assert.equal(await advancedToggle.getAttribute('data-size'), 'sm')
+    assert.equal(await advancedToggle.getAttribute('data-size'), 'default')
     const advancedToggleBox = await advancedToggle.boundingBox()
-    assert.ok(advancedToggleBox.width > 0 && advancedToggleBox.height >= 32)
+    assert.ok(advancedToggleBox.width > 0 && advancedToggleBox.height >= 36)
     await advancedToggle.click()
-    assert.match(await page.locator('.youtube-advanced-settings').innerText(), /^模型$/m)
+    assert.doesNotMatch(await page.locator('.youtube-advanced-settings').innerText(), /^模型$/m)
 
     const apiKeyInput = page.locator('input[name="youtube-gemini-api-key-settings"]')
     const apiKeyField = await apiKeyInput.evaluate((input) => {
@@ -395,7 +468,7 @@ async function main() {
     assert.deepEqual(observed.credentialPayloads, [{ apiKey: '  test-key  ' }])
 
     const advancedInputs = page.locator('.youtube-advanced-settings input[data-ui-owner="workflow"]')
-    assert.equal(await advancedInputs.count(), 7)
+    assert.equal(await advancedInputs.count(), 6)
     for (let index = 0; index < await advancedInputs.count(); index += 1) {
       assert.equal(await advancedInputs.nth(index).getAttribute('data-slot'), 'input')
       assert.equal(await advancedInputs.nth(index).getAttribute('autocomplete'), 'off')
@@ -405,9 +478,42 @@ async function main() {
     assert.equal(await cookiesPath.inputValue(), '  C:/学习 数据/cookies.txt  ', 'advanced fields should preserve raw editing value before change')
     await cookiesPath.press('Tab')
     assert.equal(await cookiesPath.inputValue(), 'C:/学习 数据/cookies.txt', 'advanced fields should trim on change')
-    await page.getByRole('button', { name: '保存后台配置' }).click()
+    await configSaveButton.click()
     await page.waitForTimeout(30)
     assert.equal(observed.configPayloads.at(-1).cookiesPath, 'C:/学习 数据/cookies.txt')
+
+    observed.setConfigSaveMode('fail')
+    await modelInput.fill('gemini-save-failure')
+    await modelInput.press('Tab')
+    await configSaveButton.click()
+    await page.waitForTimeout(30)
+    assert.equal(await configStatus.getAttribute('data-config-save-state'), 'failed')
+    assert.match(await configStatus.innerText(), /保存失败/)
+    assert.doesNotMatch(await configStatus.innerText(), /已确认保存/)
+    const failedPayloadCount = observed.configPayloads.length
+    observed.setConfigSaveMode('success')
+    await configSaveButton.click()
+    await page.waitForTimeout(30)
+    assert.equal(observed.configPayloads.length, failedPayloadCount + 1)
+    assert.equal(await configStatus.getAttribute('data-config-save-state'), 'saved')
+
+    const configPayloadCountBeforeReadFailure = observed.configPayloads.length
+    observed.setConfigReadMode('fail')
+    await page.locator('.youtube-workflow-nav button[data-view="library"]').click()
+    await page.locator('.youtube-workflow-nav button[data-view="settings"]').click()
+    await page.waitForTimeout(40)
+    assert.equal(await configStatus.getAttribute('data-config-read-state'), 'failed')
+    assert.equal(await configSaveButton.isDisabled(), true)
+    assert.match(await configStatus.innerText(), /读取失败/)
+    await page.evaluate(() => document.querySelector('[data-workflow-config-save]').click())
+    await page.waitForTimeout(30)
+    assert.equal(observed.configPayloads.length, configPayloadCountBeforeReadFailure, 'failed config reads must not submit unknown fields')
+    observed.setConfigReadMode('success')
+    await page.locator('.youtube-workflow-nav button[data-view="library"]').click()
+    await page.locator('.youtube-workflow-nav button[data-view="settings"]').click()
+    await page.waitForTimeout(40)
+    assert.equal(await configStatus.getAttribute('data-config-read-state'), 'loaded')
+    assert.equal(await configSaveButton.isDisabled(), false)
 
     for (const width of [760, 761, 640, 641]) {
       await page.setViewportSize({ width, height: 760 })
@@ -422,6 +528,32 @@ async function main() {
     const mobileBox = await panel.boundingBox()
     assert.equal(Math.round(mobileBox.width), 640)
     assert.equal(await page.locator('.youtube-workflow-nav button').count(), 3)
+
+    for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(viewport)
+      const layout = await page.evaluate(() => {
+        const panelBox = document.querySelector('.youtube-workflow-panel')?.getBoundingClientRect()
+        const modelBox = document.querySelector('.youtube-workflow-model-settings')?.getBoundingClientRect()
+        const purposeBox = document.querySelector('.youtube-workflow-purpose-summary')?.getBoundingClientRect()
+        return {
+          documentWidth: document.documentElement.scrollWidth,
+          viewportWidth: window.innerWidth,
+          panelBox: panelBox ? { left: panelBox.left, right: panelBox.right, width: panelBox.width } : null,
+          modelBox: modelBox ? { left: modelBox.left, right: modelBox.right, width: modelBox.width } : null,
+          purposeBox: purposeBox ? { left: purposeBox.left, right: purposeBox.right, width: purposeBox.width } : null,
+        }
+      })
+      assert.ok(layout.documentWidth <= layout.viewportWidth + 1, `${viewport.width}x${viewport.height} should not overflow horizontally`)
+      assert.ok(layout.panelBox && layout.modelBox && layout.purposeBox, `${viewport.width}x${viewport.height} settings surfaces should render`)
+      assert.ok(layout.modelBox.left >= layout.panelBox.left - 1 && layout.modelBox.right <= layout.panelBox.right + 1, `${viewport.width} model card should stay inside panel`)
+      assert.ok(layout.purposeBox.left >= layout.panelBox.left - 1 && layout.purposeBox.right <= layout.panelBox.right + 1, `${viewport.width} purpose card should stay inside panel`)
+      if (process.env.N8_EVIDENCE_DIR) {
+        const path = require('node:path')
+        const fs = require('node:fs')
+        fs.mkdirSync(process.env.N8_EVIDENCE_DIR, { recursive: true })
+        await page.screenshot({ path: path.join(process.env.N8_EVIDENCE_DIR, `settings-${viewport.width}x${viewport.height}.png`), fullPage: false })
+      }
+    }
 
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.locator('.youtube-workflow-nav button[data-view="library"]').click()
@@ -451,7 +583,7 @@ async function main() {
       })
       assert.equal(closeStyle.owner, 'workflow')
       assert.equal(closeStyle.variant, 'ghost')
-      assert.equal(closeStyle.size, 'icon-sm')
+      assert.equal(closeStyle.size, 'icon')
       assert.equal(cssAlpha(closeStyle.backgroundColor), 0, `${theme} notice close should be transparent by default`)
       const noticeAction = materialNotice.locator('button').first()
       await noticeAction.focus()

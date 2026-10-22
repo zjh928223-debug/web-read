@@ -30,6 +30,9 @@ assert.equal(bridgeSource.includes('window.__piniaStores'), false, 'bridge must 
 assert.equal(bridgeSource.includes('window.bridgeToPinia'), false, 'bridge must not publish a window facade');
 assert.ok(mainSource.includes('window.__transcriptState.bindPiniaStore(transcriptStore)'));
 assert.ok(mainSource.includes('window.__chunkState.bindPiniaStore(chunkStore)'));
-assert.ok(mainSource.includes('window.__clozeState.bindPiniaStore(clozeStore)'));
+assert.doesNotMatch(mainSource, /clozeState|clozeStore|useClozeStore|cloze-state\.js|pinia-stores\/cloze\.js/);
+for (const relativePath of ['src/composables/cloze-state.js', 'src/pinia-stores/cloze.js']) {
+  assert.equal(fs.existsSync(path.join(repoRoot, relativePath)), false, `${relativePath} must stay retired`);
+}
 
 console.log('bridge startup check passed');

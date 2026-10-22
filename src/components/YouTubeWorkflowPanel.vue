@@ -4,7 +4,7 @@
       <Button
         type="button"
         variant="outline"
-        size="sm"
+        size="default"
         class="small-btn youtube-material-entry"
         data-ui-owner="workflow"
         @click="openPanel"
@@ -14,6 +14,13 @@
         <small v-if="failedTaskCount" class="youtube-material-entry-count is-failed">{{ failedTaskCount }}</small>
         <small v-if="completionSignal" class="youtube-material-entry-count is-complete">✓</small>
       </Button>
+    </div>
+  </Teleport>
+
+  <Teleport to="#reader-article-status-root">
+    <div class="reader-article-status" :aria-busy="openingJobId ? 'true' : 'false'">
+      <strong>{{ openingJobId ? articleTitleBeforeOpen : currentArticleTitle }}</strong>
+      <span role="status" aria-live="polite" aria-atomic="true">{{ readerOpenMessage }}</span>
     </div>
   </Teleport>
 
@@ -28,7 +35,7 @@
             <Button
               type="button"
               variant="default"
-              size="sm"
+              size="default"
               class="youtube-add-material-button"
               data-ui-owner="workflow"
               @click="setWorkflowView('add')"
@@ -38,7 +45,7 @@
             <Button
               type="button"
               variant="ghost"
-              size="icon-sm"
+              size="icon"
               class="youtube-workflow-close-button"
               data-ui-owner="workflow"
               aria-label="关闭"
@@ -62,7 +69,7 @@
             <Button
               type="button"
               :variant="workflowView === 'library' ? 'secondary' : 'ghost'"
-              size="sm"
+              size="default"
               data-ui-owner="workflow"
               data-view="library"
               :aria-pressed="workflowView === 'library'"
@@ -74,7 +81,7 @@
             <Button
               type="button"
               :variant="workflowView === 'queue' ? 'secondary' : 'ghost'"
-              size="sm"
+              size="default"
               data-ui-owner="workflow"
               data-view="queue"
               :aria-pressed="workflowView === 'queue'"
@@ -88,7 +95,7 @@
             <Button
               type="button"
               :variant="workflowView === 'settings' ? 'secondary' : 'ghost'"
-              size="sm"
+              size="default"
               data-ui-owner="workflow"
               data-view="settings"
               :aria-pressed="workflowView === 'settings'"
@@ -107,14 +114,24 @@
               <div class="youtube-workflow-page-head">
                 <div>
                   <h3>添加素材</h3>
-                  <p>粘贴视频链接，可一次添加多个。</p>
                 </div>
               </div>
 
               <form class="youtube-workflow-form youtube-add-material-form" @submit.prevent="enqueueUrls">
                 <label class="youtube-material-link-label">
                   <span>视频链接</span>
+                  <Input
+                    v-if="!batchInputExpanded"
+                    v-model.trim="linkInput"
+                    class="youtube-material-link-input"
+                    name="youtube-material-link"
+                    type="url"
+                    autocomplete="off"
+                    placeholder="粘贴视频链接"
+                    data-ui-owner="workflow"
+                  />
                   <Textarea
+                    v-else
                     v-model.trim="linkInput"
                     class="youtube-material-link-input rw:min-w-0 rw:min-h-[76px] rw:max-h-[220px] rw:resize-y"
                     name="youtube-material-link"
@@ -124,9 +141,20 @@
                     data-ui-owner="workflow"
                     @keydown.enter.ctrl.prevent="commitLinkInput"
                     @paste="handleLinkPaste"
-                    @blur="commitLinkInput"
                   />
                 </label>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="default"
+                  class="youtube-batch-input-toggle"
+                  data-ui-owner="workflow"
+                  :aria-expanded="batchInputExpanded"
+                  :disabled="starting || (batchInputExpanded && linkCards.length + parseLinks(linkInput).length > 1)"
+                  @click="batchInputExpanded = !batchInputExpanded"
+                >{{ batchInputExpanded ? '收起批量添加' : '批量添加' }}</Button>
+                <p v-if="!batchInputExpanded && linkCards.length + parseLinks(linkInput).length > 1" class="youtube-workflow-hint" role="status">多个链接请展开“批量添加”。</p>
 
                 <div class="youtube-link-card-list">
                   <article v-for="(card, index) in linkCards" :key="card.id" class="youtube-link-card" :data-valid="card.valid" :data-duplicate="card.duplicate ? 'true' : 'false'">
@@ -138,7 +166,7 @@
                     <Button
                       type="button"
                       variant="ghost"
-                      size="sm"
+                      size="default"
                       class="youtube-link-remove"
                       data-ui-owner="workflow"
                       :aria-label="`移除第 ${index + 1} 条链接`"
@@ -157,7 +185,7 @@
                 </p>
                 <div v-if="geminiMode === 'real' && !apiKey.trim() && !credentialStatus.stored" class="youtube-add-credential-needed">
                   <span>需要先保存 Gemini API Key</span>
-                  <Button type="button" variant="outline" size="sm" data-ui-owner="workflow" @click="setWorkflowView('settings')">去设置</Button>
+                  <Button type="button" variant="outline" size="default" data-ui-owner="workflow" @click="setWorkflowView('settings')">去设置</Button>
                 </div>
                 <div class="youtube-primary-actions youtube-add-submit-row">
                   <Button type="submit" variant="default" size="default" data-ui-owner="workflow" :disabled="starting || !canEnqueue">
@@ -175,7 +203,7 @@
                 <Button
                   type="button"
                   variant="outline"
-                  size="sm"
+                  size="default"
                   data-ui-owner="workflow"
                   @click="refreshQueue"
                 >
@@ -188,7 +216,7 @@
                   v-if="failedTaskCount"
                   type="button"
                   variant="outline"
-                  size="sm"
+                  size="default"
                   class="youtube-clear-failures"
                   data-ui-owner="workflow"
                   @click="clearFailedTasks"
@@ -213,6 +241,7 @@
                       <span v-if="group.attemptCount > 1" class="youtube-task-attempt-count">{{ group.attemptCount }} 次尝试</span>
                     </div>
                     <small class="youtube-job-source">{{ taskSourceText(group.displayJob) }}</small>
+                    <small class="youtube-job-source">{{ jobRequestProvenanceText(group.displayJob) }}</small>
                     <div class="youtube-job-progress" aria-hidden="true">
                       <span :style="{ width: `${jobProgressPercent(group.displayJob)}%` }"></span>
                     </div>
@@ -235,7 +264,7 @@
                       v-if="group.displayJob.status === 'queued'"
                       type="button"
                       variant="outline"
-                      size="sm"
+                      size="default"
                       data-ui-owner="workflow"
                       @click="prioritizeJob(group.displayJob)"
                     >
@@ -245,7 +274,7 @@
                       v-if="group.statusKind === 'failed'"
                       type="button"
                       variant="default"
-                      size="sm"
+                      size="default"
                       data-ui-owner="workflow"
                       @click="retryJob(group.displayJob)"
                     >
@@ -255,7 +284,7 @@
                       v-if="group.statusKind === 'failed'"
                       type="button"
                       variant="destructive"
-                      size="sm"
+                      size="default"
                       data-ui-owner="workflow"
                       @click="deleteFailedTaskGroup(group)"
                     >
@@ -265,7 +294,7 @@
                       v-if="group.statusKind === 'active'"
                       type="button"
                       variant="ghost"
-                      size="sm"
+                      size="default"
                       data-ui-owner="workflow"
                       @click="cancelJob(group.displayJob)"
                     >
@@ -283,43 +312,10 @@
                 </div>
                 <span>{{ librarySummary }}</span>
               </div>
-              <div class="youtube-filter-tabs youtube-library-time-filter" aria-label="素材时间筛选">
-                <Button
-                  type="button"
-                  :variant="libraryTimeScope === 'all' ? 'secondary' : 'ghost'"
-                  size="xs"
-                  data-ui-owner="workflow"
-                  :data-active="libraryTimeScope === 'all' ? 'true' : 'false'"
-                  @click="setLibraryTimeScope('all')"
-                >
-                  全部
-                </Button>
-                <Button
-                  type="button"
-                  :variant="libraryTimeScope === 'recent' ? 'secondary' : 'ghost'"
-                  size="xs"
-                  data-ui-owner="workflow"
-                  :data-active="libraryTimeScope === 'recent' ? 'true' : 'false'"
-                  @click="setLibraryTimeScope('recent')"
-                >
-                  7 天内
-                </Button>
-                <Button
-                  type="button"
-                  :variant="libraryTimeScope === 'earlier' ? 'secondary' : 'ghost'"
-                  size="xs"
-                  data-ui-owner="workflow"
-                  :data-active="libraryTimeScope === 'earlier' ? 'true' : 'false'"
-                  @click="setLibraryTimeScope('earlier')"
-                >
-                  更早
-                </Button>
-              </div>
-
               <p v-if="readerActivityNotice" class="youtube-workflow-hint" data-tone="warning">{{ readerActivityNotice }}</p>
               <section class="youtube-workflow-history youtube-material-library-list">
                 <div v-if="libraryPending && !recentJobs.length" class="youtube-workflow-empty">正在读取素材库…</div>
-                <div v-else-if="!recentJobs.length" class="youtube-workflow-empty">这个时间范围内暂无素材</div>
+                <div v-else-if="!recentJobs.length" class="youtube-workflow-empty">暂无素材</div>
                 <article
                   v-for="job in recentJobs"
                   :key="job.jobId"
@@ -329,7 +325,7 @@
                   <div class="youtube-workflow-job-main">
                     <strong class="youtube-job-title">{{ jobDisplayTitle(job) }}</strong>
                     <div class="youtube-job-status-line">
-                      <span>{{ libraryRelativeTime(job) }}</span>
+                      <span>{{ libraryTimeLabel(job) }} · {{ libraryRelativeTime(job) }}</span>
                       <span>{{ libraryExactTime(job) }}</span>
                       <span v-if="job.needsRepair" class="youtube-library-repair-state">需要修复</span>
                     </div>
@@ -338,7 +334,7 @@
                     <Button
                       type="button"
                       variant="outline"
-                      size="sm"
+                      size="default"
                       class="youtube-library-open"
                       data-ui-owner="workflow"
                       :disabled="openingJobId === job.jobId"
@@ -349,7 +345,7 @@
                     <Button
                       type="button"
                       variant="ghost"
-                      size="icon-sm"
+                      size="icon"
                       class="youtube-library-more"
                       data-ui-owner="workflow"
                       aria-label="更多操作"
@@ -361,16 +357,18 @@
                   </div>
                   <div v-if="expandedLibraryJobId === job.jobId" class="youtube-library-row-menu">
                     <small class="youtube-library-source-detail">{{ librarySourceText(job) }}</small>
-                    <Button type="button" variant="outline" size="sm" data-ui-owner="workflow" @click="confirmReprocess(job)">重新处理</Button>
-                    <Button type="button" variant="outline" size="sm" data-ui-owner="workflow" @click="showQuality(job)">查看处理详情</Button>
-                    <Button type="button" variant="destructive" size="sm" data-ui-owner="workflow" @click="deleteLibraryRecord(job)">删除记录</Button>
+                    <small class="youtube-library-source-detail">{{ jobRequestProvenanceText(job) }}</small>
+                    <small class="youtube-library-source-detail">{{ jobRouteProvenanceText(job) }}</small>
+                    <Button type="button" variant="outline" size="default" data-ui-owner="workflow" @click="confirmReprocess(job)">重新处理</Button>
+                    <Button type="button" variant="outline" size="default" data-ui-owner="workflow" @click="showQuality(job)">查看处理详情</Button>
+                    <Button type="button" variant="destructive" size="default" data-ui-owner="workflow" @click="deleteLibraryRecord(job)">删除记录</Button>
                   </div>
                 </article>
                 <Button
                   v-if="libraryHasMore"
                   type="button"
                   variant="outline"
-                  size="sm"
+                  size="default"
                   class="youtube-library-load-more"
                   data-ui-owner="workflow"
                   :disabled="libraryPending"
@@ -383,7 +381,7 @@
                 v-if="readerConflictVisible"
                 type="button"
                 variant="outline"
-                size="sm"
+                size="default"
                 data-ui-owner="workflow"
                 data-reader-conflict-action
                 @click="resolveReaderConflict"
@@ -401,7 +399,7 @@
                     v-if="card.duplicate.state === 'ready'"
                     type="button"
                     variant="default"
-                    size="sm"
+                    size="default"
                     data-ui-owner="workflow"
                     @click="openRecentJob(card.duplicate.job)"
                   >
@@ -411,7 +409,7 @@
                     v-if="card.duplicate.state === 'active'"
                     type="button"
                     variant="outline"
-                    size="sm"
+                    size="default"
                     data-ui-owner="workflow"
                     @click="setWorkflowView('queue')"
                   >
@@ -421,7 +419,7 @@
                     v-if="card.duplicate.state === 'failed'"
                     type="button"
                     variant="outline"
-                    size="sm"
+                    size="default"
                     data-ui-owner="workflow"
                     @click="retryJob(card.duplicate.job)"
                   >
@@ -430,7 +428,7 @@
                   <Button
                     type="button"
                     variant="outline"
-                    size="sm"
+                    size="default"
                     data-ui-owner="workflow"
                     @click="confirmReprocess(card.duplicate.job, card.url)"
                   >
@@ -472,10 +470,89 @@
               </section>
               <p v-else class="youtube-workflow-hint">当前为本地开发模式，无需配置 API Key。</p>
 
+              <section class="youtube-workflow-config-card youtube-workflow-model-settings" aria-labelledby="youtube-workflow-model-settings-title">
+                <div class="youtube-workflow-config-heading">
+                  <div>
+                    <h4 id="youtube-workflow-model-settings-title">素材处理模型</h4>
+                    <p>用于本页新素材任务的 AI 切分与素材翻译。它不会改写已有任务的来源记录。</p>
+                  </div>
+                  <span class="youtube-workflow-config-mode">{{ workflowModeText }}</span>
+                </div>
+                <label>
+                  <span>本页新素材任务的当前模型</span>
+                  <Input v-model.trim="model" type="text" name="youtube-workflow-settings-model" autocomplete="off" placeholder="gemini-2.5-flash" data-ui-owner="workflow" />
+                </label>
+                <div class="youtube-workflow-config-state-grid">
+                  <div>
+                    <span>页面当前选择</span>
+                    <strong data-workflow-current-model>{{ currentModelText }}</strong>
+                  </div>
+                  <div>
+                    <span>后台已读配置</span>
+                    <strong data-workflow-backend-model>{{ backendModelText }}</strong>
+                  </div>
+                </div>
+                <p
+                  class="youtube-workflow-config-status"
+                  data-workflow-config-status
+                  :data-config-read-state="backendConfigLoadState"
+                  :data-config-save-state="backendConfigSaveState"
+                  role="status"
+                  aria-live="polite"
+                >
+                  {{ backendConfigStateText }}
+                </p>
+                <div class="youtube-primary-actions youtube-workflow-config-actions">
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="default"
+                    class="youtube-save-config-button"
+                    data-ui-owner="workflow"
+                    data-workflow-config-save
+                    :disabled="!canSaveBackendConfig"
+                    @click="saveBackendConfig"
+                  >
+                    {{ backendConfigSaveButtonText }}
+                  </Button>
+                </div>
+                <p v-if="backendConfigNotice" class="youtube-workflow-hint" data-workflow-config-notice>{{ backendConfigNotice }}</p>
+              </section>
+
+              <section class="youtube-workflow-purpose-summary" aria-labelledby="youtube-workflow-purpose-title">
+                <h4 id="youtube-workflow-purpose-title">这些能力分别用于什么</h4>
+                <dl>
+                  <div>
+                    <dt>素材转写</dt>
+                    <dd>由后端独立调用本地 WhisperX，从素材音频生成逐词字幕；当前设置接口不提供本次转写的模型记录。</dd>
+                  </div>
+                  <div>
+                    <dt>素材切分</dt>
+                    <dd>把转写字幕整理成可学习的语块；新素材任务使用上面的本页模型。</dd>
+                  </div>
+                  <div>
+                    <dt>素材翻译</dt>
+                    <dd>为素材语块生成中文翻译；它与素材切分共用本次素材任务的请求模型。</dd>
+                  </div>
+                  <div>
+                    <dt>文章解释</dt>
+                    <dd>解释弹窗有自己的模型选择和请求路径，不跟随这里的素材模型。</dd>
+                  </div>
+                  <div>
+                    <dt>短义精简</dt>
+                    <dd>为复习候选生成短义；当前请求使用后端默认，不读取解释弹窗的模型选择。</dd>
+                  </div>
+                  <div>
+                    <dt>句子即时翻译</dt>
+                    <dd>走独立的句子翻译服务和缓存路径，不按素材模型重新标记已有句子翻译。</dd>
+                  </div>
+                </dl>
+              </section>
+
               <Button
                 type="button"
                 variant="outline"
-                size="sm"
+                size="default"
                 class="youtube-advanced-toggle"
                 data-ui-owner="workflow"
                 :aria-expanded="showAdvanced ? 'true' : 'false'"
@@ -484,10 +561,6 @@
                 <span>{{ showAdvanced ? '收起高级设置' : '高级设置' }}</span>
               </Button>
               <div v-if="showAdvanced" class="youtube-advanced-settings">
-                <label>
-                  <span>模型</span>
-                  <Input v-model.trim="model" type="text" name="youtube-workflow-settings-model" autocomplete="off" placeholder="gemini-2.5-flash" data-ui-owner="workflow" />
-                </label>
                 <label>
                   <span>Base URL（可选，使用代理网关时填写）</span>
                   <Input v-model.trim="baseUrl" type="text" name="youtube-workflow-base-url" autocomplete="off" placeholder="留空使用官方默认地址" data-ui-owner="workflow" />
@@ -513,16 +586,15 @@
                   <Input v-model.trim="whisperxPath" type="text" name="youtube-workflow-whisperx-path" autocomplete="off" placeholder="whisperx.exe" data-ui-owner="workflow" />
                 </label>
                 <div class="youtube-primary-actions">
-                  <Button type="button" variant="default" size="default" data-ui-owner="workflow" @click="saveBackendConfig">保存后台配置</Button>
-                  <Button type="button" variant="outline" size="sm" data-ui-owner="workflow" @click="refreshMaintenance">维护状态</Button>
-                  <Button type="button" variant="outline" size="sm" data-ui-owner="workflow" @click="checkCleanup">检查旧文件</Button>
-                  <Button type="button" variant="outline" size="sm" data-ui-owner="workflow" @click="confirmCleanup">清理旧文件</Button>
-                  <Button type="button" variant="outline" size="sm" data-ui-owner="workflow" @click="downloadDiagnosticsPackage">导出诊断包</Button>
+                  <Button type="button" variant="outline" size="default" data-ui-owner="workflow" @click="refreshMaintenance">维护状态</Button>
+                  <Button type="button" variant="outline" size="default" data-ui-owner="workflow" @click="checkCleanup">检查旧文件</Button>
+                  <Button type="button" variant="outline" size="default" data-ui-owner="workflow" @click="confirmCleanup">清理旧文件</Button>
+                  <Button type="button" variant="outline" size="default" data-ui-owner="workflow" @click="downloadDiagnosticsPackage">导出诊断包</Button>
                 </div>
+                <p class="youtube-workflow-hint">维护状态用于查看后端存储情况；检查旧文件会先列出清理候选，清理需再次确认；诊断包用于排查处理问题。</p>
                 <div v-if="geminiMode === 'real' && credentialStatus.stored" class="youtube-advanced-danger-row">
-                  <Button type="button" variant="destructive" size="sm" data-ui-owner="workflow" @click="confirmDeleteCredential">清除已保存 API Key</Button>
+                  <Button type="button" variant="destructive" size="default" data-ui-owner="workflow" @click="confirmDeleteCredential">清除已保存 API Key</Button>
                 </div>
-                <p v-if="backendConfigNotice">{{ backendConfigNotice }}</p>
                 <p v-if="maintenanceInfo">{{ maintenanceText(maintenanceInfo) }}</p>
               </div>
             </section>
@@ -536,15 +608,15 @@
       <div v-if="qualityModal" class="youtube-workflow youtube-subwindow youtube-quality-backdrop">
         <section ref="qualityDialogRoot" class="youtube-subwindow-card youtube-quality-card" role="dialog" aria-modal="true" aria-labelledby="youtube-quality-dialog-title" :aria-busy="qualityPending ? 'true' : 'false'">
           <header>
-            <strong id="youtube-quality-dialog-title">质量报告</strong>
+            <strong id="youtube-quality-dialog-title">处理详情</strong>
             <Button
               type="button"
               variant="ghost"
-              size="icon-sm"
+              size="icon"
               class="youtube-workflow-close-button"
               data-ui-owner="workflow"
               data-quality-initial-focus
-              aria-label="关闭质量报告"
+              aria-label="关闭处理详情"
               title="关闭"
               :disabled="qualityPending"
               @click="closeQualityModal"
@@ -553,16 +625,30 @@
             </Button>
           </header>
           <p>{{ jobDisplayTitle(qualityModal.job) }}</p>
+          <p class="youtube-library-source-detail">{{ jobRequestProvenanceText(qualityModal.job) }}</p>
+          <p class="youtube-library-source-detail">{{ jobRouteProvenanceText(qualityModal.job) }}</p>
           <p ref="qualityDialogStatus" role="status" aria-live="polite" aria-atomic="true">{{ qualityIssueSummary(qualityModal.report) }}</p>
-          <ul v-if="qualityModal.report.issues && qualityModal.report.issues.length">
-            <li v-for="issue in qualityModal.report.issues.slice(0, 8)" :key="issue.code + issue.message">
-              {{ issue.code }}：{{ issue.message }}
+          <ul v-if="qualityModal.report.issues && qualityModal.report.issues.length" class="youtube-quality-issues">
+            <li v-for="(issue, index) in qualityModal.report.issues.slice(0, 8)" :key="index">
+              {{ qualityIssueText(issue) }}
             </li>
           </ul>
-          <div class="youtube-workflow-actions">
-            <Button type="button" variant="default" size="sm" data-ui-owner="workflow" :disabled="qualityPending" @click="retryQualityJob(qualityModal.job, 'segmenting')">重新AI切分</Button>
-            <Button type="button" variant="outline" size="sm" data-ui-owner="workflow" :disabled="qualityPending" @click="retryQualityJob(qualityModal.job, 'translating')">重新翻译</Button>
-            <Button type="button" variant="ghost" size="sm" data-ui-owner="workflow" :disabled="qualityPending" @click="closeQualityModal">关闭</Button>
+          <details class="youtube-quality-statistics">
+            <summary>查看统计与技术信息</summary>
+            <p>{{ qualityModal.report.chunkCount || 0 }} 个语块 · {{ qualityModal.report.wordCount || 0 }} 个词</p>
+            <ul v-if="qualityModal.report.issues && qualityModal.report.issues.length">
+              <li v-for="(issue, index) in qualityModal.report.issues" :key="index">{{ issue.code }}：{{ issue.message }}</li>
+            </ul>
+          </details>
+          <section class="youtube-quality-repair" aria-labelledby="youtube-quality-repair-title">
+            <strong id="youtube-quality-repair-title">修复素材</strong>
+            <div class="youtube-workflow-actions">
+              <Button type="button" variant="outline" size="default" data-ui-owner="workflow" :disabled="qualityPending" @click="retryQualityJob(qualityModal.job, 'segmenting')">重新 AI 切分</Button>
+              <Button type="button" variant="outline" size="default" data-ui-owner="workflow" :disabled="qualityPending" @click="retryQualityJob(qualityModal.job, 'translating')">重新翻译</Button>
+            </div>
+          </section>
+          <div class="youtube-quality-close-row">
+            <Button type="button" variant="ghost" size="default" data-ui-owner="workflow" :disabled="qualityPending" @click="closeQualityModal">关闭</Button>
           </div>
         </section>
       </div>
@@ -578,11 +664,11 @@
         @mouseleave="resumeMaterialNotice"
       >
         <span>{{ materialNotice.message }}</span>
-        <Button type="button" variant="default" size="sm" data-ui-owner="workflow" @click="runMaterialNoticeAction">{{ materialNotice.actionLabel }}</Button>
+        <Button type="button" variant="default" size="default" data-ui-owner="workflow" @click="runMaterialNoticeAction">{{ materialNotice.actionLabel }}</Button>
         <Button
           type="button"
           variant="ghost"
-          size="icon-sm"
+          size="icon"
           class="youtube-material-notice-close"
           data-ui-owner="workflow"
           aria-label="关闭提示"
@@ -602,54 +688,48 @@ import { Input } from './ui/input/index.js'
 import { Textarea } from './ui/textarea/index.js'
 import { useAudioStore } from '../pinia-stores/audio.js'
 import { useChunkStore } from '../pinia-stores/chunk.js'
-import { useMarksStore } from '../pinia-stores/marks.js'
+import { useTranscriptStore } from '../pinia-stores/transcript.js'
 import { runtimeState } from '../composables/runtime-state-facade.js'
+import { buildCurrentSentenceDocId } from '../composables/reader-public-facades.js'
 import { bridgeToPinia } from '../composables/pinia-bridge-module.js'
 import { scheduleGeneratedAnnotationIndexRefresh } from '../composables/session-facades.js'
-import { createYoutubeWorkflowOperationKey, youtubeWorkflowClient } from '../composables/youtube-workflow-client.js'
+import { youtubeWorkflowClient } from '../composables/youtube-workflow-client.js'
 import { createYoutubeWorkflowLoader } from '../composables/youtube-workflow-loader.js'
 import { createReaderSessionPublisher } from '../composables/reader-session-publisher.js'
-import { createReaderMarksHydration } from '../composables/create-reader-marks-hydration.js'
-import { createJobPollingScheduler } from '../services/workflow/job-polling-scheduler.js'
-import { createReaderPlaybackTracker } from '../services/workflow/reader-playback-tracker.js'
-import { createReaderSessionPersistence } from '../services/persistence/reader-session-persistence.js'
-import {
-  createReaderOutboxEntry,
-  isTrustedReaderMarksOutboxEntry,
-  READER_MARKS_OUTBOX_SOURCE,
-  readReaderOutbox,
-  writeReaderOutboxEntry,
-  removeReaderOutboxEntry,
-} from '../services/persistence/reader-outbox-storage.js'
-import { useReaderSaveCoordinator } from '../composables/use-reader-save-coordinator.js'
+import { useReaderSessionPersistenceContext } from '../composables/reader-session-persistence-context.js'
+import { useWorkflowLibrary } from '../composables/use-workflow-library.js'
+import { createWorkflowMutationCoordinator } from '../composables/create-workflow-mutation-coordinator.js'
 import { createObjectUrlDownloader } from '../services/runtime/download-object-url.js'
 import { createDialogController, createPendingActionGuard } from '../services/runtime/dialog-controller.js'
 import { observeBestEffort, recordBestEffortFailure } from '../services/runtime/best-effort.js'
-import {
-  createWorkflowOperationFingerprint,
-  cleanupWorkflowOperationReceipts,
-  readWorkflowOperationReceipt,
-  removeWorkflowOperationReceipt,
-  writeWorkflowOperationReceipt,
-} from '../services/workflow/operation-receipt.js'
+import { readWorkflowOperationReceipt } from '../services/workflow/operation-receipt.js'
 import {
   canonicalMaterialKey,
   exactDateTime,
   extractYoutubeVideoId,
   findDuplicateMaterial,
   groupTaskAttempts,
-  materialTimestamp,
 } from '../services/workflow/material-center-model.js'
 
 const terminalStatuses = new Set(['ready', 'failed', 'canceled'])
+const readerPersistence = useReaderSessionPersistenceContext()
 const audioStore = useAudioStore()
 const chunkStore = useChunkStore()
-const marksStore = useMarksStore()
+const transcriptStore = useTranscriptStore()
+const currentArticleTitle = computed(() => {
+  if (!transcriptStore.segments.length) return '尚未打开文章'
+  const meta = audioStore.currentAudioMeta
+  const docId = buildCurrentSentenceDocId({ segments: transcriptStore.segments })
+  const localName = audioStore.localTranscriptTitles[docId]
+  if (localName) return localName.replace(/\.(json|srt|vtt)$/iu, '')
+  return meta?.name ? meta.name.replace(/\.audio$/u, '') : '已导入本地字幕'
+})
+const articleTitleBeforeOpen = ref('尚未打开文章')
+const readerOpenMessage = ref('从素材库打开材料，或在阅读设置中导入本地文件')
 
 const panelOpen = ref(false)
-const serviceOnline = ref(false)
-const serviceStatusKnown = ref(false)
 const linkInput = ref('')
+const batchInputExpanded = ref(false)
 const linkCards = ref([])
 const linkNotice = ref('')
 const apiKey = ref('')
@@ -663,22 +743,15 @@ const outputDir = ref('')
 const ytDlpPath = ref('')
 const whisperxPath = ref('')
 const backendConfigNotice = ref('')
+const backendConfigLoadState = ref('idle')
+const backendConfigSaveState = ref('idle')
+const backendConfigSnapshot = ref(null)
 const maintenanceInfo = ref(null)
 const showAdvanced = ref(false)
 const starting = ref(false)
-const workflowRevision = ref(null)
-const workflowMutationNotice = ref('')
-const queueJobs = ref([])
-const recentJobs = ref([])
 const workflowView = ref('library')
-const libraryTimeScope = ref('all')
-const libraryPending = ref(false)
-const libraryHasMore = ref(false)
-const libraryPageSize = 20
 const expandedLibraryJobId = ref('')
 const openingJobId = ref('')
-const completionSignal = ref(false)
-const visibleCompletedJobIds = ref([])
 const videoPriority = ref(true)
 const qualityPending = ref(false)
 const panelDialogRoot = ref(null)
@@ -686,197 +759,111 @@ const qualityDialogRoot = ref(null)
 const qualityDialogStatus = ref(null)
 const qualityModal = ref(null)
 const materialNotice = ref(null)
-const repairStates = new Map()
-const currentJobId = ref('')
+const currentJobId = readerPersistence.currentJobId
 const loadedReadyJobs = new Set()
-let jobPollingScheduler = null
 let linkSequence = 0
-const pendingWorkflowActions = new Map()
-let workflowSnapshotFlight = null
-let workflowRevisionNeedsRefresh = true
 let readerSessionLoader = null
-let readerSessionLoadInProgress = false
-let readerMarksHydration = null
-let readerUnloadFlushed = false
-let readerCloseGeneration = 0
-let readerOutboxReplayPromise = null
-const READER_UNTRUSTED_MARKS_OUTBOX_NOTICE = '发现来源不明的旧标记补发记录，已保留，未自动发送；请核对后重新编辑并保存'
-let completionSignalTimer = 0
 let materialNoticeTimer = 0
-let libraryRetryTimer = 0
-let libraryRetryCount = 0
-const completedTaskTimers = new Map()
-const readerSessionPersistence = createReaderSessionPersistence()
 const diagnosticsDownloader = createObjectUrlDownloader()
 const panelDialogController = createDialogController()
 const qualityDialogController = createDialogController()
 const qualityActionGuard = createPendingActionGuard({ onChange: (pending) => { qualityPending.value = pending } })
+const backendConfigFields = Object.freeze([
+  'model',
+  'baseUrl',
+  'proxyUrl',
+  'cookiesPath',
+  'outputDir',
+  'ytDlpPath',
+  'whisperxPath',
+])
+const backendConfigFieldRefs = {
+  model,
+  baseUrl,
+  proxyUrl,
+  cookiesPath,
+  outputDir,
+  ytDlpPath,
+  whisperxPath,
+}
+const locallyEditedConfigFields = new Set()
+let applyingBackendConfig = false
+let backendConfigLoadToken = 0
 const panelPending = computed(() => starting.value)
-const readerPlaybackTracker = createReaderPlaybackTracker({
-  getCurrentJobId: () => currentJobId.value,
-  getReaderMedia,
-  getMediaSource,
-  ensureCurrentJobFromAudioMeta,
-  onActivity: (event) => syncReaderActivity(event),
-  getCurrentMarkCount,
+const { readerSessionPersistence, readerConflictVisible, resolveReaderConflict, applyReaderMarks, syncMarkedWordVisuals, syncReaderActivity } = readerPersistence
+const workflowLibrary = useWorkflowLibrary({
+  onRevision: payload => workflowMutations.rememberWorkflowRevision(payload),
+  onRevisionUnavailable: () => workflowMutations.invalidateWorkflowRevision(),
+  onJobsChanged: refreshLinkDuplicates,
+  canRetryLibrary: () => panelOpen.value && workflowView.value === 'library',
+  hasUntrustedMarksNotice: readerPersistence.hasUntrustedMarksNotice,
+})
+const workflowMutations = createWorkflowMutationCoordinator({
+  requestWorkflowSnapshot: workflowLibrary.requestWorkflowSnapshot,
+  refreshQueue: workflowLibrary.refreshQueue,
 })
 const {
-  readerActivityNotice,
-  readerMarksSaveState,
-  readerActivitySaveState,
-  readerConflictVisible,
-  getReaderMarksLedger,
-  getReaderActivityLedger,
-  getReaderMarksPendingIntent,
-  updateReaderConflictVisibility,
-  loadReaderConflict,
-  clearReaderConflict,
-  resolveReaderConflict,
-  rememberReaderRevision,
-  getReaderRevision,
-  dispose: disposeReaderSaveCoordinator,
-} = useReaderSaveCoordinator({
-  currentJobId,
-  getReaderSessionId: () => readerPlaybackTracker.getReaderSessionId(),
-  mergeRecentReaderItem,
-  onReaderMarksAuthority: (jobId, payload) => {
-    readerMarksHydration?.rememberAuthoritativeMarks(jobId, payload.marks, payload.revision)
-  },
-  onReaderMarksSaved: (jobId, marks, revision, localVersion) => {
-    readerMarksHydration?.markLocalChangesSaved(jobId, marks, revision, localVersion)
-  },
-})
-readerMarksHydration = createReaderMarksHydration({
-  getCurrentJobId: () => currentJobId.value,
-  getCurrentReaderMarks,
-  rememberMarksRevision: (jobId, revision) => rememberReaderRevision('marks', jobId, revision),
-  restoreVisibleMarks: async (marks) => {
-    replaceReaderMarksVisible(marks)
-    if (typeof window.syncAnnotationGenerationEntryStatus === 'function') {
-      await window.syncAnnotationGenerationEntryStatus({ source: 'restore' })
-    }
-  },
-  submitLocalChanges: (intent) => {
-    if (!intent || !Number.isInteger(intent.sourceRevision)) return
-    submitCurrentReaderMarks(intent)
-    syncReaderActivity('annotation')
-  },
-})
-
-function rememberWorkflowRevision(payload) {
-  const revision = Number(payload && payload.revision)
-  if (!Number.isInteger(revision) || revision < 0) return
-  if (workflowRevision.value === null || revision >= workflowRevision.value) workflowRevision.value = revision
-  workflowRevisionNeedsRefresh = false
-}
-
-function getPendingWorkflowAction(actionId, actionType, targetJobId = '', payload = {}) {
-  const key = String(actionId || '')
-  const fingerprint = createWorkflowOperationFingerprint({ actionType, targetJobId, payload })
-  const existing = pendingWorkflowActions.get(key)
-  if (existing && existing.fingerprint === fingerprint) return existing
-  const storedReceipt = readWorkflowOperationReceipt({ actionType, targetJobId, payload })
-  const action = {
-    key: storedReceipt?.operationKey || createYoutubeWorkflowOperationKey(key || 'workflow-action'),
-    actionType: String(actionType || 'workflow'),
-    targetJobId: String(targetJobId || ''),
-    payload,
-    fingerprint,
-    inFlight: null,
-  }
-  if (!storedReceipt) writeWorkflowOperationReceipt({ actionType, targetJobId, payload, operationKey: action.key })
-  pendingWorkflowActions.set(key, action)
-  return action
-}
-
-function forgetPendingWorkflowAction(actionId) {
-  const key = String(actionId || '')
-  const action = pendingWorkflowActions.get(key)
-  if (action) {
-    removeWorkflowOperationReceipt({
-      actionType: action.actionType,
-      targetJobId: action.targetJobId,
-      payload: action.payload,
-    })
-  }
-  pendingWorkflowActions.delete(key)
-}
-
-function workflowMutationOptions(action) {
-  const revision = workflowRevision.value
-  if (!Number.isInteger(revision) || revision < 0 || workflowRevisionNeedsRefresh) {
-    throw createWorkflowRevisionUnavailableError()
-  }
-  return {
-    idempotencyKey: action.key,
-    expectedRevision: revision,
-  }
-}
-
-function runPendingWorkflowAction(actionId, actionType, targetJobId, payload, send) {
-  const action = getPendingWorkflowAction(actionId, actionType, targetJobId, payload)
-  if (!action.inFlight) {
-    action.inFlight = Promise.resolve()
-      .then(() => ensureWorkflowRevision())
-      .then(() => send(action))
-      .finally(() => {
-        action.inFlight = null
-      })
-  }
-  return action.inFlight
-}
-
-function isWorkflowMutationConflict(error) {
-  return Number(error && error.status) === 409 && (
-    error.code === 'WORKFLOW_STATE_CONFLICT'
-    || error.actualRevision !== undefined
-    || error.currentRevision !== undefined
-  )
-}
-
-function createWorkflowRevisionUnavailableError() {
-  const error = new Error('无法获取权威队列版本，操作未发送；请重试。')
-  error.code = 'WORKFLOW_REVISION_UNAVAILABLE'
-  error.category = 'storage'
-  error.retryable = true
-  return error
-}
-
-async function ensureWorkflowRevision() {
-  if (Number.isInteger(workflowRevision.value) && workflowRevision.value >= 0 && !workflowRevisionNeedsRefresh) {
-    return workflowRevision.value
-  }
-  try {
-    const payload = await requestWorkflowSnapshot([], undefined, { includeAll: true })
-    const revision = Number(payload && payload.revision)
-    if (!Number.isInteger(revision) || revision < 0) throw createWorkflowRevisionUnavailableError()
-    return revision
-  } catch (error) {
-    workflowRevisionNeedsRefresh = true
-    workflowMutationNotice.value = '无法获取权威队列版本，未发送操作；请检查网络后重试。'
-    if (error && error.code === 'WORKFLOW_REVISION_UNAVAILABLE') throw error
-    throw createWorkflowRevisionUnavailableError()
-  }
-}
-
-async function handleWorkflowMutationConflict(error) {
-  const actualRevision = Number(error && (error.actualRevision ?? error.currentRevision))
-  if (Number.isInteger(actualRevision) && actualRevision >= 0) {
-    if (workflowRevision.value === null || actualRevision >= workflowRevision.value) workflowRevision.value = actualRevision
-  }
-  workflowRevisionNeedsRefresh = true
-  try {
-    await refreshQueue()
-  } catch (_refreshError) {
-    // Keep the typed conflict and known revision visible when the refresh is also offline.
-  }
-  workflowMutationNotice.value = '素材状态刚刚更新，请再试一次。'
-}
+  queueJobs, recentJobs, libraryPending, libraryHasMore,
+  serviceOnline, serviceStatusKnown, libraryNotice: panelReaderNotice,
+  completionSignal, visibleCompletedJobIds, refreshQueue, refreshLibrary,
+  refreshRecent, refreshJob, updateJob, loadMoreLibrary,
+  startPolling, mergeRecentReaderItem, clearMaterialRepairState,
+} = workflowLibrary
+const {
+  workflowMutationNotice, rememberWorkflowRevision, runPendingWorkflowAction,
+  forgetPendingWorkflowAction, workflowMutationOptions, isWorkflowMutationConflict,
+  handleWorkflowMutationConflict,
+} = workflowMutations
+const readerActivityNotice = computed(() => readerPersistence.readerActivityNotice.value || panelReaderNotice.value)
+const unsubscribeRecentReaderItem = readerPersistence.subscribeRecentReaderItem(mergeRecentReaderItem)
+const cancelReaderLoad = () => readerSessionLoader?.cancelLoad()
+const unregisterReaderLoader = readerPersistence.registerLoadCancellation(cancelReaderLoad)
+let panelDisposed = false
 
 const geminiMode = computed(() => {
   const params = new URLSearchParams(window.location.search)
   const requested = params.get('workflowMode') || window.localStorage.getItem('youtubeWorkflow.devMode') || 'real'
   return ['mock', 'off'].includes(requested) ? requested : 'real'
+})
+const workflowModeText = computed(() => ({
+  real: '真实模式',
+  mock: '开发模拟',
+  off: 'AI 已关闭',
+}[geminiMode.value] || geminiMode.value))
+const currentModelText = computed(() => String(model.value || '').trim() || '未填写')
+const backendConfigIsComplete = computed(() => {
+  const snapshot = backendConfigSnapshot.value
+  return backendConfigLoadState.value === 'loaded'
+    && !!snapshot
+    && backendConfigFields.every((key) => Object.prototype.hasOwnProperty.call(snapshot, key))
+})
+const backendModelText = computed(() => {
+  if (backendConfigLoadState.value === 'loading') return '正在读取…'
+  if (backendConfigLoadState.value === 'failed') return '未确认（读取失败）'
+  if (backendConfigLoadState.value !== 'loaded') return '未确认（尚未读取）'
+  if (!Object.prototype.hasOwnProperty.call(backendConfigSnapshot.value || {}, 'model')) return '未提供（未知）'
+  return String(backendConfigSnapshot.value?.model || '').trim() || '已读取为空（后端默认）'
+})
+const backendConfigDraftChanged = computed(() => {
+  if (!backendConfigIsComplete.value) return locallyEditedConfigFields.size > 0
+  return backendConfigFields.some((key) => {
+    const current = String(backendConfigFieldRefs[key].value || '').trim()
+    const saved = String(backendConfigSnapshot.value?.[key] || '').trim()
+    return current !== saved
+  })
+})
+const canSaveBackendConfig = computed(() => backendConfigIsComplete.value && backendConfigSaveState.value !== 'saving')
+const backendConfigSaveButtonText = computed(() => backendConfigSaveState.value === 'saving' ? '保存中…' : '保存后台配置')
+const backendConfigStateText = computed(() => {
+  if (backendConfigLoadState.value === 'loading') return '正在读取后台配置；读取完成前不会提交配置。'
+  if (backendConfigLoadState.value === 'failed') return '后台配置读取失败，保存已保护；当前输入只代表本页选择。'
+  if (backendConfigSaveState.value === 'saving') return '保存中…'
+  if (backendConfigSaveState.value === 'failed') return '保存失败，保留当前输入，可重试。'
+  if (backendConfigSaveState.value === 'saved') return '已确认保存：后台已返回本次配置。'
+  if (backendConfigLoadState.value === 'loaded' && !backendConfigIsComplete.value) return '后台配置读取不完整，未知字段不会被提交。'
+  if (backendConfigDraftChanged.value) return '当前选择或设置尚未保存。'
+  if (backendConfigLoadState.value === 'loaded') return '后台配置已读取；当前页面选择尚未执行本次保存。'
+  return '尚未读取后台配置；当前输入不会被标为已保存。'
 })
 const enqueuableLinkCards = computed(() => linkCards.value.filter((card) => card.valid && !card.duplicate))
 const duplicateLinkCards = computed(() => linkCards.value.filter((card) => card.valid && card.duplicate))
@@ -884,6 +871,7 @@ const invalidLinkCards = computed(() => linkCards.value.filter((card) => !card.v
 const pendingValidLinkCount = computed(() => parseLinks(linkInput.value).filter((link) => isValidMaterialUrl(link)).length)
 const enqueuableMaterialCount = computed(() => enqueuableLinkCards.value.length + pendingValidLinkCount.value)
 const canEnqueue = computed(() => {
+  if (!batchInputExpanded.value && parseLinks(linkInput.value).length + linkCards.value.length > 1) return false
   return enqueuableMaterialCount.value > 0 && (geminiMode.value !== 'real' || !!apiKey.value.trim() || credentialStatus.value.stored)
 })
 
@@ -944,40 +932,44 @@ const activeTaskEntryText = computed(() => {
 const taskSummary = computed(() => `${activeTaskCount.value} 项处理中 · ${failedTaskCount.value} 项需要处理`)
 const librarySummary = computed(() => `${recentJobs.value.length}${libraryHasMore.value ? '+' : ''} 项`)
 
-watch(model, (value) => saveTextSetting('youtubeWorkflow.model', value))
-watch(baseUrl, (value) => saveTextSetting('youtubeWorkflow.baseUrl', value))
-
-function getMediaSource() {
-  return typeof window !== 'undefined' ? window.__mediaSource : null
+function noteBackendConfigEdit(key) {
+  if (applyingBackendConfig) return
+  locallyEditedConfigFields.add(key)
+  if (backendConfigSaveState.value !== 'saving') backendConfigSaveState.value = 'idle'
 }
 
-function syncVideoPreferred(value) {
-  const mediaSource = getMediaSource()
-  if (mediaSource && typeof mediaSource.setVideoPreferred === 'function') {
-    mediaSource.setVideoPreferred(!!value)
-  }
-  if (value) refreshCurrentJobMediaForVideoPriority()
+watch(model, (value) => {
+  saveTextSetting('youtubeWorkflow.model', value)
+})
+watch(baseUrl, (value) => {
+  saveTextSetting('youtubeWorkflow.baseUrl', value)
+})
+for (const key of backendConfigFields) {
+  watch(backendConfigFieldRefs[key], () => noteBackendConfigEdit(key), { flush: 'sync' })
 }
+watch(() => audioStore.lastLocalImport, () => {
+  if (openingJobId.value || !transcriptStore.segments.length) return
+  readerOpenMessage.value = `已打开：${currentArticleTitle.value}`
+  clearMaterialNotice()
+})
 
-async function refreshCurrentJobMediaForVideoPriority() {
-  if (!currentJobId.value) return
-  const mediaSource = getMediaSource()
-  if (!mediaSource || typeof mediaSource.loadJobMedia !== 'function') return
-  const currentMediaState = typeof mediaSource.getState === 'function' ? mediaSource.getState() : null
-  if (currentMediaState && currentMediaState.jobId === currentJobId.value && currentMediaState.videoAvailable) return
+async function refreshPreferredVideo() {
+  const requestedJobId = currentJobId.value
+  const mediaSource = window.__mediaSource
+  if (!requestedJobId || !mediaSource?.getState?.().videoPreferred) return
+  if (mediaSource.getState().videoAvailable || typeof mediaSource.loadJobMedia !== 'function') return
   try {
-    const manifest = await youtubeWorkflowClient.getSession(currentJobId.value)
-    const files = manifest && manifest.files && typeof manifest.files === 'object' ? manifest.files : {}
+    const manifest = await youtubeWorkflowClient.getSession(requestedJobId)
+    if (panelDisposed || currentJobId.value !== requestedJobId || !mediaSource.getState().videoPreferred) return
+    const files = manifest?.files || {}
     if (!files.video) return
-    const media = manifest && manifest.media && typeof manifest.media === 'object' ? manifest.media : {}
     mediaSource.loadJobMedia({
-      jobId: currentJobId.value,
+      jobId: requestedJobId,
       title: manifest.title || '',
       hasVideo: true,
-      videoUrl: youtubeWorkflowClient.mediaUrl(currentJobId.value, 'video'),
-      videoSource: media.videoSource || 'session-refresh'
+      videoUrl: youtubeWorkflowClient.mediaUrl(requestedJobId, 'video'),
+      videoSource: manifest.media?.videoSource || 'session-refresh'
     })
-    if (typeof mediaSource.setVideoPreferred === 'function') mediaSource.setVideoPreferred(true)
   } catch (error) {
     recordBestEffortFailure(error, {
       operationId: 'panel-current-video-refresh',
@@ -988,42 +980,21 @@ async function refreshCurrentJobMediaForVideoPriority() {
 
 onMounted(() => {
   window.localStorage.removeItem(['youtubeWorkflow', 'apiKey'].join('.'))
-  cleanupWorkflowOperationReceipts()
-  syncVideoPreferred(videoPriority.value)
-  readerPlaybackTracker.bindPlaybackTracking()
-  ensureCurrentJobFromAudioMeta()
-  observeBestEffort(replayReaderOutbox(), {
-    operationId: 'reader-outbox-startup-replay',
-    reason: 'reader outbox replay remains available for explicit retry after startup failure',
-  })
-  window.addEventListener('reader-marks-changed', handleReaderMarksChanged)
-  window.addEventListener('beforeunload', handleBeforeUnload)
-  window.addEventListener('pagehide', handleReaderPageHide)
-  window.addEventListener('pageshow', handleReaderPageShow)
+  workflowMutations.cleanupReceipts()
+  refreshPreferredVideo()
 })
 
 onBeforeUnmount(() => {
-  if (completionSignalTimer) window.clearTimeout(completionSignalTimer)
+  panelDisposed = true
   if (materialNoticeTimer) window.clearTimeout(materialNoticeTimer)
-  if (libraryRetryTimer) window.clearTimeout(libraryRetryTimer)
-  completedTaskTimers.forEach((timer) => window.clearTimeout(timer))
-  completedTaskTimers.clear()
   qualityActionGuard.dispose()
   qualityDialogController.dispose()
   panelDialogController.dispose()
-  stopPolling()
-  jobPollingScheduler?.dispose()
-  jobPollingScheduler = null
-  readerSessionLoader?.cancelLoad()
+  workflowLibrary.dispose()
+  workflowMutations.dispose()
+  unregisterReaderLoader()
   readerSessionLoader = null
-  handleBeforeUnload()
-  window.removeEventListener('beforeunload', handleBeforeUnload)
-  window.removeEventListener('pagehide', handleReaderPageHide)
-  window.removeEventListener('pageshow', handleReaderPageShow)
-  window.removeEventListener('reader-marks-changed', handleReaderMarksChanged)
-  readerPlaybackTracker.unbindPlaybackTracking()
-  readerMarksHydration.clear()
-  disposeReaderSaveCoordinator()
+  unsubscribeRecentReaderItem()
   diagnosticsDownloader.dispose()
 })
 
@@ -1102,6 +1073,10 @@ function makeLoader() {
 function commitLinkInput() {
   const links = parseLinks(linkInput.value)
   if (!links.length) return
+  if (!batchInputExpanded.value && links.length > 1) {
+    linkNotice.value = '多个链接请展开“批量添加”。'
+    return
+  }
   addLinkCards(links)
   linkInput.value = ''
 }
@@ -1220,6 +1195,7 @@ function removeLinkCard(id) {
 }
 
 async function enqueueUrls() {
+  if (!canEnqueue.value) return
   commitLinkInput()
   refreshLinkDuplicates()
   const cards = enqueuableLinkCards.value
@@ -1234,7 +1210,7 @@ async function enqueueUrls() {
       const actionId = `create:${card.id}`
       try {
         const job = await runPendingWorkflowAction(actionId, 'create', '', payload, (action) => {
-          return youtubeWorkflowClient.createJob(payload, workflowMutationOptions(action))
+          return youtubeWorkflowClient.createJob(action.payload, workflowMutationOptions(action))
         })
         rememberWorkflowRevision(job)
         updateJob(card.metadataTitle ? { ...job, title: card.metadataTitle } : job)
@@ -1263,11 +1239,7 @@ async function enqueueUrls() {
 function openPanel() {
   panelOpen.value = true
   workflowView.value = 'library'
-  libraryRetryCount = 0
-  if (libraryRetryTimer) {
-    window.clearTimeout(libraryRetryTimer)
-    libraryRetryTimer = 0
-  }
+  workflowLibrary.resetLibraryRetry()
   observeBestEffort(refreshQueue(), {
     operationId: 'material-center-task-refresh',
     reason: 'task status refresh must not block opening the fixed material panel',
@@ -1293,126 +1265,39 @@ function closePanel() {
   apiKey.value = ''
 }
 
-async function refreshQueue() {
-  workflowRevisionNeedsRefresh = true
-  await refreshJobsSnapshot(queueJobs.value.map((job) => job.jobId))
-  refreshLinkDuplicates()
-}
-
-function requestWorkflowSnapshot(jobIds, signal, options = {}) {
-  if (workflowSnapshotFlight) return workflowSnapshotFlight
-  const ids = Array.isArray(jobIds) ? jobIds : []
-  const includeAll = options.includeAll === true || ids.length === 0
-  let flight
-  flight = youtubeWorkflowClient.getJobsSnapshot(ids, {
-    signal,
-    includeAll,
-  })
-    .then((payload) => {
-      rememberWorkflowRevision(payload)
-      const jobs = payload && Array.isArray(payload.jobs) ? payload.jobs : []
-      jobs.forEach(updateJob)
-      return payload
-    })
-    .catch((error) => {
-      workflowRevisionNeedsRefresh = true
-      throw error
-    })
-    .finally(() => {
-      if (workflowSnapshotFlight === flight) workflowSnapshotFlight = null
-    })
-  workflowSnapshotFlight = flight
-  return flight
-}
-
-async function refreshJobsSnapshot(jobIds, signal) {
-  const ids = Array.isArray(jobIds) ? jobIds : []
-  const payload = await requestWorkflowSnapshot(ids, signal, { includeAll: ids.length === 0 })
-  const jobs = payload && Array.isArray(payload.jobs) ? payload.jobs : []
-  return jobs
-}
-
-async function refreshLibrary(options = {}) {
-  const append = options.append === true
-  if (libraryPending.value) return
-  libraryPending.value = true
-  try {
-    const offset = append ? recentJobs.value.length : 0
-    const items = await youtubeWorkflowClient.readerRecent({
-      limit: libraryPageSize,
-      offset,
-      timeScope: libraryTimeScope.value,
-    })
-    const normalized = Array.isArray(items)
-      ? items.filter((item) => item && item.jobId).map((item) => ({ ...item, ...(repairStates.get(item.jobId) || {}) }))
-      : []
-    recentJobs.value = append ? [...recentJobs.value, ...normalized] : normalized
-    recentJobs.value.sort((left, right) => materialTimestamp(right) - materialTimestamp(left))
-    libraryHasMore.value = normalized.length === libraryPageSize
-    refreshLinkDuplicates()
-    serviceOnline.value = true
-    serviceStatusKnown.value = true
-    libraryRetryCount = 0
-    if (readerActivityNotice.value !== READER_UNTRUSTED_MARKS_OUTBOX_NOTICE) readerActivityNotice.value = ''
-  } catch (err) {
-    serviceStatusKnown.value = true
-    if (err?.code === 'owner-not-ready') {
-      serviceOnline.value = true
-      readerActivityNotice.value = libraryRetryCount === 0
-        ? 'Windows 后台正在启动，素材库会自动刷新…'
-        : 'Windows 后台尚未就绪，请稍后再打开素材库。'
-      if (libraryRetryCount === 0 && !libraryRetryTimer) {
-        libraryRetryCount = 1
-        libraryRetryTimer = window.setTimeout(() => {
-          libraryRetryTimer = 0
-          if (!panelOpen.value || workflowView.value !== 'library') return
-          observeBestEffort(refreshLibrary(), {
-            operationId: 'material-center-library-retry',
-            reason: 'retry one transient Windows owner startup read after the panel is interactive',
-          })
-        }, 750)
-      }
-    } else {
-      serviceOnline.value = false
-      readerActivityNotice.value = err && err.message ? err.message : String(err)
-    }
-  } finally {
-    libraryPending.value = false
-  }
-}
-
-function refreshRecent() {
-  return refreshLibrary()
-}
-
-function setLibraryTimeScope(scope) {
-  if (libraryTimeScope.value === scope && recentJobs.value.length) return
-  libraryTimeScope.value = scope
-  recentJobs.value = []
-  libraryHasMore.value = false
-  refreshLibrary()
-}
-
-function loadMoreLibrary() {
-  return refreshLibrary({ append: true })
-}
-
 async function loadBackendConfig() {
+  if (backendConfigSaveState.value === 'saving') return
+  const loadToken = ++backendConfigLoadToken
+  backendConfigLoadState.value = 'loading'
+  backendConfigSaveState.value = 'idle'
+  backendConfigSnapshot.value = null
+  backendConfigNotice.value = ''
   try {
     const config = await youtubeWorkflowClient.getConfig()
-    if (config.model) model.value = config.model
-    if (config.baseUrl) baseUrl.value = config.baseUrl
-    proxyUrl.value = config.proxyUrl || ''
-    cookiesPath.value = config.cookiesPath || ''
-    outputDir.value = config.outputDir || ''
-    ytDlpPath.value = config.ytDlpPath || ''
-    whisperxPath.value = config.whisperxPath || ''
+    if (loadToken !== backendConfigLoadToken) return
+    if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error('后台配置读取响应无效')
+    backendConfigSnapshot.value = { ...config }
+    backendConfigLoadState.value = 'loaded'
+    applyingBackendConfig = true
+    try {
+      for (const key of backendConfigFields) {
+        if (!Object.prototype.hasOwnProperty.call(config, key) || locallyEditedConfigFields.has(key)) continue
+        const value = String(config[key] ?? '')
+        if (key === 'model' && !value.trim()) continue
+        backendConfigFieldRefs[key].value = value
+      }
+    } finally {
+      applyingBackendConfig = false
+    }
   } catch (error) {
+    if (loadToken !== backendConfigLoadToken) return
+    backendConfigLoadState.value = 'failed'
+    backendConfigSnapshot.value = null
     const presented = recordBestEffortFailure(error, {
       operationId: 'panel-backend-config-load',
-      reason: 'settings view keeps its current defaults when optional backend config is unavailable',
+      reason: 'settings view keeps its current choices and protects unknown backend fields when config is unavailable',
     })
-    backendConfigNotice.value = `${presented.notice.message} (${presented.notice.operationId})`
+    backendConfigNotice.value = `${presented.notice.message}（未提交配置）`
   }
 }
 
@@ -1452,8 +1337,17 @@ async function deleteCredential() {
 }
 
 async function saveBackendConfig() {
+  if (backendConfigSaveState.value === 'saving') return
+  if (!backendConfigIsComplete.value) {
+    backendConfigNotice.value = backendConfigLoadState.value === 'loaded'
+      ? '后台配置字段尚未完整读取，未提交任何配置。'
+      : '后台配置尚未成功读取，未提交任何配置。'
+    return
+  }
+  backendConfigSaveState.value = 'saving'
+  backendConfigNotice.value = ''
   try {
-    const saved = await youtubeWorkflowClient.saveConfig({
+    const payload = {
       model: model.value,
       baseUrl: baseUrl.value,
       proxyUrl: proxyUrl.value,
@@ -1461,9 +1355,27 @@ async function saveBackendConfig() {
       outputDir: outputDir.value,
       ytDlpPath: ytDlpPath.value,
       whisperxPath: whisperxPath.value
+    }
+    const saved = await youtubeWorkflowClient.saveConfig(payload)
+    if (!saved || typeof saved !== 'object' || Array.isArray(saved)) throw new Error('后台保存响应无效')
+    const confirmedSnapshot = { ...(backendConfigSnapshot.value || {}), ...saved }
+    backendConfigSnapshot.value = confirmedSnapshot
+    const pendingDraftFields = backendConfigFields.filter((key) => {
+      const current = String(backendConfigFieldRefs[key].value || '').trim()
+      const confirmed = String(confirmedSnapshot[key] || '').trim()
+      return current !== confirmed
     })
-    backendConfigNotice.value = `已保存后台配置：${saved.outputDir || outputDir.value || '默认输出目录'}`
+    locallyEditedConfigFields.clear()
+    pendingDraftFields.forEach((key) => locallyEditedConfigFields.add(key))
+    if (pendingDraftFields.length) {
+      backendConfigSaveState.value = 'idle'
+      backendConfigNotice.value = `上次提交已保存；当前编辑尚未保存（${pendingDraftFields.join('、')}）。`
+    } else {
+      backendConfigSaveState.value = 'saved'
+      backendConfigNotice.value = `已保存后台配置：${saved.outputDir || outputDir.value || '默认输出目录'}`
+    }
   } catch (err) {
+    backendConfigSaveState.value = 'failed'
     backendConfigNotice.value = err && err.message ? err.message : String(err)
   }
 }
@@ -1512,72 +1424,11 @@ async function downloadDiagnosticsPackage() {
   }
 }
 
-async function refreshJob(jobId) {
-  try {
-    const fresh = await youtubeWorkflowClient.getJob(jobId)
-    updateJob(fresh)
-  } catch (error) {
-    recordBestEffortFailure(error, {
-      operationId: 'panel-job-refresh',
-      reason: 'polling retains the previous immutable job snapshot until the next scheduled refresh',
-      details: { jobId },
-    })
-  }
-}
-
-function updateJob(fresh) {
-  rememberWorkflowRevision(fresh)
-  const index = queueJobs.value.findIndex((job) => job.jobId === fresh.jobId)
-  const previous = index >= 0 ? queueJobs.value[index] : null
-  if (previous?.title && !fresh.title) fresh = { ...fresh, title: previous.title }
-  if (index >= 0) queueJobs.value[index] = fresh
-  else queueJobs.value.push(fresh)
-  if (fresh.status === 'ready' && previous && previous.status !== 'ready') {
-    completionSignal.value = true
-    visibleCompletedJobIds.value = [...new Set([...visibleCompletedJobIds.value, fresh.jobId])]
-    const previousTaskTimer = completedTaskTimers.get(fresh.jobId)
-    if (previousTaskTimer) window.clearTimeout(previousTaskTimer)
-    completedTaskTimers.set(fresh.jobId, window.setTimeout(() => {
-      visibleCompletedJobIds.value = visibleCompletedJobIds.value.filter((jobId) => jobId !== fresh.jobId)
-      completedTaskTimers.delete(fresh.jobId)
-    }, 5000))
-    if (completionSignalTimer) window.clearTimeout(completionSignalTimer)
-    completionSignalTimer = window.setTimeout(() => { completionSignal.value = false }, 5000)
-    refreshLibrary()
-  }
-  if (terminalStatuses.has(fresh.status) && (!previous || previous.status !== fresh.status)) {
-    refreshRecent()
-    window.setTimeout(startPolling, 0)
-  }
-}
-
-function startPolling() {
-  if (!jobPollingScheduler) {
-    jobPollingScheduler = createJobPollingScheduler({
-      fetchJobs: (jobIds, signal) => refreshJobsSnapshot(jobIds, signal),
-      onJobs: () => {},
-      onError: (error) => {
-        readerActivityNotice.value = error && error.message ? error.message : String(error)
-      },
-      isHidden: () => document.hidden,
-      intervalMs: 2000,
-      hiddenIntervalMs: 10000,
-    })
-  }
-  const activeIds = queueJobs.value
-    .filter((job) => !terminalStatuses.has(job.status))
-    .map((job) => job.jobId)
-  if (activeIds.length) jobPollingScheduler.start(activeIds)
-  else jobPollingScheduler.stop()
-}
-
-function stopPolling() {
-  jobPollingScheduler?.stop()
-}
-
 function openJob(job) {
   if (!job?.jobId || openingJobId.value) return
   clearMaterialNotice()
+  articleTitleBeforeOpen.value = currentArticleTitle.value
+  readerOpenMessage.value = `正在打开：${jobDisplayTitle(job)}…`
   openingJobId.value = job.jobId
   hidePanelAfterLoad()
   loadJob(job)
@@ -1588,6 +1439,13 @@ function openRecentJob(job) {
 }
 
 async function loadJob(job) {
+  if (panelDisposed) return
+  const loadToken = readerPersistence.beginLoad(cancelReaderLoad)
+  if (loadToken === null) {
+    openingJobId.value = ''
+    readerOpenMessage.value = `未打开：${jobDisplayTitle(job)}，请先处理阅读记录冲突`
+    return
+  }
   try {
     if (currentJobId.value && currentJobId.value !== job.jobId) {
       observeBestEffort(syncReaderActivity('switch'), {
@@ -1595,21 +1453,14 @@ async function loadJob(job) {
         reason: 'captured reader progress persists in the background and never blocks opening the next material',
       })
     }
-    readerSessionLoadInProgress = true
     const shouldResumeAudio = !!(getAudio() && !getAudio().paused)
     const result = await makeLoader().loadJobIntoReader(job.jobId, { replacePolicy: 'replace-current' })
-    if (!result || result.status !== 'loaded') return
+    if (!result || result.status !== 'loaded' || panelDisposed || !readerPersistence.isCurrentLoad(loadToken)) return
     clearMaterialRepairState(job.jobId)
-    currentJobId.value = job.jobId
-    updateReaderConflictVisibility()
+    if (!readerPersistence.activateJob(job, loadToken)) return
+    readerOpenMessage.value = `已打开：${result.manifest?.title || jobDisplayTitle(job)}`
+    readerPersistence.endLoad(loadToken)
     loadedReadyJobs.add(job.jobId)
-    readerPlaybackTracker.startReaderSession(job)
-    observeBestEffort(youtubeWorkflowClient.getReaderActivity(job.jobId).then((activity) => {
-      if (Number.isInteger(activity?.revision)) rememberReaderRevision('activity', job.jobId, activity.revision)
-    }), {
-      operationId: `reader-background-activity-load-${job.jobId}`,
-      reason: 'activity revision hydration is not required for the first rendered reader frame',
-    })
     observeBestEffort(syncReaderActivity('open', { manifest: result && result.manifest }), {
       operationId: `reader-background-open-save-${job.jobId}`,
       reason: 'open activity persists after the material is already visible',
@@ -1622,10 +1473,13 @@ async function loadJob(job) {
     if (audio) audio.pause()
     if (shouldResumeAudio) resumeReaderAudioFromPanel()
   } catch (err) {
-    showMaterialLoadFailure(job, err)
+    if (!panelDisposed && readerPersistence.isCurrentLoad(loadToken)) showMaterialLoadFailure(job, err)
   } finally {
-    readerSessionLoadInProgress = false
-    if (openingJobId.value === job.jobId) openingJobId.value = ''
+    readerPersistence.endLoad(loadToken)
+    if (openingJobId.value === job.jobId) {
+      openingJobId.value = ''
+      if (readerOpenMessage.value.startsWith('正在打开：')) readerOpenMessage.value = `已取消打开：${jobDisplayTitle(job)}`
+    }
   }
 }
 
@@ -1658,25 +1512,14 @@ function classifyMaterialLoadFailure(error) {
 
 function showMaterialLoadFailure(job, error) {
   const failure = classifyMaterialLoadFailure(error)
-  repairStates.set(job.jobId, {
+  readerOpenMessage.value = `打开失败：${jobDisplayTitle(job)}。${failure.message}`
+  workflowLibrary.recordMaterialRepair(job.jobId, {
     needsRepair: true,
     repairReason: failure.message,
     repairAction: failure.action,
   })
-  recentJobs.value = recentJobs.value.map((item) => (
-    item.jobId === job.jobId ? { ...item, ...repairStates.get(job.jobId) } : item
-  ))
-  materialNotice.value = { ...failure, job, error }
+  materialNotice.value = { ...failure, message: `打开失败：${jobDisplayTitle(job)}。${failure.message}`, job, error }
   resumeMaterialNotice()
-}
-
-function clearMaterialRepairState(jobId) {
-  repairStates.delete(jobId)
-  recentJobs.value = recentJobs.value.map((item) => {
-    if (item.jobId !== jobId) return item
-    const { needsRepair: _needsRepair, repairReason: _repairReason, repairAction: _repairAction, ...readyItem } = item
-    return readyItem
-  })
 }
 
 function pauseMaterialNotice() {
@@ -1820,6 +1663,13 @@ function libraryRelativeTime(job) {
   return '很久之前'
 }
 
+function libraryTimeLabel(job) {
+  if (job?.lastActivityAt) return '最近活动'
+  if (job?.lastOpenedAt) return '最近打开'
+  if (job?.finishedAt) return '处理完成'
+  return job?.sourceType === 'legacy-import' ? '导入' : '创建'
+}
+
 function libraryExactTime(job) {
   return exactDateTime(libraryStamp(job))
 }
@@ -1828,6 +1678,22 @@ function librarySourceText(job) {
   const videoId = extractYoutubeVideoId(job?.url || job?.request?.url)
   if (videoId) return `YouTube · ${videoId}`
   return job?.sourceType === 'legacy-import' ? '本地导入素材' : '学习素材'
+}
+
+function jobRequestProvenanceText(job) {
+  const request = job && job.request && typeof job.request === 'object' ? job.request : null
+  const model = String(request?.model || '').trim() || '未记录'
+  const rawMode = String(request?.geminiMode || request?.gemini_mode || '').trim().toLowerCase()
+  const mode = {
+    real: '真实模式',
+    mock: '开发模拟',
+    off: '未调用远程模型',
+  }[rawMode] || (rawMode || '未记录')
+  return `任务请求模型：${model} · 请求模式：${mode}`
+}
+
+function jobRouteProvenanceText(job) {
+  return '实际执行/路由模型：当前记录未提供'
 }
 
 function toggleLibraryMenu(job) {
@@ -1863,12 +1729,8 @@ async function deleteFailedTaskGroup(group) {
   workflowMutationNotice.value = ''
   try {
     for (const jobId of ids) {
-      await ensureWorkflowRevision()
-      const deleted = await youtubeWorkflowClient.deleteJob(jobId, {
-        expectedRevision: workflowRevision.value,
-      })
-      rememberWorkflowRevision(deleted)
-      queueJobs.value = queueJobs.value.filter((job) => job.jobId !== jobId)
+      await workflowMutations.deleteJob(jobId)
+      workflowLibrary.removeQueueJobs([jobId])
     }
     refreshLinkDuplicates()
   } catch (error) {
@@ -1883,13 +1745,8 @@ async function deleteLibraryRecord(job) {
   if (!window.confirm(`只删除素材库记录，不删除已生成文件。\n\n${title}\n\n确定继续吗？`)) return
   workflowMutationNotice.value = ''
   try {
-    await ensureWorkflowRevision()
-    const deleted = await youtubeWorkflowClient.deleteJob(job.jobId, {
-      expectedRevision: workflowRevision.value,
-    })
-    rememberWorkflowRevision(deleted)
-    recentJobs.value = recentJobs.value.filter((item) => item.jobId !== job.jobId)
-    queueJobs.value = queueJobs.value.filter((item) => item.jobId !== job.jobId)
+    await workflowMutations.deleteJob(job.jobId)
+    workflowLibrary.removeLibraryRecord(job.jobId)
     expandedLibraryJobId.value = ''
     refreshLinkDuplicates()
   } catch (error) {
@@ -1902,12 +1759,8 @@ async function clearFailedTasks() {
   if (!window.confirm('只清除失败提示和失败任务记录，不会删除成功素材或复习数据。继续吗？')) return
   workflowMutationNotice.value = ''
   try {
-    await ensureWorkflowRevision()
-    const cleared = await youtubeWorkflowClient.clearFailedJobs({
-      expectedRevision: workflowRevision.value,
-    })
-    rememberWorkflowRevision(cleared)
-    queueJobs.value = queueJobs.value.filter((job) => job.status !== 'failed')
+    await workflowMutations.clearFailedJobs()
+    workflowLibrary.removeFailedJobs()
     refreshLinkDuplicates()
   } catch (error) {
     if (isWorkflowMutationConflict(error)) await handleWorkflowMutationConflict(error)
@@ -1919,12 +1772,12 @@ async function confirmReprocess(job, explicitUrl = '') {
   const url = explicitUrl || job?.url || job?.request?.url
   if (!url) return
   const title = jobDisplayTitle(job) || linkCardFallbackTitle({ url })
-  if (!window.confirm(`重新处理会创建一个新的后台任务，已有成功素材会继续保留。\n\n${title}`)) return
+  if (!window.confirm(`素材：${title}\n阶段：重新下载、生成字幕、AI 切分与翻译\n\n将创建新任务；不会主动删除已有素材和阅读记录，但重新生成的文件可能与原结果共用目录，标注位置不保证一致。完成后需主动打开新结果。\n\n继续重新处理吗？`)) return
   const payload = { ...buildCreateJobPayload(url), forceReprocess: true }
   const actionId = `reprocess:${job?.jobId || canonicalMaterialKey(url)}:${Date.now()}`
   try {
     const created = await runPendingWorkflowAction(actionId, 'create', '', payload, (action) => (
-      youtubeWorkflowClient.createJob(payload, workflowMutationOptions(action))
+      youtubeWorkflowClient.createJob(action.payload, workflowMutationOptions(action))
     ))
     updateJob(created)
     forgetPendingWorkflowAction(actionId)
@@ -2116,7 +1969,7 @@ async function cancelJob(job) {
   workflowMutationNotice.value = ''
   try {
     const canceled = await runPendingWorkflowAction(actionId, 'cancel', job.jobId, {}, (action) => {
-      return youtubeWorkflowClient.cancelJob(job.jobId, workflowMutationOptions(action))
+      return youtubeWorkflowClient.cancelJob(action.targetJobId, workflowMutationOptions(action))
     })
     updateJob(canceled)
     forgetPendingWorkflowAction(actionId)
@@ -2131,7 +1984,7 @@ async function prioritizeJob(job) {
   workflowMutationNotice.value = ''
   try {
     const updated = await runPendingWorkflowAction(actionId, 'prioritize', job.jobId, {}, (action) => {
-      return youtubeWorkflowClient.prioritizeJob(job.jobId, workflowMutationOptions(action))
+      return youtubeWorkflowClient.prioritizeJob(action.targetJobId, workflowMutationOptions(action))
     })
     updateJob(updated)
     forgetPendingWorkflowAction(actionId)
@@ -2142,6 +1995,7 @@ async function prioritizeJob(job) {
 }
 
 async function retryJob(job, stage = '') {
+  if (stage && !confirmStageRetry(job, stage)) return
   const payload = { model: model.value, baseUrl: baseUrl.value, videoPriority: videoPriority.value }
   if (stage) payload.stage = stage
   if (geminiMode.value === 'real' && apiKey.value.trim()) payload.apiKey = apiKey.value
@@ -2149,7 +2003,7 @@ async function retryJob(job, stage = '') {
   workflowMutationNotice.value = ''
   try {
     const retried = await runPendingWorkflowAction(actionId, 'retry', job.jobId, payload, (action) => {
-      return youtubeWorkflowClient.retryJob(job.jobId, payload, workflowMutationOptions(action))
+      return youtubeWorkflowClient.retryJob(action.targetJobId, action.payload, workflowMutationOptions(action))
     })
     updateJob(retried)
     forgetPendingWorkflowAction(actionId)
@@ -2163,6 +2017,11 @@ async function retryJob(job, stage = '') {
 
 async function retryQualityJob(job, stage) {
   await qualityActionGuard.run(() => retryJob(job, stage))
+}
+
+function confirmStageRetry(job, stage) {
+  const processing = stage === 'segmenting' ? 'AI 切分及后续翻译' : '翻译'
+  return window.confirm(`素材：${jobDisplayTitle(job)}\n阶段：${processing}\n\n将创建重试任务，重新生成的 AI 结果可能覆盖检查点中的旧文件；缺少检查点时后台可能从更早阶段继续。不会主动删除阅读记录，但新结果的标注位置不保证一致。完成后需主动打开新结果。\n\n继续修复吗？`)
 }
 
 function closeQualityModal() {
@@ -2213,10 +2072,23 @@ async function showQuality(job) {
 }
 
 function qualityIssueSummary(report) {
-  if (!report) return '暂无报告'
+  if (!report) return '暂无检查结果，暂时无法判断素材是否可读。'
   const total = Array.isArray(report.issues) ? report.issues.length : 0
-  if (!total) return `通过 · ${report.chunkCount || 0} 个 chunk · ${report.wordCount || 0} 个词`
-  return `发现 ${total} 个问题 · ${report.chunkCount || 0} 个 chunk · ${report.wordCount || 0} 个词`
+  if (report.ok === true && !total) return '检查未发现问题，可以打开阅读。'
+  if (total) return `发现 ${total} 个问题，部分内容可能影响阅读；请查看下方原因，再选择是否修复。`
+  return '检查尚未确认通过，暂时无法判断素材是否可读。'
+}
+
+function qualityIssueText(issue) {
+  return {
+    timestamp_reverse: '字幕的结束时间早于开始时间，播放定位可能不准确。',
+    timestamp_order: '字幕时间顺序不一致，播放定位可能不准确。',
+    empty_translation: '部分语块缺少中文翻译。',
+    empty_source: '部分语块缺少英文原文。',
+    invalid_range: '部分语块的单词范围无效。',
+    long_chunk: '部分语块较长，可以按需要重新切分。',
+    chunk_transcript_mismatch: '语块与字幕的单词范围不匹配。',
+  }[issue?.code] || '存在未识别的处理问题，请展开技术信息查看原因。'
 }
 
 function statusText(job) {
@@ -2254,22 +2126,14 @@ function shortPath(value) {
 
 function listenText(job) {
   if (!job) return '未开始'
-  const item = readerPlaybackTracker.getPlaybackState(job.jobId)
+  const item = readerPersistence.getPlaybackState(job.jobId)
   if (item && item.completed) return '已听完'
   if (item && item.coverageRatio > 0) return '收听中'
   return '未开始'
 }
 
-function getReaderMedia() {
-  const audio = document.getElementById('audio-player')
-  if (typeof window !== 'undefined' && window.__mediaSource && typeof window.__mediaSource.getActiveMediaElement === 'function') {
-    return window.__mediaSource.getActiveMediaElement(audio) || audio
-  }
-  return audio
-}
-
 function getAudio() {
-  return getReaderMedia()
+  return readerPersistence.getReaderMedia()
 }
 
 function resumeReaderAudioFromPanel() {
@@ -2280,357 +2144,6 @@ function resumeReaderAudioFromPanel() {
     reason: 'reader playback paused while loading material from the panel should resume when loading succeeds',
   })
   return true
-}
-
-function ensureCurrentJobFromAudioMeta() {
-  if (currentJobId.value) {
-    readerMarksHydration.startReaderMarksHydration(currentJobId.value)
-    updateReaderConflictVisibility()
-    return
-  }
-  const meta = runtimeState && runtimeState.currentAudioMeta
-  const jobId = meta && meta.source === 'youtube-workflow' ? String(meta.jobId || '') : ''
-  if (!jobId) return
-  currentJobId.value = jobId
-  readerPlaybackTracker.startReaderSession({ jobId })
-  readerMarksHydration.startReaderMarksHydration(jobId)
-  updateReaderConflictVisibility()
-}
-
-async function syncReaderActivity(event = 'progress') {
-  if (readerSessionLoadInProgress && event !== 'switch') return null
-  if (!currentJobId.value) return null
-  const payload = readerPlaybackTracker.buildReaderActivityPayload(event)
-  if (!payload) return null
-  const ledger = getReaderActivityLedger(payload.jobId)
-  ledger.submit({ jobId: payload.jobId, payload })
-  await ledger.waitForIdle()
-  return ledger.getState().status === 'saved' ? ledger.getState() : null
-}
-
-function mergeRecentReaderItem(item) {
-  if (!item || !item.jobId) return
-  const index = recentJobs.value.findIndex((entry) => entry.jobId === item.jobId)
-  if (index >= 0) recentJobs.value[index] = { ...recentJobs.value[index], ...item }
-  else recentJobs.value.unshift(item)
-}
-
-function getCurrentMarkCount() {
-  const el = document.getElementById('annotation-mark-count')
-  const value = el ? Number(el.dataset.count || 0) : 0
-  return Number.isFinite(value) ? Math.max(0, value) : 0
-}
-
-function normalizeReaderMarks(marks) {
-  const words = runtimeState && Array.isArray(runtimeState.words) ? runtimeState.words : []
-  const normalized = []
-  for (const raw of Array.isArray(marks) ? marks : []) {
-    if (!raw || typeof raw !== 'object') continue
-    const globalIndex = Number(raw.globalIndex)
-    if (!Number.isInteger(globalIndex) || globalIndex < 0 || globalIndex >= words.length) continue
-    const word = words[globalIndex] || {}
-    normalized.push({
-      ...raw,
-      globalIndex,
-      word: String(raw.word || word.word || ''),
-      start: Number.isFinite(Number(raw.start)) ? Number(raw.start) : word.start,
-      sourceType: String(raw.sourceType || raw.source || 'manual-mark')
-    })
-  }
-  return normalized
-}
-
-function getCurrentReaderMarks() {
-  const markedMap = runtimeState && runtimeState.markedMap instanceof Map ? runtimeState.markedMap : null
-  if (!markedMap) return []
-  return normalizeReaderMarks(Array.from(markedMap.values()))
-}
-
-function syncMarkedWordVisuals(marks) {
-  document.querySelectorAll('[data-word-index].marked').forEach((el) => el.classList.remove('marked'))
-  marks.forEach((mark) => {
-    if (marksStore && typeof marksStore.syncVisual === 'function') {
-      marksStore.syncVisual(mark.globalIndex, true)
-    } else {
-      document.querySelectorAll(`[data-word-index="${mark.globalIndex}"]`).forEach((el) => el.classList.add('marked'))
-    }
-  })
-}
-
-function replaceReaderMarksVisible(marks) {
-  if (!runtimeState || !(runtimeState.markedMap instanceof Map)) return []
-  const normalized = normalizeReaderMarks(marks)
-  runtimeState.markedMap.clear()
-  normalized.forEach((mark) => runtimeState.markedMap.set(mark.globalIndex, mark))
-  syncMarkedWordVisuals(normalized)
-  bridgeToPinia()
-  return normalized
-}
-
-async function applyReaderMarks(marks, options = {}) {
-  const normalized = replaceReaderMarksVisible(marks)
-  const jobId = String(options.jobId || currentJobId.value || '').trim()
-  if (jobId && readerMarksHydration) {
-    readerMarksHydration.rememberAuthoritativeMarks(jobId, normalized, options.revision, { applied: true })
-  }
-  if (options.persist !== false) await audioStore.saveToDB('marks', normalized)
-  if (typeof window.syncAnnotationGenerationEntryStatus === 'function') {
-    await window.syncAnnotationGenerationEntryStatus({ source: 'restore' })
-  }
-}
-
-function submitCurrentReaderMarks(intent = {}) {
-  ensureCurrentJobFromAudioMeta()
-  if (!currentJobId.value) return
-  const jobId = currentJobId.value
-  const hydrationIntent = readerMarksHydration?.getLocalIntent(jobId)
-  const marks = Array.isArray(intent.marks)
-    ? intent.marks
-    : hydrationIntent?.marks || getCurrentReaderMarks()
-  const sourceRevision = Number.isInteger(intent.sourceRevision)
-    ? intent.sourceRevision
-    : hydrationIntent?.sourceRevision
-  if (!Number.isInteger(sourceRevision)) return null
-  return getReaderMarksLedger(jobId).submit({
-    jobId,
-    marks,
-    source: READER_MARKS_OUTBOX_SOURCE,
-    sourceRevision,
-    localVersion: Number.isInteger(intent.localVersion)
-      ? intent.localVersion
-      : hydrationIntent?.localVersion,
-  })
-}
-
-function handleReaderMarksChanged(event) {
-  if (readerSessionLoadInProgress) return
-  ensureCurrentJobFromAudioMeta()
-  if (!currentJobId.value) return
-  const jobId = currentJobId.value
-  const source = String(event?.detail?.source || 'system')
-  if (source === 'restore') {
-    observeBestEffort(readerMarksHydration.handleProgrammaticRestore(jobId), {
-      operationId: 'reader-marks-restore-notification',
-      reason: 'a late session snapshot must not replace authoritative or locally edited marks',
-    })
-    return
-  }
-  if (source !== 'edit') return
-  const intent = readerMarksHydration.recordLocalEdit(jobId, {
-    marks: getCurrentReaderMarks(),
-    operation: event?.detail?.operation,
-  })
-  if (!intent || readerMarksHydration.deferLocalChange(jobId)) return
-  submitCurrentReaderMarks(intent)
-  syncReaderActivity('annotation')
-}
-
-function readerOutboxRequest(entry, expectedRevision, keepalive = false) {
-  if (entry.kind === 'marks') {
-    if (!isTrustedReaderMarksOutboxEntry(entry)) {
-      blockUntrustedReaderMarksOutbox(entry)
-      const error = new Error('Reader marks outbox source is not trusted')
-      error.code = 'READER_UNTRUSTED_MARKS_OUTBOX'
-      throw error
-    }
-    const payload = {
-      marks: entry.intent.marks,
-      expectedRevision,
-      operationId: entry.operationId,
-    }
-    return keepalive
-      ? youtubeWorkflowClient.keepaliveReaderMarks(entry.jobId, payload)
-      : youtubeWorkflowClient.saveReaderMarks(entry.jobId, payload)
-  }
-  const payload = {
-    ...entry.intent,
-    jobId: entry.jobId,
-    expectedRevision,
-    activityOperationId: entry.operationId,
-  }
-  return keepalive
-    ? youtubeWorkflowClient.keepaliveReaderActivity(payload)
-    : youtubeWorkflowClient.recordReaderActivity(payload)
-}
-
-function blockUntrustedReaderMarksOutbox(entry) {
-  if (entry?.kind !== 'marks') return false
-  readerActivityNotice.value = READER_UNTRUSTED_MARKS_OUTBOX_NOTICE
-  if (currentJobId.value === entry.jobId) readerMarksSaveState.value = 'dirty'
-  recordBestEffortFailure(new Error('Reader marks outbox source is not trusted'), {
-    operationId: 'reader-outbox-untrusted-marks',
-    reason: 'source-unknown marks outbox is retained for review and must not be replayed automatically',
-  })
-  return false
-}
-
-function isReaderConflictError(error) {
-  return error?.category === 'conflict' || String(error?.code || '').endsWith('_REVISION_CONFLICT')
-}
-
-function setReaderOutboxState(entry, status, notice = '') {
-  if (currentJobId.value !== entry.jobId) return
-  if (entry.kind === 'marks') readerMarksSaveState.value = status
-  else readerActivitySaveState.value = status
-  if (notice) readerActivityNotice.value = notice
-}
-
-function clearReaderOutboxSuccessNotice() {
-  if (readerActivityNotice.value.includes('本地最新意图仍未丢失')
-    || readerActivityNotice.value.includes('最新进度仍保留')
-    || readerActivityNotice.value.includes('权威版本暂时无法读取')) readerActivityNotice.value = ''
-}
-
-function settleReaderOutboxSuccess(entry, saved) {
-  if (entry.kind === 'marks' && !isTrustedReaderMarksOutboxEntry(entry)) {
-    return blockUntrustedReaderMarksOutbox(entry)
-  }
-  if (Number.isInteger(saved?.revision)) {
-    rememberReaderRevision(entry.kind, entry.jobId, saved.revision)
-    if (entry.kind === 'marks') {
-      readerMarksHydration?.markLocalChangesSaved(
-        entry.jobId,
-        entry.intent.marks,
-        saved.revision,
-        entry.intent.localVersion,
-      )
-    }
-  }
-  if (entry.kind === 'activity') mergeRecentReaderItem(saved)
-  if (!removeReaderOutboxEntry(entry)) {
-    setReaderOutboxState(entry, 'error')
-    return false
-  }
-  clearReaderConflict(entry.kind, entry.jobId, entry.operationId)
-  setReaderOutboxState(entry, 'saved')
-  clearReaderOutboxSuccessNotice()
-  return true
-}
-
-async function retryReaderOutboxEntry(entry, expectedRevision) {
-  if (entry.kind === 'marks' && !isTrustedReaderMarksOutboxEntry(entry)) {
-    return blockUntrustedReaderMarksOutbox(entry)
-  }
-  try {
-    return settleReaderOutboxSuccess(entry, await readerOutboxRequest(entry, expectedRevision))
-  } catch (error) {
-    setReaderOutboxState(entry, 'conflict', '学习记录存在并发冲突，需确认后重试')
-    return false
-  }
-}
-
-async function replayReaderOutboxEntry(entry) {
-  if (entry.kind === 'marks' && !isTrustedReaderMarksOutboxEntry(entry)) {
-    return blockUntrustedReaderMarksOutbox(entry)
-  }
-  setReaderOutboxState(entry, 'dirty')
-  try {
-    return settleReaderOutboxSuccess(entry, await readerOutboxRequest(entry, entry.expectedRevision))
-  } catch (error) {
-    if (isReaderConflictError(error)) {
-      setReaderOutboxState(entry, 'conflict', '学习记录存在并发冲突，需确认后重试')
-      const localIntent = entry.kind === 'marks'
-        ? { jobId: entry.jobId, marks: entry.intent.marks }
-        : { jobId: entry.jobId, payload: { ...entry.intent, jobId: entry.jobId } }
-      await loadReaderConflict(
-        entry.kind,
-        entry.jobId,
-        error,
-        localIntent,
-        { operationId: entry.operationId },
-        { retry: (revision) => retryReaderOutboxEntry(entry, revision) },
-      )
-      return false
-    }
-    setReaderOutboxState(entry, 'error')
-    return false
-  }
-}
-
-function replayReaderOutbox() {
-  if (readerOutboxReplayPromise) return readerOutboxReplayPromise
-  readerOutboxReplayPromise = (async () => {
-    const outbox = readReaderOutbox()
-    if (!outbox.valid) return
-    await Promise.all(outbox.entries.map((entry) => replayReaderOutboxEntry(entry)))
-  })().finally(() => {
-    readerOutboxReplayPromise = null
-  })
-  return readerOutboxReplayPromise
-}
-
-function queueReaderKeepalive(entry) {
-  return observeBestEffort(readerOutboxRequest(entry, entry.expectedRevision, true), {
-    operationId: `reader-outbox-keepalive-${entry.kind}`,
-    reason: 'page close cannot await reader durability; the versioned outbox remains the recovery receipt',
-  }).then((saved) => {
-    if (saved) settleReaderOutboxSuccess(entry, saved)
-  })
-}
-
-function handleReaderPageHide(event) {
-  handleBeforeUnload(event)
-}
-
-function handleReaderPageShow(event) {
-  if (!event?.persisted) return
-  readerUnloadFlushed = false
-  readerCloseGeneration += 1
-  ensureCurrentJobFromAudioMeta()
-  updateReaderConflictVisibility()
-}
-
-function handleBeforeUnload() {
-  if (readerSessionLoadInProgress) return
-  if (readerUnloadFlushed) return
-  ensureCurrentJobFromAudioMeta()
-  const payload = readerPlaybackTracker.buildReaderActivityPayload('close')
-  if (!payload) return
-  const closeGeneration = readerCloseGeneration
-  const activityOperationId = `reader-activity-${payload.jobId}-${payload.sessionId}-close-${closeGeneration}`
-  const marksIntent = getReaderMarksPendingIntent(payload.jobId)
-    || readerMarksHydration?.getLocalIntent(payload.jobId)
-  const marksEntry = marksIntent
-    && marksIntent.source === READER_MARKS_OUTBOX_SOURCE
-    && Number.isInteger(marksIntent.localVersion)
-    && marksIntent.localVersion >= 1
-    && Number.isInteger(marksIntent.sourceRevision)
-    ? createReaderOutboxEntry(
-      'marks',
-      {
-        jobId: payload.jobId,
-        marks: marksIntent.marks,
-        source: READER_MARKS_OUTBOX_SOURCE,
-        localVersion: marksIntent.localVersion,
-      },
-      `reader-marks-${payload.jobId}-${payload.sessionId}-close-${closeGeneration}`,
-      marksIntent.sourceRevision,
-    )
-    : null
-  const activityEntry = createReaderOutboxEntry(
-    'activity',
-    payload,
-    activityOperationId,
-    getReaderRevision('activity', payload.jobId) ?? 0,
-  )
-  if (!marksEntry && !activityEntry) return
-  readerUnloadFlushed = true
-  if (marksEntry) readerMarksSaveState.value = 'dirty'
-  if (activityEntry) readerActivitySaveState.value = 'dirty'
-  if (marksEntry) {
-    writeReaderOutboxEntry(marksEntry)
-    observeBestEffort(queueReaderKeepalive(marksEntry), {
-      operationId: 'reader-outbox-marks-keepalive-settle',
-      reason: 'the persisted marks outbox remains authoritative when close-time settlement cannot finish',
-    })
-  }
-  if (activityEntry) {
-    writeReaderOutboxEntry(activityEntry)
-    observeBestEffort(queueReaderKeepalive(activityEntry), {
-      operationId: 'reader-outbox-activity-keepalive-settle',
-      reason: 'the persisted activity outbox remains authoritative when close-time settlement cannot finish',
-    })
-  }
 }
 
 function resetChunkChineseDisplay() {

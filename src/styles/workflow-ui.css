@@ -1,4 +1,4 @@
-@layer theme, base, components, utilities;
+@layer reader-footprint, properties, theme, base, components, utilities;
 
 @import "tailwindcss/theme.css" layer(theme) prefix(rw);
 @import "tailwindcss/utilities.css" layer(utilities) source(none) prefix(rw);
@@ -8,6 +8,7 @@
 @source "../components/ui";
 @source "../components/ui/input";
 @source "../components/YouTubeWorkflowPanel.vue";
+@source "../components/LearningPageLoadNotice.vue";
 @source "../lib/native-control-styles.js";
 @source "../lib/native-input-styles.js";
 @source "../main.js";
@@ -16,7 +17,161 @@
 @source "../features/passage-preview";
 @source "../features/learning-ui";
 @source "../composables/annotation-backfill-ai-module.js";
+@source "../features/annotation-backfill/create-annotation-backfill-dialog.js";
 @source "../composables/vocabulary-preview-module.js";
+@source "../features/vocabulary-preview/create-article-settlement-dialog.js";
+
+.vocabulary-preview-dialog--settlement .vocabulary-preview-dialog__item[data-active="true"] {
+  outline: 2px solid var(--learning-primary, #2563eb);
+  outline-offset: -2px;
+}
+.vocabulary-preview-dialog--settlement .vocabulary-preview-dialog__item-main:focus-visible,
+.vocabulary-preview-dialog--settlement [data-meaning-region]:focus-visible {
+  outline: 2px solid var(--learning-primary, #2563eb);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+.vocabulary-preview-dialog--settlement .vocabulary-preview-dialog__item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+.vocabulary-preview-dialog--settlement .vocabulary-preview-dialog__speaker {
+  width: auto;
+  min-height: 32px;
+  gap: 6px;
+  padding: 6px 10px;
+}
+.vocabulary-preview-dialog--settlement .vocabulary-preview-dialog__speaker svg { width: 18px; height: 18px; }
+.vocabulary-preview-dialog--settlement .vocabulary-preview-dialog__selection-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.vocabulary-preview-dialog--settlement .vocabulary-preview-dialog__keyboard-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--learning-muted-foreground);
+  line-height: 1.6;
+}
+
+/* Keep the list and actions in their rows when the empty overview is hidden. */
+.vocabulary-preview-dialog--settlement .vocabulary-preview-dialog__list {
+  grid-row: 3;
+}
+
+.vocabulary-preview-dialog--settlement .vocabulary-preview-dialog__footer {
+  grid-row: 4;
+}
+
+.vocabulary-preview-dialog.vocabulary-preview-dialog--settlement .vocabulary-preview-dialog__footer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.vocabulary-preview-dialog__primary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.vocabulary-preview-dialog__other-actions {
+  font-size: 13px;
+  color: var(--learning-muted-foreground);
+}
+
+.vocabulary-preview-dialog__other-actions > summary {
+  cursor: pointer;
+  width: fit-content;
+  padding: 4px 0;
+}
+
+.vocabulary-preview-dialog__skip-confirmation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 8px;
+}
+
+.vocabulary-preview-dialog__skip-confirmation[hidden] { display: none; }
+.vocabulary-preview-dialog__skip-confirmation p { flex-basis: 100%; margin: 0; }
+
+.vocabulary-preview-dialog--settlement .vocabulary-preview-dialog__item {
+  flex-wrap: wrap;
+}
+
+.vocabulary-preview-dialog--settlement .vocabulary-preview-dialog__item-main {
+  flex-basis: 240px;
+}
+
+.vocabulary-preview-dialog.vocabulary-preview-dialog--settlement .vocabulary-preview-dialog__item-main {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.vocabulary-preview-dialog__meaning-comparison {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 16px;
+  width: 100%;
+}
+
+.vocabulary-preview-dialog__meaning-column {
+  min-width: 0;
+}
+
+.vocabulary-preview-dialog__meaning-label,
+.vocabulary-preview-dialog__meaning-toggle {
+  color: var(--learning-muted-foreground);
+  font-size: 12px;
+}
+
+.vocabulary-preview-dialog__meaning-column p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.vocabulary-preview-dialog__original-meaning.is-collapsed {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+.vocabulary-preview-dialog__meaning-state {
+  color: var(--learning-muted-foreground);
+}
+
+.vocabulary-preview-dialog--settlement .vocabulary-preview-dialog__item-line {
+  flex-wrap: wrap;
+  height: auto;
+}
+
+.vocabulary-preview-dialog__participation {
+  color: var(--learning-muted-foreground);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.vocabulary-preview-dialog__selection-button {
+  min-height: 32px;
+  height: auto;
+  padding: 6px 10px;
+}
+
+@media (max-width: 520px) {
+  .vocabulary-preview-dialog__meaning-comparison {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+  .vocabulary-preview-dialog__primary-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 
 @theme inline {
   --color-background: var(--background);
@@ -35,25 +190,115 @@
   --color-ring: var(--ring);
 }
 
+/* shadcn-vue neutral theme tokens. Keep these separate from reader content
+   colors and the workflow's semantic status palette. */
+:root {
+  --rw-ui-light-background: oklch(1 0 0);
+  --rw-ui-light-foreground: oklch(0.145 0 0);
+  --rw-ui-light-card: oklch(1 0 0);
+  --rw-ui-light-card-foreground: oklch(0.145 0 0);
+  --rw-ui-light-popover: oklch(1 0 0);
+  --rw-ui-light-popover-foreground: oklch(0.145 0 0);
+  --rw-ui-light-primary: oklch(0.205 0 0);
+  --rw-ui-light-primary-foreground: oklch(0.985 0 0);
+  --rw-ui-light-secondary: oklch(0.97 0 0);
+  --rw-ui-light-secondary-foreground: oklch(0.205 0 0);
+  --rw-ui-light-muted: oklch(0.97 0 0);
+  --rw-ui-light-muted-foreground: oklch(0.556 0 0);
+  --rw-ui-light-accent: oklch(0.97 0 0);
+  --rw-ui-light-accent-foreground: oklch(0.205 0 0);
+  --rw-ui-light-destructive: oklch(0.577 0.245 27.325);
+  --rw-ui-light-border: oklch(0.922 0 0);
+  --rw-ui-light-input: oklch(0.922 0 0);
+  --rw-ui-light-ring: oklch(0.708 0 0);
+
+  --rw-ui-dark-background: oklch(0.145 0 0);
+  --rw-ui-dark-foreground: oklch(0.985 0 0);
+  --rw-ui-dark-card: oklch(0.205 0 0);
+  --rw-ui-dark-card-foreground: oklch(0.985 0 0);
+  --rw-ui-dark-popover: oklch(0.205 0 0);
+  --rw-ui-dark-popover-foreground: oklch(0.985 0 0);
+  --rw-ui-dark-primary: oklch(0.922 0 0);
+  --rw-ui-dark-primary-foreground: oklch(0.205 0 0);
+  --rw-ui-dark-secondary: oklch(0.269 0 0);
+  --rw-ui-dark-secondary-foreground: oklch(0.985 0 0);
+  --rw-ui-dark-muted: oklch(0.269 0 0);
+  --rw-ui-dark-muted-foreground: oklch(0.708 0 0);
+  --rw-ui-dark-accent: oklch(0.269 0 0);
+  --rw-ui-dark-accent-foreground: oklch(0.985 0 0);
+  --rw-ui-dark-destructive: oklch(0.704 0.191 22.216);
+  --rw-ui-dark-border: oklch(1 0 0 / 10%);
+  --rw-ui-dark-input: oklch(1 0 0 / 15%);
+  --rw-ui-dark-ring: oklch(0.556 0 0);
+
+  --rw-ui-background: var(--rw-ui-light-background);
+  --rw-ui-foreground: var(--rw-ui-light-foreground);
+  --rw-ui-card: var(--rw-ui-light-card);
+  --rw-ui-card-foreground: var(--rw-ui-light-card-foreground);
+  --rw-ui-popover: var(--rw-ui-light-popover);
+  --rw-ui-popover-foreground: var(--rw-ui-light-popover-foreground);
+  --rw-ui-primary: var(--rw-ui-light-primary);
+  --rw-ui-primary-foreground: var(--rw-ui-light-primary-foreground);
+  --rw-ui-secondary: var(--rw-ui-light-secondary);
+  --rw-ui-secondary-foreground: var(--rw-ui-light-secondary-foreground);
+  --rw-ui-muted: var(--rw-ui-light-muted);
+  --rw-ui-muted-foreground: var(--rw-ui-light-muted-foreground);
+  --rw-ui-accent: var(--rw-ui-light-accent);
+  --rw-ui-accent-foreground: var(--rw-ui-light-accent-foreground);
+  --rw-ui-destructive: var(--rw-ui-light-destructive);
+  --rw-ui-border: var(--rw-ui-light-border);
+  --rw-ui-input: var(--rw-ui-light-input);
+  --rw-ui-ring: var(--rw-ui-light-ring);
+}
+
+[data-theme="dark"] {
+  --rw-ui-background: var(--rw-ui-dark-background);
+  --rw-ui-foreground: var(--rw-ui-dark-foreground);
+  --rw-ui-card: var(--rw-ui-dark-card);
+  --rw-ui-card-foreground: var(--rw-ui-dark-card-foreground);
+  --rw-ui-popover: var(--rw-ui-dark-popover);
+  --rw-ui-popover-foreground: var(--rw-ui-dark-popover-foreground);
+  --rw-ui-primary: var(--rw-ui-dark-primary);
+  --rw-ui-primary-foreground: var(--rw-ui-dark-primary-foreground);
+  --rw-ui-secondary: var(--rw-ui-dark-secondary);
+  --rw-ui-secondary-foreground: var(--rw-ui-dark-secondary-foreground);
+  --rw-ui-muted: var(--rw-ui-dark-muted);
+  --rw-ui-muted-foreground: var(--rw-ui-dark-muted-foreground);
+  --rw-ui-accent: var(--rw-ui-dark-accent);
+  --rw-ui-accent-foreground: var(--rw-ui-dark-accent-foreground);
+  --rw-ui-destructive: var(--rw-ui-dark-destructive);
+  --rw-ui-border: var(--rw-ui-dark-border);
+  --rw-ui-input: var(--rw-ui-dark-input);
+  --rw-ui-ring: var(--rw-ui-dark-ring);
+}
+
 /* These tokens are scoped to the three workflow roots because the quality
    report and material notice are teleported outside the main panel. */
 .youtube-workflow,
 .youtube-reader-controls,
 .youtube-material-notice {
-  --background: var(--pru-shell-surface);
-  --foreground: var(--pru-shell-text);
-  --primary: var(--pru-accent);
-  --primary-foreground: #ffffff;
-  --secondary: var(--pru-shell-row);
-  --secondary-foreground: var(--pru-shell-text);
-  --muted: var(--pru-shell-row);
-  --muted-foreground: var(--pru-shell-muted);
-  --accent: var(--pru-shell-row-hover);
-  --accent-foreground: var(--pru-shell-text);
-  --destructive: var(--pru-danger);
-  --border: var(--pru-shell-border);
-  --input: var(--pru-shell-border);
-  --ring: var(--pru-info);
+  --background: var(--rw-ui-background);
+  --foreground: var(--rw-ui-foreground);
+  --primary: var(--rw-ui-primary);
+  --primary-foreground: var(--rw-ui-primary-foreground);
+  --secondary: var(--rw-ui-secondary);
+  --secondary-foreground: var(--rw-ui-secondary-foreground);
+  --muted: var(--rw-ui-muted);
+  --muted-foreground: var(--rw-ui-muted-foreground);
+  --accent: var(--rw-ui-accent);
+  --accent-foreground: var(--rw-ui-accent-foreground);
+  --destructive: var(--rw-ui-destructive);
+  --border: var(--rw-ui-border);
+  --input: var(--rw-ui-input);
+  --ring: var(--rw-ui-ring);
+  --pru-shell-bg: var(--rw-ui-background);
+  --pru-shell-surface: var(--rw-ui-card);
+  --pru-shell-row: var(--rw-ui-secondary);
+  --pru-shell-row-hover: var(--rw-ui-accent);
+  --pru-shell-text: var(--rw-ui-foreground);
+  --pru-shell-muted: var(--rw-ui-muted-foreground);
+  --pru-shell-border: var(--rw-ui-border);
+  --pru-row-border: var(--rw-ui-border);
 }
 
 /* Native reader controls use the same Button recipe without inheriting the
@@ -61,6 +306,24 @@
    continue to flow from the existing reader variables. */
 [data-ui-owner="reader"],
 [data-ui-owner="style-controls"] {
+  --background: var(--rw-ui-background);
+  --foreground: var(--rw-ui-foreground);
+  --primary: var(--rw-ui-primary);
+  --primary-foreground: var(--rw-ui-primary-foreground);
+  --secondary: var(--rw-ui-secondary);
+  --secondary-foreground: var(--rw-ui-secondary-foreground);
+  --muted: var(--rw-ui-muted);
+  --muted-foreground: var(--rw-ui-muted-foreground);
+  --accent: var(--rw-ui-accent);
+  --accent-foreground: var(--rw-ui-accent-foreground);
+  --destructive: var(--rw-ui-destructive);
+  --border: var(--rw-ui-border);
+  --input: var(--rw-ui-input);
+  --ring: var(--rw-ui-ring);
+}
+
+:root[data-theme-mode="custom"] [data-ui-owner="reader"],
+:root[data-theme-mode="custom"] [data-ui-owner="style-controls"] {
   --background: var(--btn-bg);
   --foreground: var(--btn-text);
   --primary: var(--btn-active-bg);
@@ -71,16 +334,15 @@
   --muted-foreground: var(--text-sub);
   --accent: var(--btn-hover);
   --accent-foreground: var(--text-main);
-  --destructive: var(--pru-danger);
   --border: var(--border-color);
   --input: var(--input-bg);
   --ring: var(--btn-active-border);
 }
 
 @layer base {
-  [data-ui-owner="workflow"]:not(input[type="color"]):not(input[type="file"]),
-  [data-ui-owner="reader"]:not(input[type="color"]):not(input[type="file"]),
-  [data-ui-owner="style-controls"]:not(input[type="color"]):not(input[type="file"]) {
+  [data-ui-owner="workflow"]:not(input[type="color"]):not(input[type="file"]):not(button):not([role="button"]),
+  [data-ui-owner="reader"]:not(input[type="color"]):not(input[type="file"]):not(button):not([role="button"]),
+  [data-ui-owner="style-controls"]:not(input[type="color"]):not(input[type="file"]):not(button):not([role="button"]) {
     appearance: none;
     box-sizing: border-box;
     margin: 0;
@@ -91,6 +353,38 @@
     background-color: transparent;
     color: var(--foreground);
     font-family: var(--pru-ui-font);
+  }
+
+  /* Buttons keep the shared theme colors and native appearance reset. Keep
+     selector specificity low so reader's first-paint geometry can override
+     only its dimensions, while utility variants continue to own button look. */
+  [data-ui-owner="workflow"]:where(button, [role="button"]),
+  [data-ui-owner="reader"]:where(button, [role="button"]),
+  [data-ui-owner="style-controls"]:where(button, [role="button"]) {
+    appearance: none;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    border-width: 0;
+    border-style: solid;
+    border-color: var(--border);
+    background-color: transparent;
+    color: var(--foreground);
+    font-family: var(--pru-ui-font);
+  }
+
+  /* Match the native reader's default Button recipe before main.js adds its
+     utility classes. These values are repeated by the recipe utilities, so
+     styling remains stable when the module finishes mounting. */
+  [data-ui-owner="reader"]:where(button, [role="button"]) {
+    height: 36px;
+    min-height: 36px;
+    gap: 8px;
+    padding: 8px 16px;
+    border-width: 1px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    line-height: 1.25rem;
   }
 
   [data-ui-owner="workflow"]:is(input, textarea):not([type="color"]):not([type="file"]),
@@ -170,4 +464,142 @@
   color: var(--primary-foreground);
   font-weight: 600;
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--ring) 34%, transparent);
+}
+
+/* N8 configuration presentation stays local to the material settings view. */
+.youtube-workflow .youtube-workflow-config-card,
+.youtube-workflow .youtube-workflow-purpose-summary {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  max-width: 720px;
+  padding: 14px;
+  border: 1px solid var(--pru-shell-border);
+  border-radius: var(--pru-radius-panel);
+  background: color-mix(in srgb, var(--pru-shell-surface) 82%, transparent);
+}
+
+.youtube-workflow .youtube-workflow-config-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.youtube-workflow .youtube-workflow-config-heading h4,
+.youtube-workflow .youtube-workflow-purpose-summary h4 {
+  margin: 0;
+  color: var(--pru-shell-text);
+  font: 750 15px/1.35 var(--pru-ui-font);
+}
+
+.youtube-workflow .youtube-workflow-config-heading p,
+.youtube-workflow .youtube-workflow-config-status,
+.youtube-workflow .youtube-workflow-purpose-summary dd,
+.youtube-workflow .youtube-workflow-purpose-summary dt,
+.youtube-workflow .youtube-workflow-config-mode,
+.youtube-workflow .youtube-workflow-config-state-grid span,
+.youtube-workflow .youtube-workflow-config-state-grid strong {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.youtube-workflow .youtube-workflow-config-heading p {
+  margin: 4px 0 0;
+  color: var(--pru-shell-muted);
+  font: 500 12px/1.5 var(--pru-ui-font);
+}
+
+.youtube-workflow .youtube-workflow-config-mode {
+  flex: 0 0 auto;
+  max-width: 9em;
+  color: var(--pru-shell-muted);
+  font: 650 12px/1.4 var(--pru-ui-font);
+  text-align: right;
+}
+
+.youtube-workflow .youtube-workflow-config-state-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+.youtube-workflow .youtube-workflow-config-state-grid > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--pru-shell-row) 74%, transparent);
+}
+
+.youtube-workflow .youtube-workflow-config-state-grid span {
+  color: var(--pru-shell-muted);
+  font: 600 11px/1.35 var(--pru-ui-font);
+}
+
+.youtube-workflow .youtube-workflow-config-state-grid strong {
+  color: var(--pru-shell-text);
+  font: 650 13px/1.45 var(--pru-ui-font);
+}
+
+.youtube-workflow .youtube-workflow-config-status {
+  margin: 0;
+  color: var(--pru-shell-muted);
+  font: 600 12px/1.5 var(--pru-ui-font);
+}
+
+.youtube-workflow .youtube-workflow-config-status[data-config-save-state="saved"] {
+  color: var(--pru-success);
+}
+
+.youtube-workflow .youtube-workflow-config-status[data-config-save-state="failed"],
+.youtube-workflow .youtube-workflow-config-status[data-config-read-state="failed"] {
+  color: var(--pru-danger);
+}
+
+.youtube-workflow .youtube-workflow-config-actions {
+  justify-content: flex-start;
+}
+
+.youtube-workflow .youtube-workflow-purpose-summary dl {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.youtube-workflow .youtube-workflow-purpose-summary dl > div {
+  display: grid;
+  grid-template-columns: minmax(88px, 0.28fr) minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+}
+
+.youtube-workflow .youtube-workflow-purpose-summary dt {
+  color: var(--pru-shell-text);
+  font: 700 12px/1.5 var(--pru-ui-font);
+}
+
+.youtube-workflow .youtube-workflow-purpose-summary dd {
+  margin: 0;
+  color: var(--pru-shell-muted);
+  font: 500 12px/1.55 var(--pru-ui-font);
+}
+
+@media (max-width: 520px) {
+  .youtube-workflow .youtube-workflow-config-heading {
+    display: grid;
+  }
+
+  .youtube-workflow .youtube-workflow-config-mode {
+    max-width: none;
+    text-align: left;
+  }
+
+  .youtube-workflow .youtube-workflow-config-state-grid,
+  .youtube-workflow .youtube-workflow-purpose-summary dl > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

@@ -323,6 +323,7 @@
           clearGeneratedAnnotationIndex();
           audioPlayer.src = URL.createObjectURL(file);
           markFileLoaded(lblAudio);
+          if (typeof deps.onAudioImported === 'function') deps.onAudioImported(file);
         } catch (error) {
           showError('AUDIO_SAVE', error && error.message ? error.message : 'Audio could not be saved');
         } finally {
@@ -342,6 +343,7 @@
             promiseChain = clearPersistedChunkSession().then(async function () {
               await saveToDB('transcript', json);
               processTranscript(json);
+              if (typeof deps.onTranscriptImported === 'function') deps.onTranscriptImported(json, file);
             }).then(function () {
                 emitAnnotationDiagnostics('app.import_scope_updated', {
                     scope: getAnnotationGenerationScope(),

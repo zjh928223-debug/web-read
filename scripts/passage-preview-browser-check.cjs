@@ -8,6 +8,15 @@ const targetUrl = process.env.READ_WEB_URL || 'http://127.0.0.1:4197/'
 
 async function run() {
   const browser = await chromium.launch({ headless: true })
+  if (process.env.PASSAGE_PREVIEW_BROWSER_CHECK_ONLY === 'queue-notice') {
+    try {
+      await verifyCompletedQueueNotice(browser, targetUrl)
+      console.log('passage preview reachable queue-notice browser check passed')
+    } finally {
+      await browser.close()
+    }
+    return
+  }
   const context = await browser.newContext()
   const page = await context.newPage()
   const errors = []
@@ -133,22 +142,8 @@ async function run() {
     })
     await page.goto(targetUrl, { waitUntil: 'networkidle' })
     await verifyStartupAcquisitionRecovery(page)
-    await page.getByRole('button', { name: '预习设置' }).click()
-    const learningSettingsDialog = page.getByRole('dialog', { name: '预习设置' })
-    await learningSettingsDialog.waitFor()
-    const batchSizeInput = learningSettingsDialog.getByRole('spinbutton', { name: '每组预习数量' })
-    await batchSizeInput.fill('37')
-    await learningSettingsDialog.getByRole('button', { name: '保存设置' }).click()
-    await learningSettingsDialog.waitFor({ state: 'hidden' })
-    assert.equal(await page.evaluate(() => (
-      JSON.parse(localStorage.getItem('vocabulary.passage-preview.durable-state.v1') || '{}').learningSettings?.batchSize
-    )), 37)
-    await page.getByRole('button', { name: '预习设置' }).click()
-    const reloadedBatchSize = page.getByRole('dialog', { name: '预习设置' })
-      .getByRole('spinbutton', { name: '每组预习数量' })
-    await reloadedBatchSize.waitFor()
-    assert.equal(await reloadedBatchSize.inputValue(), '37')
-    await page.getByRole('button', { name: '取消' }).click()
+    await verifyLearningSettingsDialog(page)
+    await verifyPendingLearningSettings(browser, targetUrl)
     const before = await readVocabularyState(page)
 
     await page.locator('.passage-preview-file-input').setInputFiles(fixturePath)
@@ -226,6 +221,7 @@ async function run() {
       const triggerStyle = trigger ? getComputedStyle(trigger) : null
       return {
         exists: Boolean(meta && progress && trigger),
+        owner: trigger?.dataset.uiOwner || '',
         followsProgress: Boolean(progress && trigger && progress.nextElementSibling === trigger),
         outsideCenteredTitle: Boolean(title && !title.querySelector('.passage-preview-shortcut-open')),
         isRightOfProgress: Boolean(progress && trigger && trigger.getBoundingClientRect().left >= progress.getBoundingClientRect().right),
@@ -247,14 +243,15 @@ async function run() {
     assert.equal(shortcutHeaderStyle.followsProgress, true)
     assert.equal(shortcutHeaderStyle.outsideCenteredTitle, true)
     assert.equal(shortcutHeaderStyle.isRightOfProgress, true)
-    assert.ok(shortcutHeaderStyle.opacity <= 0.5)
-    assert.ok(shortcutHeaderStyle.fontSize <= 10)
+    assert.equal(shortcutHeaderStyle.owner, 'learning')
+    assert.equal(shortcutHeaderStyle.opacity, 1)
+    assert.equal(shortcutHeaderStyle.fontSize, 14)
     assert.equal(shortcutHeaderStyle.borderWidth, 0)
     assert.equal(shortcutHeaderStyle.backgroundColor, 'rgba(0, 0, 0, 0)')
     assert.ok(['inline-flex', 'flex'].includes(shortcutHeaderStyle.display))
     assert.equal(shortcutHeaderStyle.alignItems, 'center')
     assert.equal(shortcutHeaderStyle.justifyContent, 'center')
-    assert.ok(shortcutHeaderStyle.lineHeight <= 10)
+    assert.ok(shortcutHeaderStyle.lineHeight >= 20)
     assert.equal(shortcutHeaderStyle.verticallyCentered, true)
     await page.evaluate(() => {
       const audio = document.querySelector('#audio-player')
@@ -475,6 +472,12 @@ async function verifyStartupAcquisitionRecovery(page) {
 async function verifyCompletedQueueNotice(browser, url) {
   const context = await browser.newContext()
   const page = await context.newPage()
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.route('**/api/**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: '{}',
+  }))
   await page.addInitScript(() => {
     class PreviewUtterance {
       constructor(text) {
@@ -514,15 +517,55 @@ async function verifyCompletedQueueNotice(browser, url) {
       pendingCount: 40,
     })
     await page.reload({ waitUntil: 'networkidle' })
+    await page.locator('#theme-toggle').click()
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-theme') === 'dark')
+    await page.waitForTimeout(600)
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
     await page.getByRole('button', { name: '待预习' }).click()
     await page.locator('.passage-preview-page').waitFor()
-    const notice = page.locator('.passage-preview-queue-notice')
-    await notice.waitFor()
     assert.equal(
-      await notice.innerText(),
-      '等待池现有 40 个词；降到 40 个以下前暂不开新一组，今天只需完成“今日复习”里的安排',
-      'the completed preview surface must show the full waiting-threshold notice',
+      await page.locator('.passage-preview-queue-notice').count(),
+      0,
+      'the completed preview must not mount a covered duplicate of its visible queue warning',
     )
+    const visibleQueueMessage = page.locator('.passage-preview-complete p').filter({
+      hasText: '等待池现有 40 个词',
+    })
+    await visibleQueueMessage.waitFor({ state: 'visible' })
+    const visibleQueueMessageText = await visibleQueueMessage.innerText()
+    assert.match(visibleQueueMessageText, /降到 40 个以下前暂不开新一组/)
+    assert.match(visibleQueueMessageText, /今天只需完成“今日复习”里的安排/)
+    const visibleQueueMessageStack = await visibleQueueMessage.evaluate((element) => {
+      const rect = element.getBoundingClientRect()
+      const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
+      const page = element.closest('.passage-preview-page')
+        const liveRegion = element.closest('[aria-live]')
+      const messageStyle = getComputedStyle(element)
+      const pageStyle = getComputedStyle(page)
+      return {
+        text: element.innerText,
+        readerTheme: document.documentElement.getAttribute('data-theme'),
+        learningPageTheme: page?.dataset.uiTheme || '',
+        announcementMode: liveRegion?.getAttribute('aria-live') || '',
+        foreground: messageStyle.color,
+        pageBackground: pageStyle.backgroundColor,
+        fontSize: messageStyle.fontSize,
+        fontWeight: messageStyle.fontWeight,
+        rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+        inViewport: rect.bottom > 0 && rect.top < window.innerHeight,
+        hitTestClass: hit?.className?.toString?.() || hit?.tagName?.toLowerCase() || null,
+        hitTestWithinNotice: Boolean(hit && element.contains(hit)),
+      }
+    })
+    assert.equal(visibleQueueMessageStack.inViewport, true)
+    assert.equal(visibleQueueMessageStack.hitTestWithinNotice, true)
+    assert.equal(visibleQueueMessageStack.readerTheme, 'dark')
+    assert.equal(visibleQueueMessageStack.learningPageTheme, 'light')
+    assert.equal(visibleQueueMessageStack.announcementMode, 'polite')
+    await page.screenshot({
+      path: path.join(projectRoot, 'output', 'playwright', 'reader-review-queue-notice-reachable-mobile.png'),
+    })
+    console.log(`UI-015 reachable completed state shows its queue warning with no covered duplicate; visible stack=${JSON.stringify(visibleQueueMessageStack)}`)
     await page.locator('.passage-preview-complete .passage-preview-secondary').click()
     await page.locator('.passage-preview-page').waitFor({ state: 'detached' })
     assert.equal(
@@ -804,6 +847,147 @@ async function readVocabularyState(page) {
       }
     }
   }))
+}
+
+async function verifyLearningSettingsDialog(page) {
+  const trigger = page.getByRole('button', { name: '预习设置', exact: true })
+  const dialog = page.getByRole('dialog', { name: '预习设置', exact: true })
+  const input = dialog.getByRole('spinbutton', { name: '每组预习数量' })
+  const open = async () => {
+    await trigger.click()
+    await dialog.waitFor()
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '关闭预习设置')
+    await input.waitFor({ state: 'visible' })
+    await page.waitForFunction(() => !document.querySelector('.passage-preview-learning-settings-dialog input').disabled)
+  }
+  const restored = async () => {
+    await dialog.waitFor({ state: 'hidden' })
+    assert.ok(await trigger.evaluate((node) => node === document.activeElement), 'settings close must restore the opener')
+  }
+  await open()
+  await page.keyboard.press('Shift+Tab')
+  assert.ok(await dialog.getByRole('button', { name: '保存设置' }).evaluate((node) => node === document.activeElement))
+  await page.keyboard.press('Tab')
+  assert.ok(await dialog.getByRole('button', { name: '关闭预习设置' }).evaluate((node) => node === document.activeElement))
+  for (const key of [...Array(9).fill('Tab'), ...Array(9).fill('Shift+Tab')]) {
+    await page.keyboard.press(key)
+    assert.ok(await dialog.evaluate((node) => node.contains(document.activeElement)), `${key} leaked outside settings`)
+  }
+  for (const value of ['0', '201', '1.5']) {
+    await input.fill(value)
+    await dialog.getByRole('button', { name: '保存设置' }).click()
+    assert.match(await dialog.locator('[role="status"]').innerText(), /1–200 之间的整数/)
+    assert.ok(await dialog.isVisible())
+  }
+  await input.fill('37')
+  await dialog.getByRole('button', { name: '保存设置' }).click()
+  await restored()
+  const saved = () => page.evaluate(() => JSON.parse(localStorage.getItem('vocabulary.passage-preview.durable-state.v1') || '{}').learningSettings?.batchSize)
+  assert.equal(await saved(), 37)
+  for (const path of ['cancel', 'close', 'backdrop', 'escape']) {
+    await open()
+    assert.equal(await input.inputValue(), '37')
+    await input.fill('38')
+    if (path === 'cancel') await dialog.getByRole('button', { name: '取消' }).click()
+    if (path === 'close') await dialog.getByRole('button', { name: '关闭预习设置' }).click()
+    if (path === 'backdrop') await page.locator('.passage-preview-shortcut-backdrop').click({ position: { x: 2, y: 2 } })
+    if (path === 'escape') await page.keyboard.press('Escape')
+    await restored()
+    assert.equal(await saved(), 37, `${path} must not save the draft`)
+  }
+}
+
+async function verifyPendingLearningSettings(browser, url) {
+  const context = await browser.newContext({ serviceWorkers: 'block' })
+  let records = {}, revision = 0, releaseSave, saveStarted = false, bottomEscapes = 0
+  let observeSaveRequest, saveRequestTimeout
+  const saveRequestObserved = new Promise((resolve) => { observeSaveRequest = resolve })
+  const holdSave = new Promise((resolve) => { releaseSave = resolve })
+  try {
+    await context.route('**/*', async (route) => {
+      const request = route.request(), target = new URL(request.url())
+      const json = (body) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
+      if (target.pathname === '/api/app/health') return json({
+        profileId: 'settings-browser-fixture', instanceId: 'settings-fixture-instance',
+        liveness: { ready: true }, contractValid: true, profileEvidenceReady: true,
+        ownerRegistry: { valid: true }, domains: [{ domain: 'passage-preview', authority: 'authoritative', queryCapability: 'read-only', commandCapability: 'writable' }],
+      })
+      if (target.pathname === '/api/app/owner') {
+        const body = request.postDataJSON(), command = body.kind === 'command'
+          && body.domain === 'passage-preview' && body.operation === 'legacy-import'
+        if (command) {
+          saveStarted = true
+          observeSaveRequest()
+          await holdSave
+          records = { ...records, ...body.payload.records }
+          revision += 1
+        }
+        const fingerprint = `sha256:${'a'.repeat(64)}`
+        return json({
+          contractVersion: body.contractVersion, requestId: body.requestId, correlationId: body.correlationId,
+          domain: body.domain, operation: body.operation, outcome: command ? 'committed' : 'read',
+          commitStatus: command ? 'committed' : 'not-applicable', revision, error: null,
+          payload: { records }, receipt: command ? {
+            receiptId: `settings-fixture-${revision}`, contractVersion: body.contractVersion,
+            profileId: body.payload.profileId, instanceId: body.payload.instanceId,
+            requestId: body.requestId, correlationId: body.correlationId, domain: body.domain, operation: body.operation,
+            idempotencyKey: body.idempotencyKey, expectedRevision: body.expectedRevision,
+            requestFingerprint: fingerprint, commitStatus: 'committed', revision, effectFingerprint: fingerprint,
+            recordChecksums: [fingerprint], evidenceChecksum: fingerprint, evidenceSource: 'settings-browser-fixture',
+            createdAt: '2026-10-03T00:00:00.000Z', committedAt: '2026-10-03T00:00:00.000Z', queryOperation: 'receipt-query',
+          } : null,
+        })
+      }
+      if (target.pathname.startsWith('/api/')) return json(target.pathname.includes('snapshot') ? { jobs: [], revision: 0 } : target.pathname.includes('recent') ? [] : { status: 'idle', ok: true })
+      if (target.origin === new URL(url).origin) return route.continue()
+      return route.abort()
+    })
+    const page = await context.newPage()
+    await page.goto(url, { waitUntil: 'domcontentloaded' })
+    await page.getByRole('button', { name: '预习设置', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: '预习设置', exact: true })
+    const input = dialog.getByRole('spinbutton', { name: '每组预习数量' })
+    await page.waitForFunction(() => !document.querySelector('.passage-preview-learning-settings-dialog input')?.disabled)
+    await input.fill('41')
+    await page.evaluate(() => {
+      window.__settingsBottomEscapes = 0
+      document.addEventListener('keydown', (event) => { if (event.key === 'Escape') window.__settingsBottomEscapes += 1 })
+    })
+    await dialog.getByRole('button', { name: '保存设置' }).click()
+    await Promise.race([
+      saveRequestObserved,
+      new Promise((_, reject) => {
+        saveRequestTimeout = setTimeout(() => reject(new Error('Timed out waiting for the passage-preview legacy-import save request')), 10_000)
+      }),
+    ])
+    clearTimeout(saveRequestTimeout)
+    await page.waitForFunction(() => document.querySelector('.passage-preview-learning-settings-dialog')?.getAttribute('aria-busy') === 'true')
+    assert.ok(saveStarted, 'the real owner save command must be pending')
+    assert.ok(await input.isDisabled())
+    assert.ok(await dialog.getByRole('button', { name: '取消' }).isDisabled())
+    await page.keyboard.press('Escape')
+    await dialog.getByRole('button', { name: '关闭预习设置' }).click()
+    await page.locator('.passage-preview-shortcut-backdrop').click({ position: { x: 2, y: 2 } })
+    for (const key of ['Tab', 'Shift+Tab']) {
+      await page.keyboard.press(key)
+      assert.ok(await dialog.evaluate((node) => node.contains(document.activeElement)))
+    }
+    assert.ok(await dialog.isVisible())
+    bottomEscapes = await page.evaluate(() => window.__settingsBottomEscapes)
+    assert.equal(bottomEscapes, 0, 'saving-time Escape must not reach the reader')
+    releaseSave()
+    await dialog.waitFor({ state: 'hidden' })
+    assert.ok(await page.getByRole('button', { name: '预习设置', exact: true }).evaluate((node) => node === document.activeElement))
+    await page.getByRole('button', { name: '预习设置', exact: true }).click()
+    await page.waitForFunction(() => !document.querySelector('.passage-preview-learning-settings-dialog input')?.disabled)
+    assert.equal(await input.inputValue(), '41')
+    await page.keyboard.press('Escape')
+    await dialog.waitFor({ state: 'hidden' })
+  } finally {
+    clearTimeout(saveRequestTimeout)
+    releaseSave()
+    await context.close()
+  }
 }
 
 run().catch((error) => {

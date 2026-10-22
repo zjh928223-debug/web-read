@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 
 const source = await fs.readFile(
-  new URL('../src/components/YouTubeWorkflowPanel.vue', import.meta.url),
+  new URL('../src/composables/use-reader-session-persistence.js', import.meta.url),
   'utf8',
 )
 const coordinatorSource = await fs.readFile(
@@ -61,6 +61,13 @@ assert.doesNotMatch(source, /function readerMarksFingerprint\(/)
 assert.doesNotMatch(source, /function startReaderMarksHydration\(/)
 assert.match(source, /readerUnloadFlushed/)
 assert.match(source, /handleBeforeUnload\(\)/)
+assert.match(source, /registerLoadCancellation\(cancel\)/)
+assert.match(source, /if \(!isCurrentLoad\(token\)\) return false/)
+assert.match(source, /const currentJobId = ref\(''\)/)
+assert.match(source, /currentJobId: readonly\(currentJobId\)/)
+assert.match(source, /recentReaderSubscribers\.delete\(subscriber\)/)
+assert.match(source, /if \(started \|\| stopped\) return/)
+assert.match(source, /if \(stopped\) return/)
 assert.match(source, /import \{[\s\S]*createReaderOutboxEntry,[\s\S]*removeReaderOutboxEntry,[\s\S]*\} from '\.\.\/services\/persistence\/reader-outbox-storage\.js'/)
 assert.match(source, /isTrustedReaderMarksOutboxEntry/)
 assert.match(source, /READER_MARKS_OUTBOX_SOURCE/)

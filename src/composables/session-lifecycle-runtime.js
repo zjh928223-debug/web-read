@@ -84,7 +84,7 @@ export function startSessionLifecycleRuntime(deps = {}) {
         initDB: globals.initDB,
         clearPersistedReaderContentOnStartup: startupCleanupRuntime.clearPersistedReaderContentOnStartup,
         updateChunkCnHoldBtn: globals.updateChunkCnHoldBtn,
-        restoreSession: sessionRestoreRuntime.restoreSession
+        emitAnnotationDiagnostics: annotationRuntime.emitAnnotationDiagnostics
     });
     own(startupRuntime);
 
@@ -99,6 +99,8 @@ export function startSessionLifecycleRuntime(deps = {}) {
         hotkeyChunkShadowInput: domRefs.hotkeyChunkShadowInput,
         hotkeyBackwardInput: domRefs.hotkeyBackwardInput,
         hotkeyForwardInput: domRefs.hotkeyForwardInput,
+        hotkeyPrevAnnotationWordInput: domRefs.hotkeyPrevAnnotationWordInput,
+        hotkeyNextAnnotationWordInput: domRefs.hotkeyNextAnnotationWordInput,
         highlightColorInput: domRefs.highlightColorInput,
         sentenceColorInput: domRefs.sentenceColorInput
     });

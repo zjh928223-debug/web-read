@@ -3,7 +3,7 @@ const path = require('path');
 const { chromium } = require('playwright');
 
 const targetUrl = process.env.READ_WEB_URL || 'http://127.0.0.1:4173/';
-const artifactsDir = path.join(process.cwd(), '.playwright-artifacts');
+const artifactsDir = process.env.READ_WEB_ARTIFACTS_DIR || path.join(process.cwd(), '.playwright-artifacts');
 const screenshotPath = path.join(artifactsDir, 'read-web-load.png');
 const reportPath = path.join(artifactsDir, 'read-web-load-report.json');
 
@@ -88,6 +88,9 @@ async function main() {
     });
   });
 
+  if (process.env.READ_WEB_BROWSER_FIXTURE) {
+    await require(path.resolve(process.env.READ_WEB_BROWSER_FIXTURE))(page.context());
+  }
   const gotoResponse = await page.goto(targetUrl, { waitUntil: 'load', timeout: 30000 });
   const vueMountWaitStartedAt = Date.now();
   let vueMountWait = {
