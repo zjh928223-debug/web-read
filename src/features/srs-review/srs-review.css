@@ -22,10 +22,10 @@ html.srs-review-standalone-document body {
 }
 
 .srs-review-page {
-  --srs-border: var(--learning-border);
-  --srs-text: var(--learning-foreground);
-  --srs-muted: var(--learning-muted-foreground);
-  --srs-primary: var(--learning-primary);
+  --srs-border: #dfe4ed;
+  --srs-text: #17233a;
+  --srs-muted: #6f7b90;
+  --srs-primary: #3158c8;
   display: flex;
   flex-direction: column;
   height: 100dvh;
@@ -34,7 +34,7 @@ html.srs-review-standalone-document body {
   color: var(--srs-text);
   font-family: Arial, sans-serif;
   font-synthesis: none;
-  background: var(--learning-background);
+  background: radial-gradient(circle at 50% -18%, rgba(49, 88, 200, .06), transparent 34%), #f7f8fb;
 }
 
 .srs-review-page.is-overlay {
@@ -809,7 +809,6 @@ html.srs-review-standalone-document body {
 .srs-review-play-sequence {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
 }
 
 .srs-review-play-sequence svg {
@@ -953,7 +952,7 @@ html.srs-review-standalone-document body {
 .srs-review-save-status {
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 1.2fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px 24px;
   align-items: center;
   padding: 10px clamp(28px, 4vw, 64px);
@@ -1029,9 +1028,6 @@ html.srs-review-standalone-document body {
 
 .srs-review-save-retry {
   flex: 0 0 auto;
-  min-height: 28px;
-  padding: 3px 8px;
-  font-size: 11px;
 }
 
 .srs-review-completion-counts {
@@ -1302,5 +1298,104 @@ html.srs-review-standalone-document body {
 
   to {
     opacity: 1;
+  }
+}
+
+/* B layout: page-local sizing for the existing shared Button. */
+.srs-review-page .srs-review-header {
+  flex: 0 0 auto;
+  background: rgba(255, 255, 255, .88);
+}
+
+.srs-review-page .srs-review-header button[data-ui-owner="learning"] {
+  min-height: 28px;
+  height: auto;
+  padding: 5px 8px;
+  color: var(--srs-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.srs-review-page .srs-review-summary {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.srs-review-page .srs-review-speaker[data-ui-owner="learning"] {
+  border: 1px solid var(--srs-border);
+  border-radius: 50%;
+  background: #fff;
+  color: #6f7b90;
+}
+
+.srs-review-page .srs-review-word-toolbar button[data-ui-owner="learning"] {
+  min-height: 30px;
+  height: auto;
+  padding: 5px 7px;
+  gap: 5px;
+  color: #7b8799;
+  font-size: 11px;
+}
+
+.srs-review-page .srs-review-actions {
+  background: rgba(255, 255, 255, .92);
+}
+
+.srs-review-page .srs-review-actions button[data-ui-owner="learning"] {
+  flex: 0 1 150px;
+  min-width: 118px;
+  min-height: 44px;
+  height: auto;
+  padding: 9px 16px;
+  border: 1px solid var(--srs-border);
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.srs-review-page .srs-review-actions :is(.srs-review-reveal, .srs-review-next)[data-ui-owner="learning"] {
+  border-color: #3158c8;
+  background: #3158c8;
+  color: #fff;
+}
+
+.srs-review-page .srs-review-history {
+  width: min(420px, calc(100vw - 24px));
+  max-height: calc(100dvh - 100px);
+  overflow: auto;
+  color: var(--srs-text);
+  background: #fff;
+}
+
+.srs-review-page .srs-review-history .srs-review-rating-help {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  text-align: left;
+}
+
+.srs-review-save-status-list {
+  max-height: 140px;
+  overflow: auto;
+}
+
+@media (max-width: 820px) {
+  .srs-review-page .srs-review-summary {
+    flex-wrap: wrap;
+    max-width: 140px;
+  }
+
+  .srs-review-page .srs-review-word-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "play" "remove";
+    gap: 8px;
+  }
+
+  .srs-review-page .srs-review-actions button[data-ui-owner="learning"] {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 8px;
+    font-size: 13px;
   }
 }

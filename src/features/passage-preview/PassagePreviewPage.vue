@@ -15,6 +15,10 @@
       </div>
       <div class="passage-preview-header-meta">
         <p v-if="progressReady && items.length" class="srs-review-progress" aria-live="polite">预习 {{ currentIndex + 1 }} / {{ items.length }}</p>
+          <Button variant="ghost" size="default" data-ui-owner="learning" type="button"
+            :aria-expanded="infoOpen" aria-controls="passage-preview-info"
+            @click="infoOpen = !infoOpen"
+          >本组信息</Button>
           <Button
             variant="ghost"
             size="default"
@@ -36,7 +40,7 @@
       </div>
     </header>
 
-    <section class="passage-preview-entry-panel" :class="`is-${entryState}`" aria-live="polite" role="status">
+    <section v-if="entryState !== ENTRY_STATES.READY" class="passage-preview-entry-panel" :class="`is-${entryState}`" aria-live="polite" role="status">
       <div>
         <p class="passage-preview-entry-label">{{ entryCopy.label }}</p>
         <h2>{{ entryCopy.title }}</h2>
@@ -63,6 +67,15 @@
       </div>
     </section>
 
+    <section v-if="infoOpen" id="passage-preview-info" class="passage-preview-info" aria-label="本组信息">
+      <header><h2>本组信息</h2><Button variant="ghost" size="default" data-ui-owner="learning" type="button" @click="infoOpen = false">关闭说明</Button></header>
+      <p>{{ entryCopy.description }}</p>
+      <p>当前读取来源：{{ entrySourceLabel }}</p>
+      <p v-if="currentContactStatus">当前词：{{ currentContactStatusLabel }}。</p>
+      <div v-if="entryState === ENTRY_STATES.READY" class="passage-preview-entry-actions">
+        <Button variant="outline" size="default" data-ui-owner="learning" type="button" @click="emit('request-import')">导入新版词包</Button>
+        <Button variant="outline" size="default" data-ui-owner="learning" type="button" @click="emit('retry')">重新读取</Button>
+      </div>
     <section v-if="items.length" class="passage-preview-group-summary" aria-labelledby="passage-preview-group-title">
       <header>
         <div>
@@ -86,6 +99,9 @@
     </section>
 
     <p v-if="queueNotice" class="passage-preview-queue-notice" role="status">{{ queueNotice }}</p>
+    </section>
+
+    <p v-if="currentContactStatus === 'failed'" class="srs-review-inline-error" role="alert">{{ currentContactStatusLabel }}。</p>
 
     <section v-if="items.length && !progressReady" class="srs-review-state passage-preview-owner-state" aria-live="polite" role="status">
       <h2>{{ progressLoadError ? '首次接触进度暂不可用' : '正在恢复首次接触进度…' }}</h2>
@@ -137,9 +153,6 @@
                 <small v-if="displayedPrimarySenseStatus !== 'resolved'">尚未达到多来源义项共识，不代表固定使用比例。</small>
               </div>
             </div>
-            <p v-if="currentContactStatus" class="passage-preview-contact-status" role="status">
-              首次接触证据已保存；{{ currentContactStatusLabel }}。
-            </p>
             <p v-if="pronunciationNotice" class="srs-review-inline-notice" role="status">{{ pronunciationNotice }}</p>
           </div>
         </article>
@@ -147,7 +160,8 @@
         <article class="srs-review-context passage-preview-context" :aria-label="isAiGeneratedSentence ? 'AI 辅助例句' : realSentence ? '简短真实语境' : '当前词对应句子'">
           <h2>{{ isAiGeneratedSentence ? 'AI 辅助例句' : realSentence ? '简短真实语境' : '当前词对应句子' }}</h2>
           <div class="passage-preview-context-body">
-            <section v-if="realSentence" class="passage-preview-real-sentence">
+            <p v-if="!isRevealed" class="passage-preview-sentence-state">先回忆词义，再看看这个词怎么用。</p>
+            <section v-else-if="realSentence" class="passage-preview-real-sentence">
               <div class="passage-preview-sentence-line">
                 <p data-preview-current-sentence>
                   <template v-for="(part, index) in highlightedSentence" :key="`${part.text}-${index}`">
@@ -414,6 +428,7 @@ const translationDisplayMode = ref(loadPassagePreviewTranslationDisplayMode())
 const sentenceTranslationVisible = ref(false)
 const translationHoldActive = ref(false)
 const shortcutSettingsOpen = ref(false)
+const infoOpen = ref(false)
 const shortcutDialogRoot = ref(null)
 const shortcutDialogController = createDialogController()
 const shortcutEditingAction = ref('')
@@ -525,6 +540,7 @@ async function revealLearningContent() {
   if (current.value.id === item.id) {
     loadSentence()
     sentenceTranslationVisible.value = translationDisplayMode.value === TRANSLATION_DISPLAY_MODES.PERSISTENT
+    scheduleVisibleContactCheck()
   }
 }
 
@@ -542,7 +558,7 @@ async function speakWord() {
 }
 
 async function speakSentence() {
-  if (realSentence.value?.sentence) await speak(realSentence.value.sentence, 'sentence')
+  if (isRevealed.value && realSentence.value?.sentence) await speak(realSentence.value.sentence, 'sentence')
 }
 
 async function speak(text, phase) {
@@ -655,6 +671,12 @@ function toggleTranslationDisplayMode() {
 
 function handleShortcutKeydown(event) {
   if (isComposingKeyboardEvent(event)) return
+  if (infoOpen.value) {
+    if (event.key === 'Escape') infoOpen.value = false
+    if (passagePreviewActionForKeyboardEvent(event, shortcuts) && !event.target?.closest?.('button, a, input, select, textarea')) event.preventDefault()
+    event.stopPropagation()
+    return
+  }
   if (shortcutSettingsOpen.value) {
     if (!shortcutEditingAction.value) {
       if (event.key === 'Tab') return
@@ -843,6 +865,7 @@ function canInteract() {
     && !progressWriteError.value
     && !props.interactionBlocked
     && !shortcutSettingsOpen.value
+    && !infoOpen.value
     && !document.hidden
 }
 
@@ -923,6 +946,8 @@ async function recordVisibleContact() {
     || entryState.value !== ENTRY_STATES.READY
     || props.interactionBlocked
     || shortcutSettingsOpen.value
+    || infoOpen.value
+    || !isRevealed.value
     || progressWriteError.value
     || document.hidden
   ) return
@@ -943,6 +968,8 @@ async function recordVisibleContact() {
     if (
       token !== currentContactToken
       || shortcutSettingsOpen.value
+      || infoOpen.value
+      || !isRevealed.value
       || props.interactionBlocked
       || document.hidden
       || progress.firstContacts[item.id]
@@ -1045,6 +1072,13 @@ watch(upcomingSentenceTexts, (texts) => {
 watch(() => props.preloadedSentences, () => {
   scheduleVisibleContactCheck()
 }, { deep: true })
+
+watch(infoOpen, (open) => {
+  currentContactToken += 1
+  releaseTranslationHold()
+  if (open) stopPlayback()
+  else scheduleVisibleContactCheck()
+})
 
 watch(shortcutSettingsOpen, async (open) => {
   currentContactToken += 1

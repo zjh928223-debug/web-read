@@ -174,6 +174,36 @@
   gap: 9px;
 }
 
+.passage-preview-info {
+  position: absolute;
+  z-index: 25;
+  top: 78px;
+  right: 24px;
+  width: min(720px, calc(100% - 48px));
+  max-height: calc(100dvh - 110px);
+  overflow: auto;
+  padding: 20px;
+  border: 1px solid var(--srs-border);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 16px 40px rgba(28, 42, 70, .12);
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.passage-preview-info > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.passage-preview-info h2 { margin: 0; font-size: 16px; }
+.passage-preview-info .passage-preview-group-summary,
+.passage-preview-info .passage-preview-queue-notice { width: 100%; margin: 12px 0 0; }
+.passage-preview-info .passage-preview-group-summary > header { flex-wrap: wrap; gap: 8px; }
+.passage-preview-info .passage-preview-group-summary li { grid-template-columns: 1fr; gap: 2px; }
+
 .passage-preview-header-meta .srs-review-progress {
   margin: 0;
 }

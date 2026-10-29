@@ -25,6 +25,10 @@
         </p>
       </div>
       <div ref="historyContainer" class="srs-review-summary">
+        <Button variant="ghost" size="default" data-ui-owner="learning" type="button"
+          :aria-expanded="infoOpen" aria-controls="srs-review-info"
+          @click="infoOpen = !infoOpen; historyOpen = false; shortcutEditingTarget = ''"
+        >复习说明</Button>
         <Button
           variant="ghost"
           size="default"
@@ -33,7 +37,7 @@
           type="button"
           :aria-expanded="historyOpen"
           :aria-controls="historyId"
-          @click="historyOpen = !historyOpen"
+          @click="historyOpen = !historyOpen; infoOpen = false"
         >
           快捷键
         </Button>
@@ -88,25 +92,18 @@
           </ul>
           <p v-else>还没有复习记录</p>
         </section>
+        <section v-if="infoOpen" id="srs-review-info" class="srs-review-history" aria-label="复习说明">
+          <h2>复习说明</h2>
+          <p>{{ review.queueSummary.value || '复习队列' }}</p>
+          <p>{{ review.sourceReasonLabel.value }}<span v-if="review.currentEnqueueReasonLabel.value"> · {{ review.currentEnqueueReasonLabel.value }}</span></p>
+          <div class="srs-review-rating-help" aria-label="四档评分说明">
+            <p v-for="action in review.actions" :key="action.tone">
+              <strong>{{ action.label }}</strong>：{{ ratingExplanation(action) }}
+            </p>
+          </div>
+        </section>
       </div>
     </header>
-
-    <section
-      v-if="!review.loading.value && (review.queueSummary.value || props.standalone)"
-      class="srs-review-queue-banner"
-      aria-label="复习队列说明"
-    >
-      <div class="srs-review-queue-copy">
-        <strong>{{ review.queueSummary.value || '复习队列' }}</strong>
-        <p>
-          {{ review.sourceReasonLabel.value }}
-          <span v-if="review.currentEnqueueReasonLabel.value"> · {{ review.currentEnqueueReasonLabel.value }}</span>
-        </p>
-        <p v-if="props.standalone && props.standaloneNotice" class="is-standalone">
-          {{ props.standaloneNotice }}
-        </p>
-      </div>
-    </section>
 
     <section
       v-if="props.legacyMigration && migrationStatus && migrationFailed"
@@ -146,8 +143,8 @@
         <p v-if="review.ratingBlocked.value">新的评分已暂停；请先处理下面的原评分状态。</p>
         <p v-else-if="review.completionPendingSave.value">所有评分确认后，本批才会显示为完成。</p>
       </div>
-      <ul class="srs-review-save-status-list">
-        <li v-for="item in review.saveItems.value.slice().reverse()" :key="item.itemId">
+      <ul v-if="unresolvedSaveItems.length" class="srs-review-save-status-list">
+        <li v-for="item in unresolvedSaveItems" :key="item.itemId">
           <span class="srs-review-save-item-copy">
             <strong>{{ item.wordLabel }} · {{ item.ratingLabel }}</strong>
             <small>{{ item.statusLabel }}</small>
@@ -528,11 +525,6 @@
           <kbd>{{ action.shortcut }}</kbd>
         </Button>
         </template>
-        <div v-if="flowState.answerRevealed" class="srs-review-rating-help" aria-label="四档评分说明">
-          <p v-for="action in review.actions" :key="`rating-help-${action.tone}`">
-            <strong>{{ action.label }}</strong>：{{ ratingExplanation(action) }}
-          </p>
-        </div>
       </footer>
     </template>
   </main>
@@ -586,6 +578,9 @@ const audioElement = ref(null)
 const pronunciationAudio = ref(null)
 
 const historyOpen = ref(false)
+const infoOpen = ref(false)
+const unresolvedSaveItems = computed(() => review.saveItems.value
+  .filter((item) => ['failed', 'unknown'].includes(item.status)).slice().reverse())
 const historyContainer = ref(null)
 const flowNotice = ref('')
 
@@ -775,13 +770,15 @@ function deactivateReviewPage() {
   window.removeEventListener('keydown', handleReviewShortcut, true)
   document.removeEventListener('pointerdown', handleHistoryOutsidePointer, true)
   historyOpen.value = false
+  infoOpen.value = false
   shortcutEditingTarget.value = ''
   stopAndReleaseAudio()
 }
 
 function handleHistoryOutsidePointer(event) {
-  if (!historyOpen.value || historyContainer.value?.contains(event.target)) return
+  if (historyContainer.value?.contains(event.target)) return
   historyOpen.value = false
+  infoOpen.value = false
   shortcutEditingTarget.value = ''
 }
 
@@ -892,8 +889,12 @@ function handleReviewShortcut(event) {
     || event.isComposing
     || isTypingTarget(event.target)
   ) return
-  if (historyOpen.value && getReviewActionForShortcut(event.key)) {
-    event.preventDefault()
+  if (historyOpen.value || infoOpen.value) {
+    if (event.key === 'Escape') {
+      historyOpen.value = false
+      infoOpen.value = false
+    }
+    if (event.key !== 'Tab' && !historyContainer.value?.contains(event.target)) event.preventDefault()
     event.stopPropagation()
     return
   }
