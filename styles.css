@@ -3746,9 +3746,7 @@ body {
 }
 /* Annotation browsing is a separate cursor from the audio playback highlight. */
 .reading-area .annotation-word-selected {
-    outline: 2px solid var(--text-main, currentColor);
-    outline-offset: 2px;
-    border-radius: 3px;
+    border-bottom: 1px solid #9ca3af;
 }
 .annotation-navigation-controls {
     flex-wrap: wrap;
