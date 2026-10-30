@@ -10,10 +10,10 @@
     <TranscriptContainer />
     <ChunkModeView />
     <Teleport to="#srs-review-entry-root">
-      <span class="learning-entry-group">
+      <span class="learning-entry-group rw:inline-flex rw:flex-wrap rw:items-center rw:gap-4 rw:min-w-0 rw:max-w-full">
         <Button
-          variant="outline"
-          size="default"
+          variant="floating"
+          size="reader"
           data-ui-owner="reader"
           class="learning-entry-button"
           type="button"
@@ -21,8 +21,8 @@
           @click="openSrsReview"
         >今日复习</Button>
         <Button
-          variant="outline"
-          size="default"
+          variant="floating"
+          size="reader"
           data-ui-owner="reader"
           class="learning-entry-button"
           type="button"
@@ -30,8 +30,8 @@
           @click="openPassagePreview"
         >待预习</Button>
         <Button
-          variant="outline"
-          size="default"
+          variant="floating"
+          size="reader"
           data-ui-owner="reader"
           class="learning-entry-button"
           type="button"

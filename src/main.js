@@ -78,33 +78,38 @@ const readerToolbarButtonIds = [
   'btn-annotation-backfill-ai',
   'btn-settle-article-vocabulary',
   'btn-chunk-focus',
+  'btn-prev-annotation-word',
+  'btn-next-annotation-word',
+  'lbl-audio',
+  'lbl-transcript',
+  'annotation-mark-count',
 ]
 
 readerToolbarButtonIds.forEach((id) => {
   applyNativeControlStyles(document.getElementById(id), {
     owner: 'reader',
-    variant: 'outline',
-    size: 'default',
+    variant: 'floating',
+    size: 'reader',
   })
 })
 
 document.querySelectorAll('.speed-btn[data-speed]').forEach((button) => {
   applyNativeControlStyles(button, {
     owner: 'reader',
-    variant: 'outline',
-    size: 'default',
+    variant: 'floating',
+    size: 'reader',
   })
 })
 
 applyNativeControlStyles(document.getElementById('btn-chunk-cn-hold'), {
   owner: 'reader',
-  variant: 'outline',
-  size: 'default',
+  variant: 'floating',
+  size: 'reader',
 })
 applyNativeControlStyles(document.getElementById('btn-chunk-style'), {
   owner: 'reader',
-  variant: 'outline',
-  size: 'default',
+  variant: 'floating',
+  size: 'reader',
 })
 
 const readerHotkeyInputIds = [
@@ -114,15 +119,21 @@ const readerHotkeyInputIds = [
   'hotkey-chunk-shadow-input',
   'hotkey-backward-input',
   'hotkey-forward-input',
+  'hotkey-prev-annotation-word-input',
+  'hotkey-next-annotation-word-input',
 ]
 
 readerHotkeyInputIds.forEach((id) => {
-  applyNativeInputStyles(document.getElementById(id))
+  applyNativeInputStyles(document.getElementById(id), {
+    variant: 'floating',
+    size: 'reader',
+    className: 'rw:field-sizing-content rw:w-auto rw:justify-self-start',
+  })
 })
 
 applyNativeControlStyles(document.getElementById('theme-toggle'), {
   owner: 'reader',
-  variant: 'outline',
+  variant: 'floating',
   size: 'icon',
   className: 'rw:rounded-full rw:p-0',
 })

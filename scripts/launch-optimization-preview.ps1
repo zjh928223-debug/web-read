@@ -2,6 +2,7 @@ param(
   [switch]$NoOpen,
   [switch]$Stop,
   [switch]$DevFallback,
+  [switch]$UseActiveRelease,
   [switch]$EnableOwnerMigration,
   [switch]$EnableOwnerPromotion,
   [string]$ApplicationProfileAuthorityIsolationRoot = '',
@@ -15,6 +16,9 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if ($EnableOwnerPromotion -and -not $EnableOwnerMigration) {
   throw 'Owner promotion requires -EnableOwnerMigration.'
+}
+if ($UseActiveRelease -and ($DevFallback -or $EnableOwnerMigration -or $EnableOwnerPromotion)) {
+  throw 'UseActiveRelease cannot change runtime mode or owner migration settings.'
 }
 Import-Module (Join-Path $PSScriptRoot 'launcher-instance-manager.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'optimization-launch-runtime.psm1') -Force -DisableNameChecking
@@ -1444,25 +1448,34 @@ try {
   $activeIntegrity = if ($null -ne $activeRelease) {
     Test-OptimizationReleaseIntegrity -Release $activeRelease -NodePath $nodePath -ReleaseHealthScript $releaseHealthScript
   } else { [pscustomobject]@{ passed = $false; manifestSha256 = ''; failures = @('no active release') } }
-  $sourceFingerprint = Get-OptimizationSourceFingerprint `
-    -ProjectRoot $projectRoot `
-    -WorkflowRoot $workflowRoot `
-    -RuntimeConfigPath $runtimeConfigPath `
-    -CapabilityScript $capabilityScript `
-    -BackupScript $backupScript `
-    -FrontDoorScript $frontDoorScript `
-    -NodePath $nodePath `
-    -NpmPath $npmCommand.Source `
-    -PythonPath $pythonPath `
-    -FfmpegPath $configuredFfmpegPath `
-    -YtDlpPath $configuredYtDlpPath `
-    -WhisperxPath $configuredWhisperxPath
-  $activeToolchainSha = if ($null -ne $activeRelease) { Get-OptimizationObjectText -Object $activeRelease -Name 'toolchainSha256' } else { '' }
-  $activeReusable = $null -ne $activeRelease `
-    -and $activeIntegrity.passed `
-    -and $activeRelease.sourceSha256 -eq $sourceFingerprint.sha256 `
-    -and $activeToolchainSha -and $activeToolchainSha -eq [string]$sourceFingerprint.toolchainSha256 `
-    -and (Test-OptimizationReleaseCompatibility -Release $activeRelease)
+  if ($UseActiveRelease) {
+    if ($null -eq $activeRelease -or -not $activeIntegrity.passed `
+        -or -not (Test-OptimizationReleaseCompatibility -Release $activeRelease)) {
+      throw 'The published release is missing or damaged; refusing to rebuild it.'
+    }
+    # Start the published version without comparing development/toolchain fingerprints.
+    $activeReusable = $true
+  } else {
+    $sourceFingerprint = Get-OptimizationSourceFingerprint `
+      -ProjectRoot $projectRoot `
+      -WorkflowRoot $workflowRoot `
+      -RuntimeConfigPath $runtimeConfigPath `
+      -CapabilityScript $capabilityScript `
+      -BackupScript $backupScript `
+      -FrontDoorScript $frontDoorScript `
+      -NodePath $nodePath `
+      -NpmPath $npmCommand.Source `
+      -PythonPath $pythonPath `
+      -FfmpegPath $configuredFfmpegPath `
+      -YtDlpPath $configuredYtDlpPath `
+      -WhisperxPath $configuredWhisperxPath
+    $activeToolchainSha = if ($null -ne $activeRelease) { Get-OptimizationObjectText -Object $activeRelease -Name 'toolchainSha256' } else { '' }
+    $activeReusable = $null -ne $activeRelease `
+      -and $activeIntegrity.passed `
+      -and $activeRelease.sourceSha256 -eq $sourceFingerprint.sha256 `
+      -and $activeToolchainSha -and $activeToolchainSha -eq [string]$sourceFingerprint.toolchainSha256 `
+      -and (Test-OptimizationReleaseCompatibility -Release $activeRelease)
+  }
   $testFailure = [string]$env:READ_WEB_OPTIMIZATION_TEST_FAILURE
   $testKillPhase = [string]$env:READ_WEB_OPTIMIZATION_TEST_KILL_PHASE
   $requireCleanCandidate = [string]$env:READ_WEB_OPTIMIZATION_RELEASE_CANDIDATE -eq '1'

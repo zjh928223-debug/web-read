@@ -158,7 +158,7 @@ async function main() {
     };
   });
 
-  await page.locator('#reader-settings > summary').click();
+  await page.locator('#reader-settings-toggle').click();
   await page.click('#hotkey-backward-input');
   const hotkeyWaitingUi = await page.evaluate(() => {
     const input = document.getElementById('hotkey-backward-input');

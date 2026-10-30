@@ -12,12 +12,15 @@ export const buttonVariants = cva(
           'rw:border rw:bg-background rw:shadow-xs rw:hover:bg-accent rw:hover:text-accent-foreground rw:dark:bg-input/30 rw:dark:border-input rw:dark:hover:bg-input/50',
         secondary:
           'rw:bg-secondary rw:text-secondary-foreground rw:hover:bg-secondary/80',
+        floating:
+          'rw:rounded-full rw:border-0 rw:bg-floating rw:text-foreground rw:shadow-[0_2px_8px_rgb(0_0_0/0.16)] rw:hover:bg-floating-hover rw:hover:text-accent-foreground rw:no-underline rw:[&.on]:ring-1 rw:[&.active]:ring-1 rw:[&.speed-button-active]:ring-1 rw:[&.loaded]:ring-1 rw:ring-border rw:motion-reduce:transition-none',
         ghost:
           'rw:hover:bg-accent rw:hover:text-accent-foreground rw:dark:hover:bg-accent/50',
         link: 'rw:text-primary rw:underline-offset-4 rw:hover:underline',
       },
       size: {
         default: 'rw:h-9 rw:px-4 rw:py-2 rw:has-[>svg]:px-3',
+        reader: 'rw:h-9 rw:min-h-9 rw:min-w-16 rw:px-3.5 rw:py-0 rw:text-[15px] rw:leading-[22px]',
         xs: 'rw:h-6 rw:gap-1 rw:rounded-md rw:px-2 rw:text-xs rw:has-[>svg]:px-1.5 rw:[&_svg:not([class*="size-"])]:size-3',
         sm: 'rw:h-8 rw:rounded-md rw:gap-1.5 rw:px-3 rw:has-[>svg]:px-2.5',
         lg: 'rw:h-10 rw:px-6 rw:has-[>svg]:px-4',

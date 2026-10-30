@@ -221,10 +221,14 @@ function Invoke-OptimizationBuild {
     [Parameter(Mandatory)][string]$DistRoot
   )
   $viteConfigPath = Get-OptimizationViteConfigPath -ProjectRoot $ProjectRoot
+  # npm scripts run through cmd.exe, which drops PATH when it exceeds 8191
+  # characters. Give only this build process the paths its Node toolchain needs.
+  $buildPath = @((Split-Path -Parent $NpmPath), (Join-Path $env:SystemRoot 'System32'), $env:SystemRoot) -join ';'
   $result = Invoke-OptimizationProcessCapture `
     -FilePath $NpmPath `
     -ArgumentList @('run', 'build', '--', '--config', $viteConfigPath, '--outDir', $DistRoot, '--emptyOutDir') `
-    -WorkingDirectory $ProjectRoot
+    -WorkingDirectory $ProjectRoot `
+    -Environment @{ Path = $buildPath }
   if ($result.stdout) { Write-Host $result.stdout.TrimEnd() }
   if ($result.stderr) { Write-Host $result.stderr.TrimEnd() }
   if ($result.exitCode -ne 0) {

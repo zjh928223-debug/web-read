@@ -3,8 +3,8 @@
     <div class="youtube-reader-controls">
       <Button
         type="button"
-        variant="outline"
-        size="default"
+        variant="floating"
+        size="reader"
         class="small-btn youtube-material-entry"
         data-ui-owner="workflow"
         @click="openPanel"
@@ -18,9 +18,9 @@
   </Teleport>
 
   <Teleport to="#reader-article-status-root">
-    <div class="reader-article-status" :aria-busy="openingJobId ? 'true' : 'false'">
-      <strong>{{ openingJobId ? articleTitleBeforeOpen : currentArticleTitle }}</strong>
-      <span role="status" aria-live="polite" aria-atomic="true">{{ readerOpenMessage }}</span>
+    <div class="reader-article-status rw:flex rw:min-w-0 rw:flex-col rw:gap-1 rw:break-words" :aria-busy="openingJobId ? 'true' : 'false'">
+      <strong class="rw:leading-5">{{ openingJobId ? articleTitleBeforeOpen : currentArticleTitle }}</strong>
+      <span class="rw:text-sm rw:leading-5 rw:text-[var(--text-sub)]" role="status" aria-live="polite" aria-atomic="true">{{ readerOpenMessage }}</span>
     </div>
   </Teleport>
 

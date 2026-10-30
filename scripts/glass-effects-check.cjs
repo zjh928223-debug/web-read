@@ -101,8 +101,10 @@ assert.ok(
   'styles should explicitly suppress decorative pseudo-elements on reader control surfaces'
 );
 assert.ok(
-  stylesSource.includes('      background: var(--card-bg);\n      backdrop-filter: none;'),
-  'transcript-header should use the reader card mapping without blur'
+  fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8')
+    .match(/class="transcript-header ([^"]+)"/u)?.[1]
+    .includes('rw:bg-[var(--rw-ui-card)]'),
+  'transcript-header should use the framework reader card background'
 );
 
 function verifyGlassLifecycle() {

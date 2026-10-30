@@ -118,7 +118,7 @@ async function main() {
   }, makeSilentWavDataUrl(6));
 
   await page.waitForSelector('#word-1', { timeout: 10000 });
-  await page.locator('#reader-settings > summary').click();
+  await page.locator('#reader-settings-toggle').click();
   await page.click('#highlight-mode-btn');
   await page.click('#highlight-mode-btn');
   await page.waitForFunction(

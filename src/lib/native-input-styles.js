@@ -1,4 +1,5 @@
 import { inputVariants } from '../components/ui/input/input-styles.js'
+import { buttonVariants } from '../components/ui/button/button-variants.js'
 import { cn } from './utils.js'
 
 const DEFAULT_NATIVE_INPUT_OPTIONS = Object.freeze({
@@ -23,7 +24,9 @@ export function applyNativeInputStyles(element, options = {}) {
     ? 'rw:cursor-text'
     : 'rw:text-center rw:cursor-pointer rw:select-none'
   addClasses(element, cn(
-    inputVariants({ size: settings.size }),
+    settings.variant === 'floating'
+      ? buttonVariants({ variant: 'floating', size: settings.size })
+      : inputVariants({ size: settings.size }),
     interactionClasses,
     settings.className,
   ))

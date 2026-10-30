@@ -1,19 +1,5 @@
 @layer reader-footprint, properties, theme, base, components, utilities;
 
-#reader-article-status-root { min-height: 54px; }
-@media (max-width: 760px) {
-  #reader-article-status-root { min-height: 72px; }
-}
-.reader-article-status {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 0 0 12px;
-  overflow-wrap: anywhere;
-}
-.reader-article-status strong { line-height: 20px; }
-.reader-article-status span { color: var(--text-secondary); font-size: 13px; line-height: 18px; }
-
     :root {
       /* === 鍏ㄥ眬鍙橀噺 === */
       --v-not-spacing: 0px;
@@ -539,16 +525,6 @@ body {
       transition: background-color 0.3s, color 0.3s;
 }
 
-.learning-entry-group {
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
-  flex: 0 0 auto;
-  flex-wrap: wrap;
-  min-width: 0;
-  max-width: 100%;
-}
-
 #srs-review-entry-root {
   display: inline-flex;
   align-items: center;
@@ -567,15 +543,6 @@ body {
   display: inline-flex;
   gap: 8px;
   align-items: center;
-}
-
-#youtube-reader-controls-root {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  min-width: 172px;
-  min-height: 36px;
-  margin-left: auto;
 }
 
 .youtube-workflow {
@@ -1024,11 +991,6 @@ body {
 }
 
 @media (max-width: 640px) {
-  #youtube-reader-controls-root {
-    width: 100%;
-    min-width: 0;
-  }
-
   .youtube-reader-controls {
     width: 100%;
     justify-content: flex-end;
@@ -1159,15 +1121,11 @@ body {
       padding: 0;
       display: flex;
       flex-direction: column;
-      gap: 12px;
     }
 
     /* === 鍙充晶鍔╂墜鍖?=== */
     /* 涓婚鎸夐挳 */
     #theme-controls {
-      position: fixed;
-      top: 10px;
-      left: 20px;
       z-index: 2000;
     }
     #theme-custom-panel {
@@ -1202,35 +1160,6 @@ body {
       cursor: pointer;
     }
     /* === 椤堕儴鎺у埗鏍?=== */
-    .controls {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      align-items: center;
-      gap: 12px;
-      width: 100%;
-      box-sizing: border-box;
-      padding-bottom: 5px;
-      border: 1px solid var(--rw-ui-border);
-      border-bottom: none;
-      background: var(--rw-ui-card);
-      backdrop-filter: none;
-      -webkit-backdrop-filter: none;
-      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
-      border-radius: var(--radius-lg);
-      position: relative;
-      top: auto;
-      z-index: 100;
-      padding: 10px 5px;
-      transition: box-shadow var(--glass-duration-base) var(--glass-ease), background-color var(--glass-duration-base) var(--glass-ease);
-      isolation: isolate;
-      overflow: visible;
-    }
-    @media (min-width: 641px) {
-      .controls {
-        padding-top: 46px;
-      }
-    }
     .controls::before {
       content: none;
     }
@@ -1316,11 +1245,6 @@ body {
     .deprecated-file-entry > summary {
       cursor: pointer;
       list-style: none;
-      padding: 6px 12px;
-      border: 1px solid var(--rw-ui-border);
-      border-radius: 8px;
-      background: var(--rw-ui-secondary);
-      font-weight: 600;
       user-select: none;
     }
     .deprecated-file-entry > summary::-webkit-details-marker {
@@ -1348,23 +1272,6 @@ body {
     .file-btn.loaded { background-color: #e0f2f1; border-color: #26a69a; color: #00695c; font-weight: 500; }
     [data-theme="dark"] .file-btn.loaded { background-color: #004d40; border-color: #26a69a; color: #80cbc4; }
 
-    .extra-controls {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      align-items: center;
-      gap: 10px;
-      background: var(--rw-ui-card);
-      backdrop-filter: none;
-      -webkit-backdrop-filter: none;
-      border: 1px solid var(--rw-ui-border);
-      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
-      border-radius: var(--radius-lg);
-      padding: 9px 10px;
-      position: relative;
-      isolation: isolate;
-      overflow: hidden;
-    }
     .extra-controls::before,
     .transcript-header::before,
     #transcript-container::before {
@@ -1389,14 +1296,6 @@ body {
       content: none;
     }
 
-    audio {
-      width: 100%;
-      height: 32px;
-      margin-top: 2px;
-      border-radius: 12px;
-      background: color-mix(in srgb, var(--glass-panel-bg) 82%, transparent);
-      box-shadow: inset 1px 1px 0 rgba(255,255,255,0.58), var(--glass-shadow-sm);
-    }
     .control-group {
       display: inline-flex;
       align-items: center;
@@ -1493,25 +1392,6 @@ body {
       }
     }
 
-    .transcript-header {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      flex-wrap: wrap;
-      margin-top: 5px;
-      background: var(--card-bg);
-      backdrop-filter: none;
-      -webkit-backdrop-filter: none;
-      border: 1px solid var(--border-color);
-      box-shadow: var(--glass-shadow-sm);
-      border-radius: var(--radius-lg);
-      padding: 10px;
-      position: relative;
-      isolation: isolate;
-      overflow: visible;
-    }
-
     /* Reader control surfaces are solid cards; shared glass classes must not
        restore the decorative pseudo-elements on these three owners. */
     .controls::before,
@@ -1527,7 +1407,7 @@ body {
     }
 
     .transcript-actions {
-        display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center;
+        display: flex; align-items: center; flex-wrap: wrap; justify-content: center;
         width: 100%;
         min-width: 0;
         position: relative;
@@ -1639,10 +1519,6 @@ body {
       align-items: center;
       cursor: default;
       pointer-events: none;
-      color: var(--muted-text) !important;
-      background: rgba(255, 255, 255, 0.48) !important;
-      border-color: rgba(100, 116, 139, 0.22);
-      font-weight: 600;
       white-space: nowrap;
     }
     .mark-count-badge[data-count]:not([data-count="0"]) {
@@ -1668,7 +1544,6 @@ body {
     [data-ui-owner="reader"].hotkey-input-wide {
       color: var(--foreground);
       -webkit-text-fill-color: var(--foreground);
-      background-color: var(--background);
       caret-color: var(--foreground);
     }
     .modal-backdrop {
@@ -3883,63 +3758,21 @@ body {
     color: var(--text-sub, inherit);
 }
 
-.reader-mode-switch,
-.reader-settings-row,
-.annotation-navigation-controls {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-}
 .reader-mode-status { color: var(--text-sub); font-size: 0.9rem; }
 .reader-settings {
-    display: block;
     min-width: 0;
     color: var(--text-main);
 }
-.reader-settings > summary { width: fit-content; }
-.reader-settings > summary:focus-visible {
-    outline: 2px solid var(--text-main);
-    outline-offset: 3px;
-}
-.reader-settings-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-    margin-top: 12px;
-}
 .reader-settings-group {
     min-width: 0;
-    padding: 14px;
     border: 1px solid var(--rw-ui-border);
     border-radius: var(--radius-lg);
     background: var(--rw-ui-card);
 }
-.reader-settings-group h3 { margin: 0 0 10px; font-size: 0.95rem; }
+.reader-settings-group h3 { font-size: 0.95rem; }
 .reader-settings-group p {
-    margin: 10px 0 0;
     font-size: 0.82rem;
     line-height: 1.6;
     color: var(--text-sub);
     overflow-wrap: anywhere;
-}
-.reader-settings .deprecated-file-entry-actions { margin-left: 0; display: flex; }
-.reader-settings-hotkeys {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px 12px;
-}
-.reader-settings-hotkeys label {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 6px;
-    min-width: 0;
-    font-size: 0.85rem;
-}
-.reader-settings-files { grid-column: 1 / -1; }
-@media (max-width: 760px) {
-    .reader-settings-grid { grid-template-columns: minmax(0, 1fr); }
-    .reader-settings-files { grid-column: auto; }
 }
