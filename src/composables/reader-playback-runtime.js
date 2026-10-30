@@ -3,6 +3,7 @@ import { configureChunkInteractions } from './chunk-interactions.js'
 import { initAnnotationBubbleResolver } from './annotation-bubble-resolver.js'
 import { initPlaybackRuntimeHelpers } from './playback-runtime-helpers.js'
 import { configureReaderWordHover } from './reader-word-hover.js'
+import { createReaderWordAudio } from './reader-word-audio.js'
 
 export function initReaderPlaybackRuntime(deps = {}) {
   var win = typeof deps.getWindow === 'function' ? deps.getWindow() : deps.window
@@ -23,6 +24,17 @@ export function initReaderPlaybackRuntime(deps = {}) {
   configureReaderWordHover({
     notifyAnnotationBubbleWordHover: annotationBubbleResolverApi.notifyAnnotationBubbleWordHover
   })
+  const wordAudio = createReaderWordAudio({
+    getMedia: getActiveMediaElement,
+    onError: message => deps.showToast?.(message, 'warning')
+  })
+  function playAnnotationWord(word, span) {
+    if (!annotationBubbleResolverApi.hasExplainedMarkedAnnotation(span)) return;
+    return wordAudio.play({
+      start: word?.start ?? span?.dataset?.wordStart,
+      end: word?.end ?? span?.dataset?.wordEnd
+    });
+  }
 
   var forceUpdateUI
   var playbackRuntimeHelpersApi = initPlaybackRuntimeHelpers({
@@ -58,6 +70,8 @@ export function initReaderPlaybackRuntime(deps = {}) {
   var handleForwardClick = win.handleForwardClick
 
   configureTranscriptInteractions({
+    playAnnotationWord,
+    cancelWordPlayback: wordAudio.cancel,
     getAudioPlayer() { return getActiveMediaElement() },
     forceUpdateUI,
     notifyAnnotationBubbleWordClick,
@@ -66,6 +80,8 @@ export function initReaderPlaybackRuntime(deps = {}) {
   })
 
   configureChunkInteractions({
+    playAnnotationWord,
+    cancelWordPlayback: wordAudio.cancel,
     getAudioPlayer() { return getActiveMediaElement() },
     getSelection: deps.getSelection,
     forceUpdateUI,

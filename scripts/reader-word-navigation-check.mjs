@@ -69,6 +69,10 @@ try {
   assert.match(content, /word1：暂无释义/)
   nav.navigate(1); assert.equal(selectionStore.selectedAnnotationWordIndex, 2)
   nav.navigate(1); assert.equal(selectionStore.selectedAnnotationWordIndex, 3); assert.equal(content, 'three')
+  doc.dispatch('pointerdown', { target: { closest: () => null } })
+  assert.equal(visible, true, 'clicking blank space keeps the bubble open')
+  assert.equal(content, 'three', 'clicking blank space retains the explanation')
+  assert.equal(selectionStore.selectedAnnotationWordIndex, 3, 'clicking blank space retains the selected word')
   chunk = true; nav.navigate(1); assert.equal(selectionStore.selectedAnnotationWordIndex, 4)
   assert.equal(nav.navigate(1), false); assert.match(elements.get('annotation-navigation-status').textContent, /最后/)
   assert.equal(selectionStore.currentWordIndex, -1, 'annotation browsing never changes mark/playback input')
@@ -94,6 +98,8 @@ try {
   fixture.hits.set(1, { meaning: 'hover one' })
   fixture.hits.set(2, { meaning: 'hover phrase', boundary: 'word2 word3' })
   fixture.hits.set(6, { meaning: '   ', memoryHint: 'hint without meaning' })
+  assert.equal(resolver.hasExplainedMarkedAnnotation(elements.get('word-1')), true, 'word audio can resolve explained marks while the bubble is closed')
+  assert.equal(resolver.hasExplainedMarkedAnnotation(elements.get('word-6')), false, 'a hint alone cannot enable word audio')
   bubble.show()
   assert.equal(resolver.notifyAnnotationBubbleWordHover(elements.get('word-1')), true)
   assert.equal(content, 'hover one', 'visible bubble switches synchronously on an explained marked word')
@@ -130,7 +136,8 @@ try {
   assert.equal(content, 'three', 'late A must not replace the current B')
   fixture.hits.clear(); fixture.indexScope = ''; wait = pending(); fixture.wait = wait.promise
   resolver.notifyAnnotationBubbleWordClick(elements.get('word-1'), { forceShow: true })
-  bubble.hide(); fixture.hits.set(1, { meaning: 'after close' }); fixture.indexScope = fixture.scope
+  nav.close(); assert.equal(selectionStore.selectedAnnotationWordIndex, -1)
+  fixture.hits.set(1, { meaning: 'after close' }); fixture.indexScope = fixture.scope
   wait.resolve(); await drain(wait.promise)
   assert.equal(visible, false, 'closing invalidates pending requests instead of reopening the bubble')
   assert.equal(closes, closesAfterHover + 1)

@@ -12,6 +12,7 @@ export function initReaderInteractionRuntime(deps = {}) {
     chunkState: deps.chunkState,
     playbackState: deps.playbackState,
     audioPlayer: deps.audioPlayer,
+    showToast: deps.showToast,
     mainAppArea: deps.mainAppArea,
     transcriptContainer: deps.transcriptContainer,
     findChunkIndexByTimeHelper: deps.findChunkIndexByTimeHelper,

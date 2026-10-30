@@ -2,7 +2,9 @@ var runtime = {
   getAudioPlayer: null,
   getSelection: null,
   forceUpdateUI: null,
-  notifyAnnotationBubbleWordClick: null
+  notifyAnnotationBubbleWordClick: null,
+  playAnnotationWord: null,
+  cancelWordPlayback: null
 };
 
 function getActiveSelection() {
@@ -19,6 +21,7 @@ function getAudioPlayer() {
 }
 
 function seekChunkTime(start, wordIndex) {
+  runtime.cancelWordPlayback?.();
   var audio = getAudioPlayer();
   if (audio) audio.currentTime = start;
   if (typeof runtime.forceUpdateUI === 'function') {
@@ -58,6 +61,7 @@ export function handleChunkWordClick(options) {
   }
 
   notifyAnnotation(target);
+  runtime.playAnnotationWord?.(word, target);
 }
 
 export function handleChunkWordContextMenu(options) {
@@ -103,6 +107,8 @@ export function configureChunkInteractions(deps) {
     getAudioPlayer: source.getAudioPlayer || runtime.getAudioPlayer,
     getSelection: source.getSelection || runtime.getSelection,
     forceUpdateUI: source.forceUpdateUI || runtime.forceUpdateUI,
-    notifyAnnotationBubbleWordClick: source.notifyAnnotationBubbleWordClick || runtime.notifyAnnotationBubbleWordClick
+    notifyAnnotationBubbleWordClick: source.notifyAnnotationBubbleWordClick || runtime.notifyAnnotationBubbleWordClick,
+    playAnnotationWord: source.playAnnotationWord || runtime.playAnnotationWord,
+    cancelWordPlayback: source.cancelWordPlayback || runtime.cancelWordPlayback
   });
 }

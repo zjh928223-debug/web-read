@@ -2,6 +2,8 @@ var runtime = {
   getAudioPlayer: null,
   forceUpdateUI: null,
   notifyAnnotationBubbleWordClick: null,
+  playAnnotationWord: null,
+  cancelWordPlayback: null,
   isChunkMode: null
 };
 
@@ -24,6 +26,7 @@ function getRuntimeAudioPlayer() {
 }
 
 function seekTranscriptWord(start, wordIndex) {
+  runtime.cancelWordPlayback?.();
   var audio = getRuntimeAudioPlayer();
   if (audio) audio.currentTime = start;
   if (typeof runtime.forceUpdateUI === 'function') {
@@ -58,6 +61,7 @@ export function handleTranscriptWordClick(options) {
     transcriptStore.currentWordIndex = index;
   }
   notifyWordClick(element);
+  runtime.playAnnotationWord?.(word, element);
 }
 
 export function handleTranscriptWordContextMenu(options) {
@@ -88,6 +92,8 @@ export function configureTranscriptInteractions(deps) {
     getAudioPlayer: source.getAudioPlayer || runtime.getAudioPlayer,
     forceUpdateUI: source.forceUpdateUI || runtime.forceUpdateUI,
     notifyAnnotationBubbleWordClick: source.notifyAnnotationBubbleWordClick || runtime.notifyAnnotationBubbleWordClick,
+    playAnnotationWord: source.playAnnotationWord || runtime.playAnnotationWord,
+    cancelWordPlayback: source.cancelWordPlayback || runtime.cancelWordPlayback,
     isChunkMode: source.isChunkMode || runtime.isChunkMode
   });
   if (source.legacyTranscriptContainer) {

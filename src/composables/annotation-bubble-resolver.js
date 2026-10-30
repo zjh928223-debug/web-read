@@ -221,14 +221,20 @@ export function initAnnotationBubbleResolver(options = {}) {
     });
   }
 
-  function notifyAnnotationBubbleWordHover(span) {
-    if (disposed || span?.isConnected === false) return false;
-    const bubble = getAnnotationBubble();
-    if (!bubble?.isVisible?.() || !generatedAnnotationIndexReady()) return false;
+  function resolveExplainedMarkedAnnotation(span) {
+    if (disposed || span?.isConnected === false || !generatedAnnotationIndexReady()) return null;
     const wordIndex = Number(span?.dataset?.wordIndex);
-    if (!Number.isInteger(wordIndex) || !markedMap?.has(wordIndex)) return false;
+    if (!Number.isInteger(wordIndex) || wordIndex < 0 || !markedMap?.has(wordIndex)) return null;
     const annotation = resolveAnnotationBubbleForSpan(span);
-    if (!pickAnnotationValue(annotation, ['meaning', 'simpleMeaning'])) return false;
+    return pickAnnotationValue(annotation, ['meaning', 'simpleMeaning']) ? annotation : null;
+  }
+
+  function notifyAnnotationBubbleWordHover(span) {
+    if (disposed) return false;
+    const bubble = getAnnotationBubble();
+    if (!bubble?.isVisible?.()) return false;
+    const annotation = resolveExplainedMarkedAnnotation(span);
+    if (!annotation) return false;
     if (typeof bubble.setAnnotation !== 'function') return false;
     ++bubbleRequestId;
     if (typeof initOptions.onTargetSelected === 'function') initOptions.onTargetSelected(span);
@@ -281,6 +287,7 @@ export function initAnnotationBubbleResolver(options = {}) {
     getAnnotationBubble,
     notifyAnnotationBubbleWordClick,
     notifyAnnotationBubbleWordHover,
+    hasExplainedMarkedAnnotation: span => !!resolveExplainedMarkedAnnotation(span),
     resolveAnnotationBubbleForSpan,
     resolveGeneratedAnnotationBubbleForSpan,
     normalizeAnnotationBubbleHit,

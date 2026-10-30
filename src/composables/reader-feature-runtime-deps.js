@@ -126,6 +126,7 @@ export function createReaderFeatureAdapters(deps) {
       onAnnotationTargetSelected: span => wordNavigationApi?.selectSpan(span),
       onAnnotationBubbleClose: () => wordNavigationApi?.clearSelection(),
       getSelection: () => globalObject.getSelection && globalObject.getSelection(),
+      showToast: deps.showToast,
       playbackModule: globalObject.__playbackModule,
       getWindow: () => globalObject,
       bridgeToPinia: shared.bridgeToPinia,

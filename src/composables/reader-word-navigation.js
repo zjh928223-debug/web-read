@@ -70,13 +70,6 @@ export function createReaderWordNavigation(deps) {
     button.addEventListener('click', handler)
     cleanups.push(() => button.removeEventListener('click', handler))
   }
-  const outside = event => {
-    if (event.target?.closest?.('#annotation-bubble, [data-word-index], .annotation-navigation-controls, #hotkey-annotation-bubble-input')) return
-    close()
-  }
-  doc.addEventListener('pointerdown', outside)
-  cleanups.push(() => doc.removeEventListener('pointerdown', outside))
-
   return {
     navigate,
     selectSpan,

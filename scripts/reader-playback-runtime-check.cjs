@@ -119,7 +119,7 @@ async function main() {
     )
     .replace(
       "import { initAnnotationBubbleResolver } from './annotation-bubble-resolver.js'\n",
-      'function initAnnotationBubbleResolver(deps) { globalThis.__annotationDeps = deps; return { notifyAnnotationBubbleWordClick: () => "notified", notifyAnnotationBubbleWordHover: () => "hover-notified", getAnnotationBubble: () => "bubble" } }\n'
+      'function initAnnotationBubbleResolver(deps) { globalThis.__annotationDeps = deps; return { notifyAnnotationBubbleWordClick: () => "notified", notifyAnnotationBubbleWordHover: () => "hover-notified", hasExplainedMarkedAnnotation: () => false, getAnnotationBubble: () => "bubble" } }\n'
     )
     .replace(
       "import { initPlaybackRuntimeHelpers } from './playback-runtime-helpers.js'\n",
@@ -128,6 +128,10 @@ async function main() {
     .replace(
       "import { configureReaderWordHover } from './reader-word-hover.js'\n",
       'function configureReaderWordHover(deps) { globalThis.__wordHoverDeps = deps }\n'
+    )
+    .replace(
+      "import { createReaderWordAudio } from './reader-word-audio.js'\n",
+      fs.readFileSync(path.join(repoRoot, 'src/composables/reader-word-audio.js'), 'utf8').replace('export function', 'function')
     );
 
   globalThis.__transcriptDeps = null;
@@ -202,6 +206,64 @@ async function main() {
   assert.equal(result.toggleAnnotationBubble, win.toggleAnnotationBubble);
   assert.equal(result.handleBackwardClick, win.handleBackwardClick);
   assert.equal(result.handleForwardClick, win.handleForwardClick);
+
+  const wordAudioSource = fs.readFileSync(path.join(repoRoot, 'src/composables/reader-word-audio.js'), 'utf8');
+  const { createReaderWordAudio } = await import(`data:text/javascript;base64,${Buffer.from(wordAudioSource).toString('base64')}`);
+  class TestMedia extends EventTarget {
+    src = 'original-material.wav'; currentTime = 0; duration = 10; playbackRate = 1; paused = true;
+    pauseCount = 0; playCount = 0; nextPlay = null;
+    play() { this.playCount++; this.paused = false; return this.nextPlay || Promise.resolve(); }
+    pause() { this.pauseCount++; this.paused = true; this.dispatchEvent(new Event('pause')); }
+    emit(type, time = this.currentTime) { this.currentTime = time; this.dispatchEvent(new Event(type)); }
+  }
+  const original = new TestMedia();
+  let activeMedia = original;
+  const audioErrors = [];
+  const wordAudio = createReaderWordAudio({ getMedia: () => activeMedia, onError: message => audioErrors.push(message) });
+  assert.equal(await wordAudio.play({ start: 1, end: 2 }), true);
+  assert.equal(original.currentTime, 1);
+  assert.equal(original.src, 'original-material.wav', 'word playback reuses the material source');
+  original.emit('timeupdate', 1.5); assert.equal(original.paused, false);
+  original.emit('timeupdate', 2); assert.equal(original.paused, true, 'word playback stops at its end');
+  let finishInitialSeek;
+  original.nextPlay = new Promise(resolve => { finishInitialSeek = resolve; });
+  const initialSeekPlay = wordAudio.play({ start: 1, end: 2 });
+  original.emit('seeking', 1); original.emit('seeking', 1.013); original.emit('seeked', 1.013);
+  finishInitialSeek(); assert.equal(await initialSeekPlay, true, 'delayed own seek events must not cancel the word stop');
+  original.nextPlay = null;
+  original.emit('timeupdate', 2); assert.equal(original.paused, true);
+  await wordAudio.play({ start: 1, end: 2 });
+  original.emit('seeking', 3); original.emit('timeupdate', 3.5);
+  assert.equal(original.paused, false, 'manual seeking cancels the old word stop');
+  await wordAudio.play({ start: 1, end: 2 });
+  original.seeking = true; original.emit('timeupdate', 3);
+  assert.equal(original.paused, false, 'a manual seek cancels before its seeking event is dispatched');
+  original.seeking = false;
+  let finishOldPlay;
+  original.nextPlay = new Promise(resolve => { finishOldPlay = resolve; });
+  const oldPlay = wordAudio.play({ start: 1, end: 2 });
+  original.nextPlay = null;
+  await wordAudio.play({ start: 3, end: 4 });
+  finishOldPlay(); assert.equal(await oldPlay, false);
+  original.emit('timeupdate', 3.5); assert.equal(original.paused, false, 'an old click cannot stop a newer word');
+  original.emit('timeupdate', 4); assert.equal(original.paused, true);
+  await wordAudio.play({ start: 1, end: 2 });
+  const otherMedia = new TestMedia(); activeMedia = otherMedia;
+  const priorPauseCount = original.pauseCount;
+  original.emit('timeupdate', 2);
+  assert.equal(original.pauseCount, priorPauseCount, 'active media changes cancel the previous stop');
+  assert.equal(otherMedia.playCount, 0, 'word playback never starts an unrelated media source');
+  activeMedia = original;
+  const priorPlayCount = original.playCount;
+  for (const word of [{ start: 1 }, { start: 2, end: 1 }, { start: -1, end: 1 }]) {
+    assert.equal(await wordAudio.play(word), false);
+  }
+  assert.equal(original.playCount, priorPlayCount, 'missing timing cannot start a guessed segment');
+  original.src = ''; assert.equal(await wordAudio.play({ start: 1, end: 2 }), false);
+  original.src = 'original-material.wav'; original.nextPlay = Promise.reject(new Error('blocked'));
+  assert.equal(await wordAudio.play({ start: 1, end: 2 }), false);
+  assert.equal(audioErrors.length, 5, 'timing, source and playback failures have visible feedback');
+  wordAudio.cancel();
 
   console.log('reader playback runtime check passed');
 }
