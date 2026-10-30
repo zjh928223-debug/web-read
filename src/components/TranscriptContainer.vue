@@ -20,6 +20,7 @@
           :data-word-start="word.start"
           :data-word-end="word.end"
           :class="wordClasses(word)"
+          @pointerenter="prepareReaderWordHover"
           @click.stop="onWordClick(word, $event)"
           @contextmenu="onWordContextMenu(word, $event)"
         >{{ wordText(word) }}</span>{{ wordSeparator(word, widx, seg.words) }}
@@ -37,6 +38,7 @@ import { nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue
 import { useTranscriptStore } from '../pinia-stores/transcript.js'
 import { useChunkStore } from '../pinia-stores/chunk.js'
 import { runtimeState } from '../composables/runtime-state-facade.js'
+import { prepareReaderWordHover } from '../composables/reader-word-hover.js'
 import { handleTranscriptWordClick, handleTranscriptWordContextMenu } from '../composables/transcript-interactions.js'
 
 export default {
@@ -152,7 +154,7 @@ export default {
       handleTranscriptWordContextMenu({ word: word, event: event })
     }
 
-    return { ts, rootElement, wordClasses, wordText, wordSeparator, onWordClick, onWordContextMenu }
+    return { ts, rootElement, wordClasses, wordText, wordSeparator, prepareReaderWordHover, onWordClick, onWordContextMenu }
   }
 }
 </script>

@@ -28,6 +28,7 @@
               :data-word-start="word.start"
               :data-word-end="word.end"
               :class="wordClasses(word)"
+              @pointerenter="prepareReaderWordHover"
               @click.stop="onWordClick(word, $event)"
               @contextmenu="onWordContextMenu(word, $event)"
             >{{ wordText(word) }}</span>{{ wordSeparator(word, widx, chunk.words) }}
@@ -44,6 +45,7 @@ import { nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue
 import { useTranscriptStore } from '../pinia-stores/transcript.js'
 import { useChunkStore } from '../pinia-stores/chunk.js'
 import { runtimeState } from '../composables/runtime-state-facade.js'
+import { prepareReaderWordHover } from '../composables/reader-word-hover.js'
 import {
   handleChunkClick,
   handleChunkContextMenu,
@@ -160,7 +162,7 @@ export default {
       handleChunkClick({ chunk: chunk, index: idx, event: event, chunkStore: chunkState })
     }
 
-    return { ts, chunkState, rootElement, chunkRef, cnClasses, wordClasses, wordText, wordSeparator, onWordClick, onWordContextMenu, onChunkContextMenu, onChunkClick }
+    return { ts, chunkState, rootElement, chunkRef, cnClasses, wordClasses, wordText, wordSeparator, prepareReaderWordHover, onWordClick, onWordContextMenu, onChunkContextMenu, onChunkClick }
   }
 }
 </script>

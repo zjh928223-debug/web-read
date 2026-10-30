@@ -7,6 +7,7 @@ import { requirePiniaRuntimeStores } from '../pinia-stores/runtime-registry.js'
 import { watch } from 'vue'
 import { createReaderWordNavigation } from './reader-word-navigation.js'
 import { isReaderShortcutEventAllowed } from './reader-shortcut-scope.js'
+import { getHoveredReaderWordIndex } from './reader-word-hover.js'
 
 function createThemeStoreAdapter(themeStore) {
   return {
@@ -150,6 +151,7 @@ export function createReaderFeatureAdapters(deps) {
     )
     return initReaderKeyboardRuntime({
       keyboardModule: globalObject.__keyboardModule,
+      getHoveredWordIndex: () => getHoveredReaderWordIndex(globalObject.document),
       isReaderShortcutEventAllowed,
       marksStore,
       themeStore,

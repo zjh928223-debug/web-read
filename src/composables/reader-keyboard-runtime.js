@@ -23,11 +23,14 @@ export function initReaderKeyboardRuntime(deps = {}) {
     navigateAnnotationWord: direction => deps.wordNavigationApi?.navigate(direction),
     closeAnnotationNavigation: () => deps.wordNavigationApi?.close(),
     toggleMarkCurrent: function (activeMedia = deps.audioPlayer) {
-      // Playing marks use the clock sampled in this keydown, not the UI's last frame.
-      // Paused marks keep the existing explicit click/position target.
-      const wordIndex = activeMedia?.paused === false
-        ? bsFindActive(deps.transcriptState.wordStarts, deps.transcriptState.words, activeMedia.currentTime)
-        : deps.transcriptState.currentWordIndex;
+      // Hover takes priority without seeking or replacing the playback/click position.
+      const hoveredIndex = deps.getHoveredWordIndex?.();
+      const wordIndex = Number.isInteger(hoveredIndex) && hoveredIndex >= 0
+        && hoveredIndex < deps.transcriptState.words.length
+        ? hoveredIndex
+        : activeMedia?.paused === false
+          ? bsFindActive(deps.transcriptState.wordStarts, deps.transcriptState.words, activeMedia.currentTime)
+          : deps.transcriptState.currentWordIndex;
       return deps.marksStore.toggleMark(
         deps.marksStateApi.markedMap,
         wordIndex,

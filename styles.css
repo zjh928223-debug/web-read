@@ -3748,6 +3748,21 @@ body {
 .reading-area .annotation-word-selected {
     border-bottom: 1px solid #9ca3af;
 }
+@media (hover: hover) and (pointer: fine) {
+    .reading-area span[data-word-index] {
+        display: inline-block;
+        transform-origin: center bottom;
+        transition: transform 120ms ease-out;
+    }
+    .reading-area span[data-word-index]:hover {
+        transform: scale(var(--reader-word-hover-scale, 1));
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .reading-area span[data-word-index] {
+        transition: none;
+    }
+}
 .annotation-navigation-controls {
     flex-wrap: wrap;
 }
