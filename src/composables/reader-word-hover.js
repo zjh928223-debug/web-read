@@ -1,4 +1,10 @@
 const hoverMediaQuery = '(hover: hover) and (pointer: fine)'
+let notifyBubbleWordHover = null
+
+export function configureReaderWordHover({ notifyAnnotationBubbleWordHover } = {}) {
+  notifyBubbleWordHover = typeof notifyAnnotationBubbleWordHover === 'function'
+    ? notifyAnnotationBubbleWordHover : null
+}
 
 export function prepareReaderWordHover(event) {
   const element = event.currentTarget
@@ -8,6 +14,7 @@ export function prepareReaderWordHover(event) {
   if (fontSize > 0) {
     element.style.setProperty('--reader-word-hover-scale', String((fontSize + 1) / fontSize))
   }
+  notifyBubbleWordHover?.(element)
 }
 
 export function getHoveredReaderWordIndex(documentObject) {

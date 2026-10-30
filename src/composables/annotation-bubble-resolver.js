@@ -221,6 +221,21 @@ export function initAnnotationBubbleResolver(options = {}) {
     });
   }
 
+  function notifyAnnotationBubbleWordHover(span) {
+    if (disposed || span?.isConnected === false) return false;
+    const bubble = getAnnotationBubble();
+    if (!bubble?.isVisible?.() || !generatedAnnotationIndexReady()) return false;
+    const wordIndex = Number(span?.dataset?.wordIndex);
+    if (!Number.isInteger(wordIndex) || !markedMap?.has(wordIndex)) return false;
+    const annotation = resolveAnnotationBubbleForSpan(span);
+    if (!pickAnnotationValue(annotation, ['meaning', 'simpleMeaning'])) return false;
+    if (typeof bubble.setAnnotation !== 'function') return false;
+    ++bubbleRequestId;
+    if (typeof initOptions.onTargetSelected === 'function') initOptions.onTargetSelected(span);
+    bubble.setAnnotation(annotation);
+    return true;
+  }
+
   function notifyAnnotationBubbleWordClick(span, options = {}) {
     if (disposed) return false;
     const requestId = ++bubbleRequestId;
@@ -265,6 +280,7 @@ export function initAnnotationBubbleResolver(options = {}) {
   return {
     getAnnotationBubble,
     notifyAnnotationBubbleWordClick,
+    notifyAnnotationBubbleWordHover,
     resolveAnnotationBubbleForSpan,
     resolveGeneratedAnnotationBubbleForSpan,
     normalizeAnnotationBubbleHit,

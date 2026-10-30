@@ -90,6 +90,36 @@ try {
 
   const pending = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b }); return { promise, resolve, reject } }
   const drain = async promise => { await promise.catch(() => {}); await Promise.resolve(); await Promise.resolve() }
+  marks.set(2, {}); marks.set(6, {})
+  fixture.hits.set(1, { meaning: 'hover one' })
+  fixture.hits.set(2, { meaning: 'hover phrase', boundary: 'word2 word3' })
+  fixture.hits.set(6, { meaning: '   ', memoryHint: 'hint without meaning' })
+  bubble.show()
+  assert.equal(resolver.notifyAnnotationBubbleWordHover(elements.get('word-1')), true)
+  assert.equal(content, 'hover one', 'visible bubble switches synchronously on an explained marked word')
+  assert.equal(resolver.notifyAnnotationBubbleWordHover(elements.get('chunk-word-2')), true)
+  assert.equal(content, 'hover phrase', 'AI chunks use the same phrase resolver')
+  for (const index of [0, 3, 4, 5, 6]) {
+    assert.equal(resolver.notifyAnnotationBubbleWordHover(elements.get('word-' + index)), false)
+    assert.equal(content, 'hover phrase', 'unmarked or unexplained targets preserve the last explanation')
+  }
+  fixture.indexScope = 'old-document'
+  assert.equal(resolver.notifyAnnotationBubbleWordHover(elements.get('word-1')), false)
+  assert.equal(content, 'hover phrase', 'old document indices cannot replace current content')
+  fixture.indexScope = fixture.scope
+  fixture.hits.delete(1); fixture.indexScope = ''
+  const hoverWait = pending(); fixture.wait = hoverWait.promise
+  resolver.notifyAnnotationBubbleWordClick(elements.get('word-1'), { forceShow: true })
+  fixture.indexScope = fixture.scope
+  assert.equal(resolver.notifyAnnotationBubbleWordHover(elements.get('word-2')), true)
+  fixture.hits.set(1, { meaning: 'late clicked explanation' })
+  hoverWait.resolve(); await drain(hoverWait.promise)
+  assert.equal(content, 'hover phrase', 'an old asynchronous click cannot overwrite a later hover')
+  bubble.hide()
+  const closesAfterHover = closes
+  assert.equal(resolver.notifyAnnotationBubbleWordHover(elements.get('word-1')), false)
+  assert.equal(visible, false, 'hover never opens a closed bubble')
+  marks.delete(2); marks.delete(6); fixture.hits.clear()
   fixture.indexScope = ''
   let wait = pending(); fixture.wait = wait.promise
   resolver.notifyAnnotationBubbleWordClick(elements.get('word-1'), { forceShow: true })
@@ -103,7 +133,7 @@ try {
   bubble.hide(); fixture.hits.set(1, { meaning: 'after close' }); fixture.indexScope = fixture.scope
   wait.resolve(); await drain(wait.promise)
   assert.equal(visible, false, 'closing invalidates pending requests instead of reopening the bubble')
-  assert.equal(closes, 1)
+  assert.equal(closes, closesAfterHover + 1)
   fixture.hits.clear(); fixture.indexScope = ''; wait = pending(); fixture.wait = wait.promise
   resolver.notifyAnnotationBubbleWordClick(elements.get('word-1'), { forceShow: true })
   fixture.scope = 'doc-b'; wait.resolve(); await drain(wait.promise)
@@ -117,6 +147,7 @@ try {
   const before = content
   resolver.notifyAnnotationBubbleWordClick(elements.get('word-3'))
   assert.equal(content, before, 'disposed resolver cannot mutate UI')
+  assert.equal(resolver.notifyAnnotationBubbleWordHover(elements.get('word-1')), false)
   marks.clear(); vocab.clear(); fixture.items = []; fixture.indexScope = fixture.scope
   assert.equal(nav.navigate(1), false); assert.match(elements.get('annotation-navigation-status').textContent, /暂无/)
   nav.dispose(); nav.dispose()

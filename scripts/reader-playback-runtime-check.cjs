@@ -119,11 +119,15 @@ async function main() {
     )
     .replace(
       "import { initAnnotationBubbleResolver } from './annotation-bubble-resolver.js'\n",
-      'function initAnnotationBubbleResolver(deps) { globalThis.__annotationDeps = deps; return { notifyAnnotationBubbleWordClick: () => "notified", getAnnotationBubble: () => "bubble" } }\n'
+      'function initAnnotationBubbleResolver(deps) { globalThis.__annotationDeps = deps; return { notifyAnnotationBubbleWordClick: () => "notified", notifyAnnotationBubbleWordHover: () => "hover-notified", getAnnotationBubble: () => "bubble" } }\n'
     )
     .replace(
       "import { initPlaybackRuntimeHelpers } from './playback-runtime-helpers.js'\n",
       'function initPlaybackRuntimeHelpers(deps) { globalThis.__playbackHelperDeps = deps; return { findChunkIndexByTime: () => 1, swapActiveClass: () => "swap", followPlaybackTarget: () => "follow", jumpPrevSentence: () => "prev", jumpNextSentence: () => "next" } }\n'
+    )
+    .replace(
+      "import { configureReaderWordHover } from './reader-word-hover.js'\n",
+      'function configureReaderWordHover(deps) { globalThis.__wordHoverDeps = deps }\n'
     );
 
   globalThis.__transcriptDeps = null;
@@ -172,6 +176,7 @@ async function main() {
   assert.equal(globalThis.__annotationDeps.getWords(), transcriptState.words);
   assert.equal(globalThis.__annotationDeps.markedMap.size, 1);
   assert.equal(globalThis.__annotationDeps.vocabMatchMap.size, 1);
+  assert.equal(globalThis.__wordHoverDeps.notifyAnnotationBubbleWordHover(), 'hover-notified');
   assert.equal(globalThis.__playbackHelperDeps.chunkState, chunkState);
   assert.equal(globalThis.__playbackHelperDeps.transcriptState, transcriptState);
   assert.equal(globalThis.__playbackHelperDeps.playbackState, playbackState);

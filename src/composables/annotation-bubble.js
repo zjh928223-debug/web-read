@@ -9,7 +9,7 @@
     const SIDE_PANEL_WIDTH_RATIO = 0.72;
     const SIDE_PANEL_HEIGHT_RATIO = 0.82;
     const DEFAULT_FRAME = { left: 56, top: 72, width: 450, height: 320 };
-    const EMPTY_MESSAGE = '点击一个已标注单词查看释义';
+    const EMPTY_MESSAGE = '将鼠标移到有释义的标注词上查看';
     const TYPE_ABBREVIATIONS = {
         word: 'W',
         noun: 'N',

@@ -2,6 +2,7 @@ import { configureTranscriptInteractions } from './transcript-interactions.js'
 import { configureChunkInteractions } from './chunk-interactions.js'
 import { initAnnotationBubbleResolver } from './annotation-bubble-resolver.js'
 import { initPlaybackRuntimeHelpers } from './playback-runtime-helpers.js'
+import { configureReaderWordHover } from './reader-word-hover.js'
 
 export function initReaderPlaybackRuntime(deps = {}) {
   var win = typeof deps.getWindow === 'function' ? deps.getWindow() : deps.window
@@ -19,6 +20,9 @@ export function initReaderPlaybackRuntime(deps = {}) {
     onClose: deps.onAnnotationBubbleClose
   })
   var notifyAnnotationBubbleWordClick = annotationBubbleResolverApi.notifyAnnotationBubbleWordClick
+  configureReaderWordHover({
+    notifyAnnotationBubbleWordHover: annotationBubbleResolverApi.notifyAnnotationBubbleWordHover
+  })
 
   var forceUpdateUI
   var playbackRuntimeHelpersApi = initPlaybackRuntimeHelpers({
