@@ -3745,7 +3745,7 @@ body {
   }
 }
 /* Annotation browsing is a separate cursor from the audio playback highlight. */
-.reading-area .annotation-word-selected {
+:root[data-reader-word-effect="underline"] .reading-area .annotation-word-selected {
     border-bottom: 1px solid #9ca3af;
 }
 @media (hover: hover) and (pointer: fine) {
@@ -3754,8 +3754,11 @@ body {
         transform-origin: center bottom;
         transition: transform 120ms ease-out;
     }
-    .reading-area span[data-word-index]:hover {
+    :root:not([data-reader-word-effect="underline"]) .reading-area span[data-word-index]:hover {
         transform: scale(var(--reader-word-hover-scale, 1));
+    }
+    :root[data-reader-word-effect="underline"] .reading-area span[data-word-index]:hover {
+        border-bottom: 1px solid #9ca3af;
     }
 }
 @media (prefers-reduced-motion: reduce) {
