@@ -119,7 +119,7 @@ async function main() {
     )
     .replace(
       "import { initAnnotationBubbleResolver } from './annotation-bubble-resolver.js'\n",
-      'function initAnnotationBubbleResolver(deps) { globalThis.__annotationDeps = deps; return { notifyAnnotationBubbleWordClick: () => "notified", notifyAnnotationBubbleWordHover: () => "hover-notified", hasExplainedMarkedAnnotation: () => false, getAnnotationBubble: () => "bubble" } }\n'
+      'function initAnnotationBubbleResolver(deps) { globalThis.__annotationDeps = deps; return { notifyAnnotationBubbleWordClick: () => "notified", notifyAnnotationBubbleWordHover: () => "hover-notified", hasExplainedMarkedAnnotation: () => false, getExplainedMarkedAnnotation: () => null, getAnnotationBubble: () => "bubble" } }\n'
     )
     .replace(
       "import { initPlaybackRuntimeHelpers } from './playback-runtime-helpers.js'\n",
@@ -132,6 +132,10 @@ async function main() {
     .replace(
       "import { createReaderWordAudio } from './reader-word-audio.js'\n",
       fs.readFileSync(path.join(repoRoot, 'src/composables/reader-word-audio.js'), 'utf8').replace('export function', 'function')
+    )
+    .replace(
+      "import { resolveReaderAnnotationAudioRange } from './reader-annotation-audio-range.js'\n",
+      fs.readFileSync(path.join(repoRoot, 'src/composables/reader-annotation-audio-range.js'), 'utf8').replace('export function', 'function')
     );
 
   globalThis.__transcriptDeps = null;
@@ -220,18 +224,30 @@ async function main() {
   let activeMedia = original;
   const audioErrors = [];
   const wordAudio = createReaderWordAudio({ getMedia: () => activeMedia, onError: message => audioErrors.push(message) });
+  await wordAudio.play({ start: 2.635, end: 3.015, previousEnd: 2.594, nextStart: 3.155 });
+  assert.ok(Math.abs(original.currentTime - 2.594) < 1e-9, 'real mansion timestamp needs its available lead-in');
+  original.emit('timeupdate', 3.12);
+  assert.equal(original.paused, false, 'the original hard boundary must not cut off the tail');
+  original.emit('timeupdate', 3.14); assert.equal(original.paused, true);
+  await wordAudio.play({ start: 5.219, end: 5.359, previousEnd: 5.139, nextStart: 5.4 });
+  assert.ok(Math.abs(original.currentTime - 5.139) < 1e-9);
+  original.emit('timeupdate', 5.4);
+  assert.equal(original.paused, true, 'owned padding must stop before the following word');
+  await wordAudio.play({ start: 0.03, end: 0.1, nextStart: 0.16 });
+  assert.equal(original.currentTime, 0, 'lead-in cannot seek before the source begins');
+  original.emit('timeupdate', 0.16); assert.equal(original.paused, true);
   assert.equal(await wordAudio.play({ start: 1, end: 2 }), true);
-  assert.equal(original.currentTime, 1);
+  assert.equal(original.currentTime, 0.9);
   assert.equal(original.src, 'original-material.wav', 'word playback reuses the material source');
   original.emit('timeupdate', 1.5); assert.equal(original.paused, false);
-  original.emit('timeupdate', 2); assert.equal(original.paused, true, 'word playback stops at its end');
+  original.emit('timeupdate', 2.13); assert.equal(original.paused, true, 'word playback stops at its buffered end');
   let finishInitialSeek;
   original.nextPlay = new Promise(resolve => { finishInitialSeek = resolve; });
   const initialSeekPlay = wordAudio.play({ start: 1, end: 2 });
-  original.emit('seeking', 1); original.emit('seeking', 1.013); original.emit('seeked', 1.013);
+  original.emit('seeking', 0.9); original.emit('seeking', 0.913); original.emit('seeked', 0.913);
   finishInitialSeek(); assert.equal(await initialSeekPlay, true, 'delayed own seek events must not cancel the word stop');
   original.nextPlay = null;
-  original.emit('timeupdate', 2); assert.equal(original.paused, true);
+  original.emit('timeupdate', 2.13); assert.equal(original.paused, true);
   await wordAudio.play({ start: 1, end: 2 });
   original.emit('seeking', 3); original.emit('timeupdate', 3.5);
   assert.equal(original.paused, false, 'manual seeking cancels the old word stop');
@@ -246,7 +262,7 @@ async function main() {
   await wordAudio.play({ start: 3, end: 4 });
   finishOldPlay(); assert.equal(await oldPlay, false);
   original.emit('timeupdate', 3.5); assert.equal(original.paused, false, 'an old click cannot stop a newer word');
-  original.emit('timeupdate', 4); assert.equal(original.paused, true);
+  original.emit('timeupdate', 4.13); assert.equal(original.paused, true);
   await wordAudio.play({ start: 1, end: 2 });
   const otherMedia = new TestMedia(); activeMedia = otherMedia;
   const priorPauseCount = original.pauseCount;
@@ -263,6 +279,32 @@ async function main() {
   original.src = 'original-material.wav'; original.nextPlay = Promise.reject(new Error('blocked'));
   assert.equal(await wordAudio.play({ start: 1, end: 2 }), false);
   assert.equal(audioErrors.length, 5, 'timing, source and playback failures have visible feedback');
+  wordAudio.cancel();
+
+  const rangeSource = fs.readFileSync(path.join(repoRoot, 'src/composables/reader-annotation-audio-range.js'), 'utf8');
+  const { resolveReaderAnnotationAudioRange: phraseRange } = await import(`data:text/javascript;base64,${Buffer.from(rangeSource).toString('base64')}`);
+  const phraseWords = [
+    { word: 'Simmons', start: 71.093, end: 71.413, segIndex: 0 },
+    { word: 'shut', start: 71.453, end: 71.673, segIndex: 0 },
+    { word: 'himself', start: 71.713, end: 72.053, segIndex: 0 },
+    { word: 'off', start: 72.153, end: 72.294, segIndex: 0 },
+    { word: 'from', start: 72.314, end: 72.434, segIndex: 0 }
+  ];
+  const expectedPhrase = { start: 71.453, end: 72.294, previousEnd: 71.413, nextStart: 72.314 };
+  for (const boundary of ['shut himself off', 'shut off', 'shut … off', 'shut oneself off']) {
+    assert.deepEqual(phraseRange({ boundary }, phraseWords, 1), expectedPhrase, boundary);
+    assert.deepEqual(phraseRange({ boundary }, phraseWords, 3), expectedPhrase, 'clicking off keeps the same boundary');
+  }
+  assert.equal(phraseRange({ boundary: 'missing phrase' }, phraseWords, 1), null);
+  const ambiguousWords = ['shut', 'himself', 'off', 'and', 'off'].map((word, i) => ({ word, start: i, end: i + 1 }));
+  assert.equal(phraseRange({ boundary: 'shut off' }, ambiguousWords, 0), null, 'ambiguous phrases are not guessed');
+  const differentSentence = phraseWords.map((word, i) => ({ ...word, segIndex: i >= 3 ? 1 : 0 }));
+  assert.equal(phraseRange({ boundary: 'shut off' }, differentSentence, 1), null, 'phrases cannot cross transcript segments');
+  const longMedia = new TestMedia(); longMedia.duration = 120; activeMedia = longMedia;
+  await wordAudio.play(expectedPhrase);
+  assert.ok(Math.abs(longMedia.currentTime - 71.413) < 1e-9);
+  longMedia.emit('timeupdate', 72.25); assert.equal(longMedia.paused, false, 'off is included, not cut after shut');
+  longMedia.emit('timeupdate', 72.314); assert.equal(longMedia.paused, true);
   wordAudio.cancel();
 
   console.log('reader playback runtime check passed');

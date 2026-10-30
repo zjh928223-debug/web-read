@@ -1,3 +1,6 @@
+const WORD_LEAD_IN_SECONDS = 0.1
+const WORD_TAIL_OUT_SECONDS = 0.12
+
 export function createReaderWordAudio({ getMedia, onError = () => {} }) {
   let active = null
 
@@ -11,10 +14,10 @@ export function createReaderWordAudio({ getMedia, onError = () => {} }) {
   async function play(word) {
     cancel()
     const media = getMedia()
-    const start = word?.start == null ? NaN : Number(word.start)
-    const end = word?.end == null ? NaN : Number(word.end)
-    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start
-      || (Number.isFinite(media?.duration) && start >= media.duration)) {
+    const wordStart = word?.start == null ? NaN : Number(word.start)
+    const wordEnd = word?.end == null ? NaN : Number(word.end)
+    if (!Number.isFinite(wordStart) || !Number.isFinite(wordEnd) || wordStart < 0 || wordEnd <= wordStart
+      || (Number.isFinite(media?.duration) && wordStart >= media.duration)) {
       onError('该词缺少有效的时间范围，暂时无法播放原声。')
       return false
     }
@@ -23,6 +26,15 @@ export function createReaderWordAudio({ getMedia, onError = () => {} }) {
       onError('请先加载当前材料的音频，再点击标注词播放原声。')
       return false
     }
+    // Alignment boundaries can omit consonant onsets/tails. Use the available
+    // inter-word gap, without extending into the neighbouring timestamp ranges.
+    const previousEnd = word?.previousEnd == null ? NaN : Number(word.previousEnd)
+    const nextStart = word?.nextStart == null ? NaN : Number(word.nextStart)
+    const start = Math.max(0, wordStart - WORD_LEAD_IN_SECONDS,
+      Number.isFinite(previousEnd) ? Math.min(wordStart, previousEnd) : 0)
+    const end = Math.min(wordEnd + WORD_TAIL_OUT_SECONDS,
+      Number.isFinite(nextStart) ? Math.max(wordEnd, nextStart) : Infinity,
+      Number.isFinite(media.duration) ? media.duration : Infinity)
     const clip = { media, source, timer: null, listeners: [] }
     active = clip
     let awaitingOwnSeek = Boolean(media.seeking)

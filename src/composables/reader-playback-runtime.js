@@ -4,6 +4,7 @@ import { initAnnotationBubbleResolver } from './annotation-bubble-resolver.js'
 import { initPlaybackRuntimeHelpers } from './playback-runtime-helpers.js'
 import { configureReaderWordHover } from './reader-word-hover.js'
 import { createReaderWordAudio } from './reader-word-audio.js'
+import { resolveReaderAnnotationAudioRange } from './reader-annotation-audio-range.js'
 
 export function initReaderPlaybackRuntime(deps = {}) {
   var win = typeof deps.getWindow === 'function' ? deps.getWindow() : deps.window
@@ -29,11 +30,15 @@ export function initReaderPlaybackRuntime(deps = {}) {
     onError: message => deps.showToast?.(message, 'warning')
   })
   function playAnnotationWord(word, span) {
-    if (!annotationBubbleResolverApi.hasExplainedMarkedAnnotation(span)) return;
-    return wordAudio.play({
-      start: word?.start ?? span?.dataset?.wordStart,
-      end: word?.end ?? span?.dataset?.wordEnd
-    });
+    const annotation = annotationBubbleResolverApi.getExplainedMarkedAnnotation(span);
+    if (!annotation) return;
+    const index = Number(span?.dataset?.wordIndex ?? word?.globalIndex);
+    const range = resolveReaderAnnotationAudioRange(annotation, deps.transcriptState.words, index);
+    if (!range) {
+      deps.showToast?.('无法在当前原文中准确定位这个释义边界，暂不播放。', 'warning');
+      return;
+    }
+    return wordAudio.play(range);
   }
 
   var forceUpdateUI

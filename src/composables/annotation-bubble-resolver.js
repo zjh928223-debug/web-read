@@ -288,6 +288,7 @@ export function initAnnotationBubbleResolver(options = {}) {
     notifyAnnotationBubbleWordClick,
     notifyAnnotationBubbleWordHover,
     hasExplainedMarkedAnnotation: span => !!resolveExplainedMarkedAnnotation(span),
+    getExplainedMarkedAnnotation: resolveExplainedMarkedAnnotation,
     resolveAnnotationBubbleForSpan,
     resolveGeneratedAnnotationBubbleForSpan,
     normalizeAnnotationBubbleHit,
