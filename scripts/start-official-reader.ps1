@@ -1,10 +1,10 @@
-param([switch]$NoOpen)
+param([switch]$NoOpen, [switch]$Quiet)
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 function Resolve-OfficialReaderPython {
   param([string]$PublishedPath, [string]$ConfiguredPath)
-  foreach ($candidate in @($PublishedPath, $ConfiguredPath)) {
+  foreach ($candidate in @($ConfiguredPath, $PublishedPath)) {
     if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf)) { return $candidate }
   }
   throw "Python runtime not found. Checked: $PublishedPath ; $ConfiguredPath"
@@ -14,6 +14,10 @@ $logPath = Join-Path $projectRoot '.codex\startup-logs\official-reader-startup.l
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $logPath) | Out-Null
 Add-Content -LiteralPath $logPath -Value "$(Get-Date -Format s) Starting official reader (PID $PID)." -Encoding UTF8
 try {
+  # Use the managed runtime independently of Explorer's inherited PATH.
+  $nodeDirectory = 'E:\ReadWebRuntime\node-v24.13.1'
+  $env:Path = (@($nodeDirectory) + @($env:Path -split ';' | Where-Object { $_ } | Select-Object -Unique)) -join ';'
+  Add-Content -LiteralPath $logPath -Value "$(Get-Date -Format s) Node: $nodeDirectory\node.exe" -Encoding UTF8
   $tailscale = Join-Path $env:ProgramFiles 'Tailscale\tailscale.exe'
   if (-not (Test-Path -LiteralPath $tailscale)) { throw 'Tailscale is not installed.' }
   $statusText = & $tailscale status --json
@@ -43,17 +47,28 @@ try {
   $pythonPath = Resolve-OfficialReaderPython -PublishedPath ([string]$manifest.runtime.pythonIdentity.executable) -ConfiguredPath ([string]$runtimeConfig.python.executable)
   Add-Content -LiteralPath $logPath -Value "$(Get-Date -Format s) Python: $pythonPath" -Encoding UTF8
 
-  Write-Host 'Starting the published Read-Web version on 5184...'
-  & (Join-Path $PSScriptRoot 'launch-optimization-preview.ps1') -UseActiveRelease -NoOpen -BootstrapPython $pythonPath -FrontDoorPublicOrigin $macUrl
+  if (-not $Quiet) { Write-Host 'Starting the published Read-Web version on 5184...' }
+  if ($Quiet) {
+    & (Join-Path $PSScriptRoot 'launch-optimization-preview.ps1') -UseActiveRelease -NoOpen -BootstrapPython $pythonPath -FrontDoorPublicOrigin $macUrl *> (Join-Path (Split-Path -Parent $logPath) 'official-reader-launch.log')
+  } else {
+    & (Join-Path $PSScriptRoot 'launch-optimization-preview.ps1') -UseActiveRelease -NoOpen -BootstrapPython $pythonPath -FrontDoorPublicOrigin $macUrl
+  }
   $health = Invoke-RestMethod -Uri 'http://127.0.0.1:5184/api/app/health' -TimeoutSec 10
   if ($health.status -ne 'ready') { throw 'Read-Web backend is not ready.' }
   Add-Content -LiteralPath $logPath -Value "$(Get-Date -Format s) Read-Web is ready (5184)." -Encoding UTF8
-  Write-Host 'Read-Web is ready. Windows: http://127.0.0.1:5184/'
-  Write-Host "Mac (Tailscale connected): $macUrl"
+  if (-not $Quiet) {
+    Write-Host 'Read-Web is ready. Windows: http://127.0.0.1:5184/'
+    Write-Host "Mac (Tailscale connected): $macUrl"
+  }
   if (-not $NoOpen) { Start-Process 'http://127.0.0.1:5184/' }
 } catch {
   Add-Content -LiteralPath $logPath -Value "$(Get-Date -Format s) Startup failed: $($_.Exception.Message)" -Encoding UTF8
-  Write-Host "Read-Web startup failed: $($_.Exception.Message)" -ForegroundColor Red
-  if (-not $NoOpen) { Read-Host 'Press Enter to close' | Out-Null }
+  if ($Quiet) {
+    Add-Type -AssemblyName System.Windows.Forms
+    [System.Windows.Forms.MessageBox]::Show('Read-Web could not start. Details are saved in the startup log.', 'Read-Web', 'OK', 'Error') | Out-Null
+  } else {
+    Write-Host "Read-Web startup failed: $($_.Exception.Message)" -ForegroundColor Red
+    if (-not $NoOpen) { Read-Host 'Press Enter to close' | Out-Null }
+  }
   exit 1
 }

@@ -2,6 +2,8 @@
 
 Windows 桌面双击 `启动 Read-Web 正式版（5184）`。
 启动器会启动已发布的前端、Python 主后端和 Node 能力服务；已经运行时复用现有服务，随后打开浏览器。
+桌面入口使用 `-Quiet` 隐藏控制台，正常时直接打开页面；失败时仅弹出简短提示。
+启动依赖优先使用 `E:\ReadWebRuntime` 中的优化 Python 和 Node 24.13.1，避免依赖桌面进程继承的旧路径。详细结果保存在 `.codex/startup-logs/official-reader-startup.log` 和 `official-reader-launch.log`。
 
 - Windows：<http://127.0.0.1:5184/>
 - Mac：<https://laptop-5jd5ouqg.tail5f3899.ts.net:5184/>
