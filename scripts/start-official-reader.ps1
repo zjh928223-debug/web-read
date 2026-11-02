@@ -2,8 +2,18 @@ param([switch]$NoOpen)
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+function Resolve-OfficialReaderPython {
+  param([string]$PublishedPath, [string]$ConfiguredPath)
+  foreach ($candidate in @($PublishedPath, $ConfiguredPath)) {
+    if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf)) { return $candidate }
+  }
+  throw "Python runtime not found. Checked: $PublishedPath ; $ConfiguredPath"
+}
+$projectRoot = Split-Path -Parent $PSScriptRoot
+$logPath = Join-Path $projectRoot '.codex\startup-logs\official-reader-startup.log'
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $logPath) | Out-Null
+Add-Content -LiteralPath $logPath -Value "$(Get-Date -Format s) Starting official reader (PID $PID)." -Encoding UTF8
 try {
-  $projectRoot = Split-Path -Parent $PSScriptRoot
   $tailscale = Join-Path $env:ProgramFiles 'Tailscale\tailscale.exe'
   if (-not (Test-Path -LiteralPath $tailscale)) { throw 'Tailscale is not installed.' }
   $statusText = & $tailscale status --json
@@ -29,17 +39,20 @@ try {
   $activePath = Join-Path $projectRoot '.codex\runtime-state\optimization\active-release.json'
   $active = Get-Content -LiteralPath $activePath -Raw | ConvertFrom-Json
   $manifest = Get-Content -LiteralPath $active.manifestPath -Raw | ConvertFrom-Json
-  $pythonPath = [string]$manifest.runtime.pythonIdentity.executable
-  if (-not (Test-Path -LiteralPath $pythonPath -PathType Leaf)) { throw 'The published Python runtime is missing.' }
+  $runtimeConfig = Get-Content -LiteralPath (Join-Path $projectRoot 'config\runtime.optimization.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+  $pythonPath = Resolve-OfficialReaderPython -PublishedPath ([string]$manifest.runtime.pythonIdentity.executable) -ConfiguredPath ([string]$runtimeConfig.python.executable)
+  Add-Content -LiteralPath $logPath -Value "$(Get-Date -Format s) Python: $pythonPath" -Encoding UTF8
 
   Write-Host 'Starting the published Read-Web version on 5184...'
   & (Join-Path $PSScriptRoot 'launch-optimization-preview.ps1') -UseActiveRelease -NoOpen -BootstrapPython $pythonPath -FrontDoorPublicOrigin $macUrl
   $health = Invoke-RestMethod -Uri 'http://127.0.0.1:5184/api/app/health' -TimeoutSec 10
   if ($health.status -ne 'ready') { throw 'Read-Web backend is not ready.' }
+  Add-Content -LiteralPath $logPath -Value "$(Get-Date -Format s) Read-Web is ready (5184)." -Encoding UTF8
   Write-Host 'Read-Web is ready. Windows: http://127.0.0.1:5184/'
   Write-Host "Mac (Tailscale connected): $macUrl"
   if (-not $NoOpen) { Start-Process 'http://127.0.0.1:5184/' }
 } catch {
+  Add-Content -LiteralPath $logPath -Value "$(Get-Date -Format s) Startup failed: $($_.Exception.Message)" -Encoding UTF8
   Write-Host "Read-Web startup failed: $($_.Exception.Message)" -ForegroundColor Red
   if (-not $NoOpen) { Read-Host 'Press Enter to close' | Out-Null }
   exit 1
