@@ -102,6 +102,7 @@ function createWorkflowLibrary() {
     startPolling: noop,
     mergeRecentReaderItem: noop,
     clearMaterialRepairState: noop,
+    acknowledgeCompletion: noop,
     requestWorkflowSnapshot: async () => ({}),
     dispose: noop,
   }

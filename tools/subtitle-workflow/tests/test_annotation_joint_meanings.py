@@ -31,7 +31,7 @@ class AnnotationJointMeaningTests(unittest.TestCase):
 
         def requester(_cache, _model, prompt, template, **_kwargs):
             calls.append((prompt, template))
-            return json.dumps({"items": [dict(item, meaning="完整详细解释", simpleMeaning="短义" if i == 0 else "长" * 17)
+            return json.dumps({"items": [dict(item, boundary="word", type="word", memoryHint="记忆提示", meaning="完整详细解释", simpleMeaning="短义" if i == 0 else "长" * 17)
                                           for i, item in enumerate(template["items"])]})
 
         return AnnotationBackfillRuntime(

@@ -243,6 +243,23 @@ try {
   await waitForSentenceIds(page, ['segment-1'])
   assert.equal(await page.locator('#transcript-vue-container .sentence-active').count(), 1)
 
+  // Paused replay tails fall between sentence end and the next actual start.
+  for (const [time, expected] of [[1.62, 0], [1.999, 0], [2, 1], [3.62, 1], [3.999, 1], [4, 2]]) {
+    await page.evaluate((time) => {
+      const audio = document.getElementById('audio-player')
+      audio.pause()
+      window.__sentenceHighlightStores.transcript.highlightMode = 2
+      audio.currentTime = time
+      window.forceUpdateUI(time)
+    }, time)
+    await waitForSentenceIds(page, [`segment-${expected}`])
+  }
+  await page.evaluate(() => {
+    document.getElementById('audio-player').currentTime = 2.2
+    window.forceUpdateUI(2.2)
+  })
+  await waitForSentenceIds(page, ['segment-1'])
+
   await page.evaluate(() => {
     const root = document.getElementById('vue-root')
     const app = root?.__vue_app__

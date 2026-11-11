@@ -14,8 +14,10 @@ import {
 } from './srs-candidates.js';
 import {
   getSettlementMeaningRefinementInputKey,
+  isSettlementSimpleMeaningReady,
   isSettlementSimpleMeaningValid,
 } from './settlement-meaning-refinement.js';
+import { normalizeSettlementPhonetic } from './settlement-phonetics.js';
 export const PREVIEW_SCAN_SOURCE = 'preview-scan';
 
 export function isPreviewGeneratedItem(item) {
@@ -200,6 +202,7 @@ export async function buildArticleSrsSettlement(options = {}) {
   const sourceTitle = normalizeNullableText(options.sourceTitle || options.source_title);
   const sourceUrl = normalizeNullableText(options.sourceUrl || options.source_url);
   const candidates = [];
+  const reviewCandidates = [];
   const excluded = [];
   const existingInfoByLemma = await getExistingWordsAndContexts(
     vocabularyService,
@@ -242,9 +245,9 @@ export async function buildArticleSrsSettlement(options = {}) {
         reason: 'already_added_current_article',
         simple_meaning: normalizeNullableText(existingSourceContext.simple_meaning || existingSourceContext.simpleMeaning),
       });
-      continue;
     }
-    const disposition = determineCandidateDisposition({
+    const disposition = existingSourceContext ? { group: ARTICLE_SRS_SETTLEMENT_GROUPS.READY, eligible: false }
+      : determineCandidateDisposition({
       item,
       existingWord: existingInfo.word,
       contexts: existingInfo.contexts,
@@ -273,7 +276,9 @@ export async function buildArticleSrsSettlement(options = {}) {
       marked_text: displayText,
       markedText: displayText,
       meaning,
-      simple_meaning: simpleMeaning,
+      phonetic: normalizeSettlementPhonetic(item.phonetic || existingInfo.word?.phonetic),
+      phonetic_source: item.phonetic ? 'annotation' : 'vocabulary',
+      simple_meaning: existingSourceContext ? getItemSimpleMeaning(existingSourceContext) || simpleMeaning : simpleMeaning,
       token_count: classification.tokenCount,
       group: disposition.group,
       eligible: !!disposition.eligible,
@@ -287,7 +292,7 @@ export async function buildArticleSrsSettlement(options = {}) {
       context: {
         sentence: sentence || rawText,
         meaning,
-        simple_meaning: simpleMeaning,
+        simple_meaning: existingSourceContext ? getItemSimpleMeaning(existingSourceContext) || simpleMeaning : simpleMeaning,
         source_id: sourceId,
         source_title: sourceTitle,
         source_url: sourceUrl,
@@ -298,12 +303,16 @@ export async function buildArticleSrsSettlement(options = {}) {
     if (isSettlementSimpleMeaningValid(simpleMeaning, classification.entry_type)) {
       candidate.annotation_simple_meaning_input_key = getSettlementMeaningRefinementInputKey(candidate, sourceId);
     }
-    candidates.push(candidate);
+    if (existingSourceContext) {
+      candidate.application_status = 'applied';
+      reviewCandidates.push(candidate);
+    } else candidates.push(candidate);
   }
 
   const deduped = dedupeSettlementCandidates(candidates);
   return {
     candidates: deduped,
+    reviewCandidates: dedupeSettlementCandidates(reviewCandidates),
     excluded,
     summary: summarizeArticleSrsSettlement(deduped, excluded),
   };
@@ -352,6 +361,20 @@ export function selectArticleSrsSettlementCandidates(options = {}) {
   };
 }
 
+export function isSettlementMeaningReadyForApplication(candidate) {
+  return isSettlementSimpleMeaningReady(candidate)
+    || !!(getItemMeaning(candidate) || getItemMeaning(candidate?.context));
+}
+
+export function assertArticleSrsSettlementMeaningsReady(candidates = []) {
+  const unfinished = candidates.filter((candidate) => !isSettlementMeaningReadyForApplication(candidate));
+  if (!unfinished.length) return;
+  const error = new Error(`本次还有 ${unfinished.length} 项缺少释义，请补充释义或移到回收区后再加入。`);
+  error.code = 'SETTLEMENT_MEANING_REQUIRED';
+  error.details = { targetIds: unfinished.map(getItemTargetId).filter(Boolean) };
+  throw error;
+}
+
 async function recordContextOnly(vocabularyService, candidate) {
   if (!vocabularyService
     || typeof vocabularyService.upsertVocabularyEntry !== 'function'
@@ -373,6 +396,7 @@ export async function applyArticleSrsSettlement(options = {}) {
   const vocabularyService = options.vocabularyService;
   const candidates = Array.isArray(options.candidates) ? options.candidates : [];
   const selection = selectArticleSrsSettlementCandidates(options);
+  assertArticleSrsSettlementMeaningsReady(selection.selectedCandidates);
   const mode = selection.mode;
   const selected = [];
   const alreadyAppliedTargetIds = [];
@@ -407,7 +431,17 @@ export async function applyArticleSrsSettlement(options = {}) {
     if (existingSourceContext) {
       alreadyAppliedTargetIds.push(getItemTargetId(candidate));
     } else {
-      selected.push(candidate);
+      selected.push({
+        ...candidate,
+        meaning: getItemMeaning(candidate) || getItemMeaning(candidate.context),
+        context: {
+          ...candidate.context,
+          meaning: getItemMeaning(candidate.context) || getItemMeaning(candidate),
+          simple_meaning: isSettlementSimpleMeaningReady(candidate)
+            ? getItemSimpleMeaning(candidate) || getItemSimpleMeaning(candidate.context) : null,
+          simpleMeaning: null,
+        },
+      });
     }
   }
   const selectedTargetIds = selected.map(getItemTargetId).filter(Boolean);

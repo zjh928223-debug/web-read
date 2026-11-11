@@ -202,6 +202,7 @@ async function main() {
           schemaVersion: 1,
           jobId: 'verified-job',
           title: 'Verified',
+          sourceType: 'pasted-article',
           contentId: verifiedFixture.contentId,
           revision: verifiedFixture.revision,
           integrity: verifiedFixture.integrity,
@@ -236,6 +237,8 @@ async function main() {
   const verifiedResult = await verifiedLoader.loadJobIntoReader('verified-job', { replacePolicy: 'replace-current' });
   assert.deepEqual(verifiedResult.identity, { status: 'verified' });
   assert.equal(verifiedCommits[0].session.contentId, verifiedFixture.contentId);
+  assert.equal(verifiedCommits[0].session.audioMeta.sourceType, 'pasted-article');
+  assert.equal(verifiedCommits[0].session.audioMeta.streamUrl, 'http://workflow.test/verified-job/audio');
   assert.equal(verifiedCommits[0].session.revision, verifiedFixture.revision);
   assert.deepEqual(verifiedCommits[0].session.marks, [{
     globalIndex: 1,

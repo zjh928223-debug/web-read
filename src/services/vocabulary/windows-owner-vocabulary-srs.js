@@ -205,16 +205,23 @@ async function callOwner(owner, method, request) {
   }
 }
 
-async function queryOwnerRecords(owner, operation) {
-  const response = await callOwner(owner, 'query', {
-    domain: DOMAIN,
-    operation,
-    payload: {},
-  })
-  requireOwnerRead(response, DOMAIN)
-  return {
-    records: clone(ownerResponseRecords(response)),
-    revision: ownerRevision(response),
+// Share only in-flight reads; subsequent opens still observe current owner state.
+const pendingOwnerReads = new WeakMap()
+async function queryOwnerRecords(owner, operation, payload = {}) {
+  let reads = pendingOwnerReads.get(owner)
+  if (!reads) { reads = new Map(); pendingOwnerReads.set(owner, reads) }
+  const key = JSON.stringify([operation, payload])
+  let pending = reads.get(key)
+  if (!pending) {
+    pending = callOwner(owner, 'query', { domain: DOMAIN, operation, payload })
+    reads.set(key, pending)
+  }
+  try {
+    const response = await pending
+    requireOwnerRead(response, DOMAIN)
+    return { records: clone(ownerResponseRecords(response)), revision: ownerRevision(response) }
+  } finally {
+    if (reads.get(key) === pending) reads.delete(key)
   }
 }
 
@@ -541,11 +548,11 @@ function createPendingOwnerRepository(owner, now) {
 function createSettlementOwnerRepository(owner, now) {
   return createArticleSrsSettlementProgressRepository({
     async getProgress(articleId) {
-      const selected = await querySnapshot(owner)
+      const selected = await queryOwnerRecords(owner, 'snapshot', { recordIds: [`${SETTLEMENT_PREFIX}${encodeURIComponent(articleId)}`] })
       return contentFrom(selected.records, `${SETTLEMENT_PREFIX}${encodeURIComponent(articleId)}`)
     },
     async updateProgress(articleId, mutator) {
-      const selected = await querySnapshot(owner)
+      const selected = await queryOwnerRecords(owner, 'snapshot', { recordIds: [`${SETTLEMENT_PREFIX}${encodeURIComponent(articleId)}`] })
       const key = `${SETTLEMENT_PREFIX}${encodeURIComponent(articleId)}`
       const current = contentFrom(selected.records, key)
       const next = await mutator(clone(current))

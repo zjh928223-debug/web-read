@@ -30,6 +30,7 @@ export function initReaderPlaybackRuntime(deps = {}) {
     onError: message => deps.showToast?.(message, 'warning')
   })
   function playAnnotationWord(word, span) {
+    if (deps.runtimeState.currentAudioMeta?.sourceType === 'text-only') return
     const annotation = annotationBubbleResolverApi.getExplainedMarkedAnnotation(span);
     if (!annotation) return;
     const index = Number(span?.dataset?.wordIndex ?? word?.globalIndex);

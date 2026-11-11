@@ -807,9 +807,10 @@ export function createAnnotationBackfillAiController(deps = {}) {
     await Promise.all([contextPromise, refreshAnnotationSummaryForCurrentArticle()]);
   }
 
-  async function importBackfillResult(result, filenameBase) {
+  async function importBackfillResult(result, filenameBase, identity = getCurrentIdentity(state)) {
+    if (!sameReaderIdentity(identity, getCurrentIdentity(state))) throw new Error(SWITCHED_ARTICLE_NOTICE);
     const safeBase = String(filenameBase || 'annotation-backfill').replace(/[\\/:*?"<>|]+/g, '_');
-    const importFile = createJsonFileLike(result, `${safeBase}_annotation_backfill_result.json`);
+    const importFile = createJsonFileLike({ ...result, audioKey: identity.audioKey }, `${safeBase}_annotation_backfill_result.json`);
     const importResult = await annotationLightweightModule.importManualLightweightAnnotations(importFile, { replaceExisting: false });
     refreshAfterImport();
     return importResult;
@@ -844,7 +845,7 @@ export function createAnnotationBackfillAiController(deps = {}) {
       if (!result || !Array.isArray(result.items)) {
         throw new Error('所选 AI 解释版本缺少 items 数组。');
       }
-      const importResult = await importBackfillResult(result, startedIdentity.jobId);
+      const importResult = await importBackfillResult(result, startedIdentity.jobId, startedIdentity);
       persistSelectedRunId(windowObject, startedIdentity.jobId, selectedRunId);
       if (annotationLightweightModule && typeof annotationLightweightModule.buildManualLightweightAnnotationTemplate === 'function') {
         const template = annotationLightweightModule.buildManualLightweightAnnotationTemplate();
@@ -960,7 +961,7 @@ export function createAnnotationBackfillAiController(deps = {}) {
         dialog.setStatus(`已找到本地解释，正在恢复 ${coverage.coveredCount} 条...`, 'working');
         dialog.setStep('import', 'active', '恢复中');
         activeStep = 'import';
-        const cachedImportResult = await importBackfillResult(savedResult, template && (template.articleId || startedIdentity.jobId));
+        const cachedImportResult = await importBackfillResult(savedResult, template && (template.articleId || startedIdentity.jobId), startedIdentity);
         const restoredCount = getImportCount(cachedImportResult, coverage.coveredCount);
         const cachedRunId = getSavedBackfillRunId(savedPayload);
         if (cachedRunId) {
@@ -1061,7 +1062,7 @@ export function createAnnotationBackfillAiController(deps = {}) {
       dialog.setStep('import', 'active', '导入中');
       activeStep = 'import';
       setRunningStatus('导入结果...');
-      const importResult = await importBackfillResult(result, template && (template.articleId || startedIdentity.jobId));
+      const importResult = await importBackfillResult(result, template && (template.articleId || startedIdentity.jobId), startedIdentity);
       const importedCount = getImportCount(importResult, result.items.length);
       refreshAfterImport();
       dialog.setStep('import', 'done', `${importedCount} 条`);

@@ -217,6 +217,24 @@ async function main() {
     await page.waitForSelector('.youtube-workflow-library-job')
     assert.equal(await page.locator('.youtube-workflow-nav button').count(), 3)
     assert.equal(await page.locator('.youtube-workflow-library-job').count(), 20)
+    await panel.evaluate(node => { window.__testedMaterialPanel = node })
+    await panel.getByRole('button', { name: '关闭', exact: true }).click()
+    assert.equal(await panel.isVisible(), false, 'closed material panel must be hidden')
+    await page.waitForFunction(() => document.activeElement?.matches('.youtube-material-entry'))
+    await page.locator('.youtube-material-entry').click()
+    await panel.waitFor({ state: 'visible' })
+    assert.equal(await panel.evaluate(node => node === window.__testedMaterialPanel), true, 'reopening reuses the existing panel DOM')
+    await page.keyboard.press('Escape')
+    await panel.waitFor({ state: 'hidden' })
+    await page.locator('.youtube-material-entry').click()
+    await panel.waitFor({ state: 'visible' })
+
+    if (process.env.READ_WEB_PANEL_REUSE_ONLY === '1') {
+      assert.equal(await page.locator('.youtube-workflow-library-job').count(), 20)
+      assert.deepEqual(pageErrors, [])
+      console.log('PASS panel DOM reuse, hidden state, focus restoration, Escape and refreshed library')
+      return
+    }
     assert.match(await page.locator('.youtube-workflow-content').innerText(), /素材库/)
     assert.doesNotMatch(await page.locator('.youtube-workflow-content').innerText(), /按最近使用时间排列/)
     assert.equal(await page.locator('[data-reader-save-state]').count(), 0)
@@ -322,7 +340,9 @@ async function main() {
     assert.equal(await attemptHistory.count(), 1, 'the repeated failure should expose one attempt-history disclosure')
     await attemptHistory.locator('summary').click()
     assert.equal(await attemptHistory.locator('p').count(), 1, 'opening the disclosure should show the previous attempt')
-    assert.match(await attemptHistory.innerText(), /AI response was invalid/)
+    assert.match(await attemptHistory.innerText(), /AI 切分与翻译失败/)
+    await attemptHistory.locator('.youtube-task-failure-details > summary').click()
+    assert.match(await attemptHistory.locator('pre').innerText(), /AI response was invalid/)
     console.log('youtube queue attempt history opened and prior attempt was visible')
     await attemptHistory.locator('summary').click()
     const failedDeleteButton = page.locator('.youtube-workflow-queue-job[data-status="failed"] button[data-ui-owner="workflow"][data-variant="destructive"]').first()
@@ -558,10 +578,11 @@ async function main() {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.locator('.youtube-workflow-nav button[data-view="library"]').click()
     await page.locator('.youtube-workflow-library-job').first().getByRole('button', { name: '打开' }).click()
-    const materialNotice = page.locator('.youtube-material-notice')
+    const materialNotice = page.locator('#app-toast.reader-notice')
     await materialNotice.waitFor({ state: 'visible' })
     assert.match(await materialNotice.innerText(), /字幕不可用，请重新生成字幕/)
-    const noticeClose = materialNotice.locator('.youtube-material-notice-close')
+    assert.equal(await page.locator('.youtube-material-notice').count(), 0, 'material failures must use the single shared notice')
+    const noticeClose = materialNotice.getByRole('button', { name: '关闭提醒', exact: true })
     for (const theme of ['light', 'dark']) {
       if (theme === 'dark') {
         await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'))
@@ -581,9 +602,6 @@ async function main() {
           boxShadow: style.boxShadow,
         }
       })
-      assert.equal(closeStyle.owner, 'workflow')
-      assert.equal(closeStyle.variant, 'ghost')
-      assert.equal(closeStyle.size, 'icon')
       assert.equal(cssAlpha(closeStyle.backgroundColor), 0, `${theme} notice close should be transparent by default`)
       const noticeAction = materialNotice.locator('button').first()
       await noticeAction.focus()
@@ -595,7 +613,7 @@ async function main() {
       })
       assert.equal(focusStyle.active, true, `${theme} notice close should receive keyboard focus`)
       assert.equal(focusStyle.focusVisible, true, `${theme} notice close should use keyboard-visible focus`)
-      assert.match(focusStyle.boxShadow, /0px 0px 0px 3px/, `${theme} notice close should retain the component focus ring`)
+      assert.ok(focusStyle.boxShadow !== 'none' || /auto|solid|dotted/.test(focusStyle.outline), `${theme} notice close should retain a visible keyboard focus indicator`)
       await noticeClose.hover()
       const hoverStyle = await noticeClose.evaluate((button) => getComputedStyle(button).backgroundImage)
       assert.equal(hoverStyle, 'none', `${theme} notice close should use the shadcn hover treatment without a legacy gradient`)

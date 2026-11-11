@@ -35,25 +35,39 @@ export function buildManualLightweightTargetLookup(targets, deps = {}) {
 }
 
 export function resolveManualLightweightImportTarget(item, lookup, deps = {}) {
-  const buildSyntheticAnnotationTargetFromEncodedId = requireImportNormalizationFunction(
-    deps,
-    'buildSyntheticAnnotationTargetFromEncodedId'
-  );
   const normalizeAnnotationTextValue = requireImportNormalizationFunction(deps, 'normalizeAnnotationTextValue');
   const normalizeAnnotationSentenceValue = requireImportNormalizationFunction(deps, 'normalizeAnnotationSentenceValue');
+  const getAnnotationTargetSentenceText = requireImportNormalizationFunction(deps, 'getAnnotationTargetSentenceText');
 
   if (!item || !lookup) {
     return { target: null, matchType: 'none', reason: 'invalid-item' };
   }
 
   const directTarget = lookup.byId instanceof Map ? lookup.byId.get(item.targetId) : null;
+  function mismatch(target) {
+    if (item.markedText && normalizeAnnotationTextValue(item.markedText).toLowerCase()
+      !== normalizeAnnotationTextValue(target.markedText).toLowerCase()) return 'markedText-mismatch';
+    if (item.sentence && normalizeAnnotationSentenceValue(item.sentence)
+      !== normalizeAnnotationSentenceValue(getAnnotationTargetSentenceText(target))) return 'sourceSentence-mismatch';
+    return '';
+  }
   if (directTarget) {
+    const reason = mismatch(directTarget);
+    if (reason) return { target: null, matchType: 'none', reason };
     return { target: directTarget, matchType: 'targetId', reason: '' };
   }
 
-  const encodedTarget = buildSyntheticAnnotationTargetFromEncodedId(item.targetId, item);
-  if (encodedTarget) {
-    return { target: encodedTarget, matchType: 'targetId-encoded-range', reason: '' };
+  // A range is only a lookup hint into EXISTING targets, never permission to
+  // synthesize a new target for a word the reader did not select.
+  const encoded = String(item.targetId || '').match(/^.+-[^-]+-(\d+)-(\d+)$/);
+  if (encoded) {
+    const matches = [...lookup.byId.values()].filter(target =>
+      target.occurrenceGlobalStart != null && target.occurrenceGlobalEnd != null
+      && Number(target.occurrenceGlobalStart) === Number(encoded[1])
+      && Number(target.occurrenceGlobalEnd) === Number(encoded[2]) && !mismatch(target));
+    return matches.length === 1
+      ? { target: matches[0], matchType: 'existing-target-range', reason: '' }
+      : { target: null, matchType: 'none', reason: 'missing-target' };
   }
 
   const normalizedSentence = normalizeAnnotationSentenceValue(item.sentence);

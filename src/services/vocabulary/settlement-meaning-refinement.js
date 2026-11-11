@@ -3,6 +3,7 @@ import {
   normalizeNullableText,
   normalizeText,
 } from './vocabulary-models.js';
+import { normalizeSettlementPhonetic } from './settlement-phonetics.js';
 
 export const SETTLEMENT_MEANING_REFINEMENT_SOURCE = 'article-srs-meaning-refinement';
 export const SETTLEMENT_MEANING_REFINEMENT_PROMPT_VERSION = 3;
@@ -97,6 +98,15 @@ export function isSettlementSimpleMeaningValid(value, entryType) {
   return normalized.length <= getSettlementSimpleMeaningLimit(entryType);
 }
 
+export function isSettlementSimpleMeaningReady(candidate) {
+  return !!candidate
+    && !candidate.refinement_save_pending
+    && (candidate.refinement_phonetic_only || candidate.refinement_status !== 'pending')
+    && (candidate.refinement_phonetic_only || candidate.refinement_status !== 'failed')
+    && candidate.refinement_error !== 'simple_meaning_too_long'
+    && isSettlementSimpleMeaningValid(getCandidateSimpleMeaning(candidate), candidate.entry_type);
+}
+
 function parseRefinementTimestamp(value) {
   try {
     return Date.parse(new Date(value).toISOString());
@@ -130,7 +140,9 @@ export function needsSettlementMeaningRefinement(candidate, options = {}) {
   if (candidate.refinement_save_pending) return !options.automatic;
   if (candidate.refinement_status === 'pending'
     && !isSettlementMeaningRefinementPendingRetryable(candidate, options.now)) return false;
-  return !isSettlementSimpleMeaningValid(getCandidateSimpleMeaning(candidate), candidate.entry_type);
+  return !isSettlementSimpleMeaningValid(getCandidateSimpleMeaning(candidate), candidate.entry_type)
+    || !!options.includeMissingPhonetics && !options.automatic
+      && candidate.entry_type !== VOCABULARY_ENTRY_TYPES.PHRASE && !normalizeSettlementPhonetic(candidate.phonetic);
 }
 
 // Exact request provenance, stored as an optional field in the existing progress
@@ -150,7 +162,7 @@ export function getSettlementMeaningRefinementCandidates(candidates = [], option
 }
 
 export function buildSettlementMeaningRefinementTemplate(options = {}) {
-  const candidates = getSettlementMeaningRefinementCandidates(options.candidates);
+  const candidates = getSettlementMeaningRefinementCandidates(options.candidates, { includeMissingPhonetics: options.includeMissingPhonetics });
   const articleId = normalizeText(options.articleId || options.sourceId || options.source_id);
   return {
     schemaVersion: 1,
@@ -168,7 +180,9 @@ export function buildSettlementMeaningRefinementTemplate(options = {}) {
       '对照示例：markedText="ethylene gas"，simpleMeaning="乙烯气体"；markedText="polyphenol oxidase"，simpleMeaning="多酚氧化酶"。',
       '只给核心意思，不要解释原因，不要记忆法，不要翻译整句，不要输出文章背景。',
       '如果候选是专有名词、临时术语或不适合 SRS，simpleMeaning 返回空字符串。',
-      '只返回 JSON：{"items":[{"targetId":"...","simpleMeaning":"..."}]}',
+      'requestPhonetic=true 的单词，phonetic 返回 markedText 原形态的美式 IPA 音标（含词尾变化）；短语或不确定时返回空字符串。不要返回拼读提示。',
+      'preserveSimpleMeaning=true 时原样返回 currentSimpleMeaning，不要改写已保存的精简义。',
+      '只返回 JSON：{"items":[{"targetId":"...","simpleMeaning":"...","phonetic":"/.../"}]}',
     ],
     items: candidates.map((candidate) => {
       const entryType = candidate.entry_type === VOCABULARY_ENTRY_TYPES.PHRASE
@@ -203,6 +217,9 @@ export function buildSettlementMeaningRefinementTemplate(options = {}) {
         maxLength,
         max_length: maxLength,
         simpleMeaning: '',
+        currentSimpleMeaning: getCandidateSimpleMeaning(candidate) || '',
+        preserveSimpleMeaning: isSettlementSimpleMeaningReady(candidate),
+        requestPhonetic: entryType === VOCABULARY_ENTRY_TYPES.WORD && !normalizeSettlementPhonetic(candidate.phonetic),
       };
     }).filter((item) => item.targetId && item.text && item.meaning),
   };
@@ -228,7 +245,12 @@ export function applySettlementMeaningRefinementResult(candidates = [], result =
     const candidate = byTargetId.get(targetId);
     if (!candidate || seen.has(targetId)) return;
     seen.add(targetId);
-    const simpleMeaning = getResultSimpleMeaning(item);
+    if (candidate.entry_type !== VOCABULARY_ENTRY_TYPES.PHRASE && !normalizeSettlementPhonetic(candidate.phonetic)) {
+      const phonetic = normalizeSettlementPhonetic(item.phonetic || item.ipa);
+      if (phonetic) { candidate.phonetic = phonetic; candidate.phonetic_source = 'ai'; }
+    }
+    const simpleMeaning = candidate.refinement_phonetic_only && isSettlementSimpleMeaningValid(getCandidateSimpleMeaning(candidate), candidate.entry_type)
+      ? getCandidateSimpleMeaning(candidate) : getResultSimpleMeaning(item);
     if (!simpleMeaning) {
       stats.missing += 1;
       return;

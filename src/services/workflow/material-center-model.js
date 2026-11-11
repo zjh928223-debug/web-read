@@ -13,6 +13,7 @@ const ACTIVE_TASK_STATUSES = new Set([
   'transcribing',
   'segmenting',
   'translating',
+  'synthesizing',
   'validating',
 ])
 

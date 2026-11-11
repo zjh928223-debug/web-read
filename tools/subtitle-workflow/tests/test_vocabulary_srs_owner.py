@@ -89,6 +89,21 @@ class VocabularySrsOwnerTests(unittest.TestCase):
             **self.ids(request_key),
         )
 
+    def test_snapshot_record_selection_is_bounded_and_read_only(self):
+        owner = self.make_owner()
+        key = "vocabulary.srs.store.v1"
+        self.command(owner, "entry-upsert", key, self.row(key, self.srs_content()), 0)
+        before = owner.snapshot_path.read_bytes()
+        selected = owner.query("snapshot", payload={"recordIds": [key]}, **self.ids("selected"))
+        missing = owner.query("snapshot", payload={"recordIds": ["missing"]}, **self.ids("missing"))
+        self.assertEqual(list(selected["payload"]["records"]), [key])
+        self.assertEqual(missing["payload"]["records"], {})
+        self.assertEqual(selected["revision"], missing["revision"])
+        for ids in ([], "all", [None], [key] * 101):
+            result = owner.query("snapshot", payload={"recordIds": ids}, **self.ids("invalid"))
+            self.assertEqual(result["outcome"], "rejected")
+        self.assertEqual(owner.snapshot_path.read_bytes(), before)
+
     def test_empty_queries_are_typed_and_non_writing(self):
         owner = self.make_owner()
 
@@ -360,7 +375,10 @@ class VocabularySrsOwnerTests(unittest.TestCase):
         settlement_key = "vocabulary-article-srs-settlement-progress:article-1"
         settlement = {
             "article_id": "article-1",
-            "refinements": [],
+            "refinements": [{
+                "target_id": "target-1", "simple_meaning": "浮现", "phonetic": "/ɪˈmɜːrdʒɪŋ/",
+                "phonetic_only": True, "status": "completed", "prompt_version": 3,
+            }],
             "application_claims": [{
                 "target_id": "target-1",
                 "claim_token": "application-claim-1",
@@ -392,6 +410,10 @@ class VocabularySrsOwnerTests(unittest.TestCase):
         self.assertEqual(
             current["payload"]["records"][settlement_key]["content"]["application_claims"][0]["claim_token"],
             "application-claim-1",
+        )
+        self.assertEqual(
+            current["payload"]["records"][settlement_key]["content"]["refinements"][0]["phonetic"],
+            "/ɪˈmɜːrdʒɪŋ/",
         )
 
     def test_learning_unit_of_work_commits_all_changed_rows_once_with_one_receipt(self):

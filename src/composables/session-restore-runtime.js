@@ -101,7 +101,8 @@ export function createSessionRestoreRuntime(deps = {}) {
     const streamUrl = audioMeta && typeof audioMeta === 'object' && typeof audioMeta.streamUrl === 'string'
       ? audioMeta.streamUrl
       : '';
-    const audioBlob = ownerSource || streamUrl ? null : await deps.loadFromDB('audio');
+    const textOnly = audioMeta?.sourceType === 'text-only';
+    const audioBlob = ownerSource || streamUrl || textOnly ? null : await deps.loadFromDB('audio');
     const transcriptData = committedSource
       ? committedSession.transcript
       : await deps.loadFromDB('transcript');
@@ -113,7 +114,11 @@ export function createSessionRestoreRuntime(deps = {}) {
       ? committedSession.marks
       : ownerSource ? null : await deps.loadFromDB('marks');
 
-    if (streamUrl) {
+    if (textOnly) {
+      deps.audioPlayer.pause?.();
+      deps.audioPlayer.removeAttribute('src');
+      deps.audioPlayer.load?.();
+    } else if (streamUrl) {
       deps.audioPlayer.src = streamUrl;
       deps.markFileLoaded(deps.lblAudio, 'Audio stream restored');
     } else if (audioBlob) {

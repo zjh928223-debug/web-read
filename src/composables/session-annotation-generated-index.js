@@ -121,7 +121,7 @@ export function createSessionAnnotationGeneratedIndexRuntime(deps = {}) {
     if (store && typeof store.clear === 'function') store.clear();
   }
 
-  async function refreshGeneratedAnnotationIndexForCurrentDocument() {
+  async function refreshGeneratedAnnotationIndexForCurrentDocument(committed = {}) {
     const storage = typeof deps.getAnnotationGenerationStorage === 'function'
       ? deps.getAnnotationGenerationStorage()
       : null;
@@ -141,8 +141,13 @@ export function createSessionAnnotationGeneratedIndexRuntime(deps = {}) {
       return { itemCount: 0, skipped: true };
     }
 
-    const scope = getAnnotationGenerationScope();
+    const scope = committed.scope
+      ? normalizeAnnotationGenerationScope(committed.scope)
+      : getAnnotationGenerationScope();
     const scopeKey = getAnnotationGenerationScopeKey(scope);
+    if (getAnnotationGenerationScopeKey() !== scopeKey) {
+      return { itemCount: 0, skipped: true, stale: true };
+    }
     const refreshSeq = nextGeneratedIndexRefreshSeq();
     emitDiagnostics('app.generated_index_refresh_start', {
       scope,
@@ -150,7 +155,7 @@ export function createSessionAnnotationGeneratedIndexRuntime(deps = {}) {
       refreshSeq
     });
 
-    const bundle = await storage.loadBundle(scope);
+    const bundle = committed.bundle || await storage.loadBundle(scope);
     if (refreshSeq !== getGeneratedIndexRefreshSeq() || getAnnotationGenerationScopeKey() !== scopeKey) {
       emitDiagnostics('app.generated_index_refresh_stale', {
         scope,

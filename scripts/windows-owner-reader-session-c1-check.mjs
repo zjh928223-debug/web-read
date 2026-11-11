@@ -559,6 +559,38 @@ try {
       throw new Error('complete media was not rejected before a Host command')
     }
 
+    const beforeText = await counts()
+    const textLoader = createYoutubeWorkflowLoader({
+      client: { ...workflowClient, async getFile(jobId, kind) {
+        if (kind === 'transcript') return new Blob([JSON.stringify({ segments: [{ words: [{ word: 'file:', start: 0, end: 1 }] }] })])
+        return workflowClient.getFile(jobId, kind)
+      }, async getSession(jobId) {
+        return { jobId, title: 'Text article', sourceType: 'text-only', files: { transcript: 'transcript', chunkData: 'chunkData' } }
+      } },
+      readerSessionOwner: owner,
+      readerSessionPersistence: persistence,
+      hasCurrentContent: () => false,
+      sessionPublisher: publisher,
+      validateTranscriptData: value => value,
+      validateChunkData: value => value,
+    })
+    const textLoad = await textLoader.loadJobIntoReader('text-article', { replacePolicy: 'replace-current' })
+    if (textLoad.status !== 'loaded' || owner.getDescriptor() !== null || visible.audio !== '') {
+      throw new Error('text article did not commit without media or release the old binding')
+    }
+    const textReopened = await owner.load()
+    if (textReopened.status !== 'loaded' || textReopened.session.media !== null
+      || textReopened.session.audioMeta.sourceType !== 'text-only') {
+      throw new Error('text article did not reopen from the owner')
+    }
+    if ((await counts()).mediaRequests !== beforeText.mediaRequests || persistenceWrites !== 0) {
+      throw new Error('text article made a media request or used browser persistence')
+    }
+    const afterText = await loader.loadJobIntoReader('job-after-text', { replacePolicy: 'replace-current' })
+    if (afterText.status !== 'loaded' || !owner.getDescriptor()) {
+      throw new Error('switching from text back to audio did not rebind media')
+    }
+
     const databases = typeof indexedDB.databases === 'function' ? await indexedDB.databases() : []
     const finalCounts = await counts()
     return {

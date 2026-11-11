@@ -15,7 +15,7 @@ async function importVocabularyApi(repoRoot) {
 
     'article-srs-settlement.js',
     'article-srs-settlement-progress.js',
-    'settlement-meaning-refinement.js',
+    'settlement-meaning-refinement.js', 'settlement-phonetics.js',
     'srs-scheduler.js',
     'vocabulary-learning-models.js',
     'vocabulary-acquisition-repository.js',

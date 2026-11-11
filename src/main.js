@@ -67,6 +67,9 @@ console.log('[vue] runtime adapters bound to Pinia')
 themeStore.init()
 
 const readerToolbarButtonIds = [
+  'theme-mode-light',
+  'theme-mode-dark',
+  'theme-mode-custom',
   'btn-prev-sentence',
   'btn-next-sentence',
   'toggle-follow',

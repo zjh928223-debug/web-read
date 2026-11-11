@@ -48,7 +48,7 @@
     border: 0 solid var(--border);
     background-color: transparent;
     color: var(--muted-foreground);
-    font-family: Arial, sans-serif;
+    font-family: var(--pru-ui-font, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
   }
 
   :is(.srs-review-page, .passage-preview-learning-settings-dialog, .learning-page-load-notice, .annotation-backfill-dialog, .vocabulary-preview-dialog)[data-ui-theme="light"] [data-ui-owner="learning"]:is(button, [role="button"]):not(:disabled) {

@@ -429,11 +429,9 @@ async function main() {
   assert.match(appSource, /createLegacyVocabularyMigration/)
   assert.match(appSource, /createLegacyReviewServiceAdapter/)
   assert.match(appSource, /legacyService:\s*legacyReviewService/)
-  assert.match(
-    appSource,
-    /setTimeout\(\(\) => \{[\s\S]*srsReviewV2Service\.warmReviewData\?\.\(\)/,
-    'the reader should warm review snapshots in the background after startup',
-  )
+  const mountedBlock = appSource.match(/onMounted\(\(\) => \{[\s\S]*?\n\}\)/)?.[0] || ''
+  assert.doesNotMatch(mountedBlock, /warmReviewData|reviewWarmupTimer/, 'startup must not load full review history ahead of the material library')
+  assert.match(appSource, /function openSrsReview\(\) \{[\s\S]*?warmReviewData\?\.\(\)/, 'review history still loads on explicit review entry')
   assert.match(appSource, /v-if="isSrsReviewMounted"/)
   assert.match(appSource, /v-show="isSrsReviewOpen"/)
   assert.match(appSource, /:active="isSrsReviewOpen"/)

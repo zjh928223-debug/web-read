@@ -115,6 +115,13 @@ export const useThemeStore = defineStore('theme', () => {
     if (btn) { btn.textContent = config.icon }
     if (panel && theme !== 'custom') { panel.hidden = true }
     if (btn) { btn.setAttribute('aria-expanded', String(panel && !panel.hidden)) }
+    ;['light', 'dark', 'custom'].forEach(function (mode) {
+      var modeButton = document.getElementById('theme-mode-' + mode)
+      if (modeButton) {
+        modeButton.setAttribute('aria-pressed', String(mode === theme))
+        modeButton.classList.toggle('active', mode === theme)
+      }
+    })
   }
 
   function openCustomPanel() {
@@ -122,6 +129,16 @@ export const useThemeStore = defineStore('theme', () => {
     if (!panel) return
     panel.hidden = false
     var btn = document.getElementById('theme-toggle')
+    // Keep the menu outside the toolbar's horizontal scrolling viewport.
+    if (btn && typeof btn.getBoundingClientRect === 'function') {
+      document.body.appendChild(panel)
+      var anchor = btn.getBoundingClientRect()
+      Object.assign(panel.style, {
+        position: 'fixed', top: (anchor.bottom + 8) + 'px',
+        left: Math.max(8, Math.min(anchor.left, window.innerWidth - panel.offsetWidth - 8)) + 'px',
+        marginTop: '0', zIndex: '2000'
+      })
+    }
     if (btn) btn.setAttribute('aria-expanded', 'true')
   }
 

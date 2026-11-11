@@ -20,14 +20,6 @@ function sanitizeFilenamePart(value, fallback = 'article') {
   return normalized || fallback;
 }
 
-function excludePreviewGeneratedItems(items) {
-  return (Array.isArray(items) ? items : []).filter((item) => {
-    const source = String(item && (item.source || item.provider || item.source_type || item.sourceType) || '').trim();
-    const targetId = String(item && (item.targetId || item.target_id) || '').trim();
-    return source !== 'preview-scan' && !targetId.startsWith('preview-');
-  });
-}
-
 export function createSessionAnnotationLightweightIoRuntime(deps = {}) {
   const downloader = createObjectUrlDownloader({
     documentObject: deps.documentObject,
@@ -111,20 +103,23 @@ export function createSessionAnnotationLightweightIoRuntime(deps = {}) {
     const rawText = await file.text();
     const parsed = JSON.parse(rawText);
     const scope = requireLightweightIoFunction(deps, 'getAnnotationGenerationScope')();
+    if (parsed.audioKey && parsed.audioKey !== scope.audioKey) {
+      throw new Error('解释结果属于另一篇文章，未导入。');
+    }
     const normalized = await buildManualLightweightImportedBundle(
       parsed,
       scope,
       storage,
       getManualLightweightAnnotationBundleMergeDeps()
     );
-    await storage.saveBundle(scope, normalized.generated, normalized.status);
-    await requireLightweightIoFunction(deps, 'refreshGeneratedAnnotationIndexForCurrentDocument')();
-    await requireLightweightIoFunction(deps, 'rebuildMarksFromAnnotationItems')(excludePreviewGeneratedItems(
-      normalized.generated && normalized.generated.items
-    ), {
-      sourceType: 'annotation-lightweight-import',
-      replaceExisting: options.replaceExisting !== false
+    const committedBundle = await storage.saveBundle(scope, normalized.generated, normalized.status);
+    // Use the acknowledged commit. A concurrent health probe can temporarily
+    // make a fresh storage read fall back to an empty browser cache.
+    await requireLightweightIoFunction(deps, 'refreshGeneratedAnnotationIndexForCurrentDocument')({
+      scope,
+      bundle: committedBundle
     });
+    // Explanations never create, replace or restore the user's selected words.
     await requireLightweightIoFunction(deps, 'syncAnnotationGenerationEntryStatus')({ source: 'system' });
     return normalized;
   }

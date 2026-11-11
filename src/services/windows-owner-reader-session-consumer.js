@@ -223,6 +223,10 @@ export function createWindowsOwnerReaderSessionConsumer(options = {}) {
   }
 
   async function bindMediaDescriptor(descriptor, { signal } = {}) {
+    if (descriptor === null) {
+      safelyDispose()
+      return null
+    }
     if (!mediaOwner || typeof mediaOwner.bindDescriptor !== 'function') {
       throw new WindowsOwnerReaderSessionError('media-not-ready', { category: 'readiness', retryable: true })
     }
@@ -242,6 +246,11 @@ export function createWindowsOwnerReaderSessionConsumer(options = {}) {
 
     try {
       const expectedMedia = queried.session.media
+      if (expectedMedia === null && queried.session.audioMeta?.sourceType === 'text-only') {
+        safelyDispose()
+        return { status: 'loaded', source: 'owner', session: queried.session,
+          snapshot: queried.snapshot, mediaDescriptor: null, revision: queried.snapshot.revision, result: queried.result }
+      }
       const descriptor = await resolveMediaDescriptor({
         contentId: queried.session.contentId,
         sessionRevision: queried.session.revision,
@@ -601,7 +610,8 @@ function normalizeSnapshot(value, profileId) {
   assertOwnerSessionSafe(value, 'reader-session.snapshot')
   const contentId = requireIdentity(value.contentId, 'contentId')
   const revision = requireHostRevision(value.revision, 'revision')
-  const media = normalizeMediaDescriptor(value.media, profileId)
+  const textOnly = value.audioMeta?.sourceType === 'text-only' && value.media === null && !value.audioMeta?.streamUrl
+  const media = textOnly ? null : normalizeMediaDescriptor(value.media, profileId)
   if (!isPlainObject(value.audioMeta) || !isPlainObject(value.transcript) || !Array.isArray(value.marks)
     || (!Array.isArray(value.chunkData) && !isPlainObject(value.chunkData))) {
     throw new WindowsOwnerReaderSessionError('reader-session-invalid', { category: 'schema' })
@@ -624,7 +634,7 @@ function normalizeSnapshot(value, profileId) {
     throw new WindowsOwnerReaderSessionError('reader-session-invalid', { category: 'schema' })
   }
   const audioMeta = cloneJson(value.audioMeta)
-  audioMeta.streamUrl = media.authorizedUrl
+  audioMeta.streamUrl = media?.authorizedUrl || ''
   audioMeta.media = stripMediaDescriptor(media)
   const session = {
     contentId,
@@ -647,13 +657,14 @@ function normalizeSnapshot(value, profileId) {
 
 function candidateFromSession(session, { profileId, revision, mediaDescriptor }) {
   if (!isPlainObject(session)) throw new WindowsOwnerReaderSessionError('reader-session-invalid')
-  const descriptor = normalizeMediaDescriptor(mediaDescriptor || session.media || session.audioMeta?.media, profileId)
+  const textOnly = session.audioMeta?.sourceType === 'text-only' && !session.audioMeta?.streamUrl
+  const descriptor = textOnly ? null : normalizeMediaDescriptor(mediaDescriptor || session.media || session.audioMeta?.media, profileId)
   if (!isPlainObject(session.audioMeta) || !isPlainObject(session.transcript)
     || (!Array.isArray(session.chunkData) && !isPlainObject(session.chunkData)) || !Array.isArray(session.marks)) {
     throw new WindowsOwnerReaderSessionError('reader-session-invalid', { category: 'schema' })
   }
   const audioMeta = cloneJson(session.audioMeta)
-  audioMeta.streamUrl = descriptor.authorizedUrl
+  audioMeta.streamUrl = descriptor?.authorizedUrl || ''
   audioMeta.media = stripMediaDescriptor(descriptor)
   const candidate = {
     schemaVersion: WINDOWS_OWNER_READER_SESSION_SCHEMA,
@@ -684,6 +695,7 @@ function normalizeMediaDescriptor(value, profileId) {
 }
 
 function stripMediaDescriptor(value) {
+  if (value === null) return null
   return Object.fromEntries(MEDIA_KEYS.map((key) => [key, value[key]]))
 }
 
@@ -739,7 +751,8 @@ function stableSessionProjection(session, candidate, profileId) {
     domain: WINDOWS_OWNER_READER_SESSION_DOMAIN,
     profileId,
     contentId: requireIdentity(candidate.contentId || session.contentId, 'contentId'),
-    media: stripMediaDescriptor(normalizeMediaDescriptor(media, profileId)),
+    media: audioMeta?.sourceType === 'text-only' && !audioMeta?.streamUrl
+      ? null : stripMediaDescriptor(normalizeMediaDescriptor(media, profileId)),
     audioMeta: stableAudioMeta(audioMeta),
     transcript: cloneJson(candidate.transcript || session.transcript),
     chunkData: cloneJson(candidate.chunkData || session.chunkData),
@@ -833,7 +846,8 @@ function assertOwnerSessionSafe(value, context, key = '', seen = new WeakSet()) 
     return
   }
   if (typeof value === 'string') {
-    if (GENERIC_DATA_URI.test(value) || /^file:/iu.test(value) || ABSOLUTE_PATH.test(value)) {
+    // A standalone English token "file:" is ordinary text, not a file URI.
+    if (GENERIC_DATA_URI.test(value) || /^file:\S/iu.test(value) || ABSOLUTE_PATH.test(value)) {
       throw new WindowsOwnerReaderSessionError('reader-session-invalid')
     }
     if (key && (FORBIDDEN_KEY.test(key) || PATH_KEY.test(key))) {

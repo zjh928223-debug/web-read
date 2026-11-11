@@ -20,9 +20,9 @@ function Get-RandomLoopbackPort {
 function Assert-LiveDescriptor($State, [string]$MessagePrefix) {
   $process = Get-Process -Id ([int]$State.pid) -ErrorAction SilentlyContinue
   Assert-True ($null -ne $process -and -not $process.HasExited) "$MessagePrefix did not resolve a live descriptor PID"
-  $expected = ([DateTimeOffset]::Parse([string]$State.processStartUtc)).UtcDateTime
+  $expected = if ($State.processStartUtc -is [DateTime]) { $State.processStartUtc.ToUniversalTime() } else { ([DateTimeOffset]::Parse([string]$State.processStartUtc)).UtcDateTime }
   $actual = $process.StartTime.ToUniversalTime()
-  Assert-True ([Math]::Abs(($actual - $expected).TotalMilliseconds) -le 1000) "$MessagePrefix descriptor processStartUtc did not match the live PID"
+  Assert-True ([Math]::Abs(($actual - $expected).TotalMilliseconds) -le 1000) "$MessagePrefix descriptor processStartUtc did not match the live PID: expected=$($expected.ToString('o')) actual=$($actual.ToString('o')) raw=$($State.processStartUtc) type=$($State.processStartUtc.GetType().FullName)"
   $client = [Net.Sockets.TcpClient]::new()
   try {
     $connected = $client.ConnectAsync('127.0.0.1', [int]$State.port).Wait(500) -and $client.Connected

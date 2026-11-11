@@ -127,6 +127,7 @@ STAGES = (
     "transcribing",
     "segmenting",
     "translating",
+    "synthesizing",
     "validating",
     "ready",
 )
@@ -296,6 +297,9 @@ class WorkflowRequest:
     replace_policy: str = "ask"
     video_priority: bool = True
     force_reprocess: bool = False
+    source_type: str = "youtube"
+    article_text: str = ""
+    title: str = ""
 
     @classmethod
     def from_payload(cls, payload: dict) -> "WorkflowRequest":
@@ -310,7 +314,18 @@ class WorkflowRequest:
         if replace_policy not in {"ask", "replace-current"}:
             raise ValueError("replacePolicy must be ask or replace-current")
         url = str(payload.get("url", "")).strip()
-        if not url:
+        source_type = str(payload.get("sourceType") or "youtube")
+        if source_type not in {"youtube", "text-only"}:
+            raise ValueError("unsupported sourceType")
+        article_text = str(payload.get("articleText") or "").strip()
+        title = str(payload.get("title") or "").strip()
+        if source_type == "text-only":
+            if not article_text or len(article_text) > 30000:
+                raise ValueError("请粘贴正文，最多 30,000 字符。")
+            if len(title) > 200 or any(ord(c) < 32 and c not in "\n\r\t" for c in article_text):
+                raise ValueError("文章标题或正文格式无效。")
+            url = ""
+        elif not url:
             raise ValueError("url is required")
         return cls(
             url=url,
@@ -322,6 +337,9 @@ class WorkflowRequest:
             replace_policy=replace_policy,
             video_priority=coerce_bool(payload.get("videoPriority", payload.get("video_priority", True)), True),
             force_reprocess=coerce_bool(payload.get("forceReprocess", payload.get("force_reprocess", False))),
+            source_type=source_type,
+            article_text=article_text if source_type == "text-only" else "",
+            title=title if source_type == "text-only" else "",
         )
 
     def safe_manifest_request(self) -> dict:
@@ -334,6 +352,8 @@ class WorkflowRequest:
             "replacePolicy": self.replace_policy,
             "videoPriority": self.video_priority,
             "forceReprocess": self.force_reprocess,
+            **({"sourceType": self.source_type, "articleText": self.article_text, "title": self.title}
+               if self.source_type == "text-only" else {}),
         }
 
 
@@ -631,7 +651,8 @@ def validate_session_files(manifest: dict, *, refresh_identity: bool = False) ->
     video_path = Path(video_raw) if video_raw else None
     transcript_path = Path(str(files.get("transcript", "")))
     chunk_path = Path(str(files.get("chunkData", "")))
-    if not audio_path.exists() or audio_path.stat().st_size <= 0:
+    text_only = manifest.get("sourceType") == "text-only"
+    if not text_only and (not audio_path.is_file() or audio_path.stat().st_size <= 0):
         raise ValueError("audio file is missing or empty")
     if video_path and (not video_path.exists() or video_path.stat().st_size <= 0):
         raise ValueError("video file is missing or empty")
@@ -642,7 +663,9 @@ def validate_session_files(manifest: dict, *, refresh_identity: bool = False) ->
     chunk_data = load_json_file(chunk_path)
     if _chunk_count(chunk_data) <= 0:
         raise ValueError("chunkData output.json must contain chunks")
-    result = {"audio": audio_path, "transcript": transcript_path, "chunkData": chunk_path}
+    result = {"transcript": transcript_path, "chunkData": chunk_path}
+    if not text_only:
+        result["audio"] = audio_path
     if video_path:
         result["video"] = video_path
     marks = None

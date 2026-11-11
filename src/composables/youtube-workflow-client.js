@@ -291,7 +291,7 @@ export function createYoutubeWorkflowClient(options = {}) {
       throw error
     }
     if (workflowOwnerRevisionToken === null) {
-      await workflowQuery(cutover, 'job', {}, options.signal)
+      await workflowQuery(cutover, 'job', { includeBackupRecords: false }, options.signal)
     }
     if (Number.isInteger(requested) && requested >= 0
       && workflowOwnerJobsRevision !== null
@@ -346,7 +346,7 @@ export function createYoutubeWorkflowClient(options = {}) {
     const input = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {}
     const jobId = String(input.jobId || `workflow-${operationKey}`)
     const request = {}
-    for (const key of ['url', 'geminiMode', 'model', 'baseUrl', 'videoPriority', 'autoOpenWhenReady', 'replacePolicy', 'forceReprocess']) {
+    for (const key of ['url', 'geminiMode', 'model', 'baseUrl', 'videoPriority', 'autoOpenWhenReady', 'replacePolicy', 'forceReprocess', 'sourceType', 'articleText', 'title']) {
       if (input[key] !== undefined) request[key] = input[key]
     }
     const record = {
@@ -355,7 +355,7 @@ export function createYoutubeWorkflowClient(options = {}) {
       stage: 'queued',
       title: String(input.title || input.url || jobId),
       url: String(input.url || ''),
-      sourceType: 'youtube',
+      sourceType: input.sourceType === 'text-only' ? 'text-only' : 'youtube',
       ...(input.videoPriority !== undefined ? { videoPriority: Boolean(input.videoPriority) } : {}),
       request,
     }
@@ -471,6 +471,10 @@ export function createYoutubeWorkflowClient(options = {}) {
     async diagnostics() {
       return readJsonResponse(await fetchImpl(apiUrl('/api/diagnostics')))
     },
+    async lookupLocalPhonetics(words, options = {}) {
+      const query = [...new Set((words || []).map(word => String(word || '').trim()).filter(Boolean))].slice(0, 100).join(',')
+      return readJsonResponse(await fetchImpl(apiUrl(`/api/vocabulary/ielts-learning-pool?phonetics=${encodeURIComponent(query)}`), options))
+    },
     async diagnosticsPackage() {
       const response = await fetchImpl(apiUrl('/api/diagnostics/package'))
       if (!response.ok) throw new Error(`Unable to fetch diagnostics package: ${response.status}`)
@@ -575,7 +579,7 @@ export function createYoutubeWorkflowClient(options = {}) {
         .filter(Boolean))]
       const cutover = activeWorkflowOwner()
       if (cutover) {
-        const response = await workflowQuery(cutover, 'job', {}, options.signal)
+        const response = await workflowQuery(cutover, 'job', { includeBackupRecords: false }, options.signal)
         const jobs = Array.isArray(response.payload?.records) ? response.payload.records : []
         const selected = options.includeAll || uniqueIds.length === 0
           ? jobs

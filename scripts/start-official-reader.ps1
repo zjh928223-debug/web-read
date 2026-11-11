@@ -12,8 +12,23 @@ function Resolve-OfficialReaderPython {
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $logPath = Join-Path $projectRoot '.codex\startup-logs\official-reader-startup.log'
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $logPath) | Out-Null
-Add-Content -LiteralPath $logPath -Value "$(Get-Date -Format s) Starting official reader (PID $PID)." -Encoding UTF8
+$startupMutex = $null
+$ownsStartupMutex = $false
 try {
+  # A second desktop click must wait for the first startup, including its log
+  # redirection and service activation. Once admitted it reuses that service.
+  $startupMutex = [Threading.Mutex]::new($false, 'Local\ReadWebOfficialReader-5184')
+  try { $ownsStartupMutex = $startupMutex.WaitOne(120000) }
+  catch [Threading.AbandonedMutexException] { $ownsStartupMutex = $true }
+  if (-not $ownsStartupMutex) { throw 'Read-Web is still starting in another process. Please wait and try again.' }
+  Add-Content -LiteralPath $logPath -Value "$(Get-Date -Format s) Starting official reader (PID $PID)." -Encoding UTF8
+  # Explorer can inherit the system TEMP, which this user cannot write. Keep
+  # scratch files for this process and its children in the user's app data.
+  $runtimeTempRoot = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) 'Read-Web\optimization-temp'
+  [IO.Directory]::CreateDirectory($runtimeTempRoot) | Out-Null
+  $env:TEMP = $runtimeTempRoot
+  $env:TMP = $runtimeTempRoot
+  Add-Content -LiteralPath $logPath -Value "$(Get-Date -Format s) Temp: $runtimeTempRoot" -Encoding UTF8
   # Use the managed runtime independently of Explorer's inherited PATH.
   $nodeDirectory = 'E:\ReadWebRuntime\node-v24.13.1'
   $env:Path = (@($nodeDirectory) + @($env:Path -split ';' | Where-Object { $_ } | Select-Object -Unique)) -join ';'
@@ -71,4 +86,7 @@ try {
     if (-not $NoOpen) { Read-Host 'Press Enter to close' | Out-Null }
   }
   exit 1
+} finally {
+  if ($ownsStartupMutex) { $startupMutex.ReleaseMutex() }
+  if ($null -ne $startupMutex) { $startupMutex.Dispose() }
 }

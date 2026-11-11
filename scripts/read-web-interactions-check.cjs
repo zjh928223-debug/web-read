@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
 
 const targetUrl = process.env.READ_WEB_URL || process.env.READ26_URL || 'http://127.0.0.1:4173/';
@@ -142,8 +143,15 @@ async function main() {
     { timeout: 5000 }
   );
 
+  const wordLayoutBeforeMark = await page.locator('#transcript-vue-container [data-word-index]').evaluateAll(
+    elements => elements.map(element => [element.offsetLeft, element.offsetTop, element.offsetWidth, element.offsetHeight])
+  );
   await page.keyboard.press('m');
   await page.waitForSelector('#word-2.marked', { timeout: 5000 });
+  const wordLayoutAfterMark = await page.locator('#transcript-vue-container [data-word-index]').evaluateAll(
+    elements => elements.map(element => [element.offsetLeft, element.offsetTop, element.offsetWidth, element.offsetHeight])
+  );
+  assert.deepEqual(wordLayoutAfterMark, wordLayoutBeforeMark, 'marking a word must not move or resize the transcript');
 
   const normalInteraction = await page.evaluate(() => {
     const audio = document.getElementById('audio-player');
@@ -344,6 +352,9 @@ async function main() {
       activeCnHidden: activeCn ? activeCn.classList.contains('hidden-cn') : null
     };
   });
+  // Clicking the chunk closes reading settings; reopen before changing its controls.
+  await page.waitForFunction(() => !document.getElementById('reader-settings').open);
+  await page.locator('#reader-settings-toggle').click();
   await page.click('#btn-chunk-focus');
   const chunkFocusToggledGlobal = await page.evaluate(() => ({
     stateMode: window.__interactionRuntimeState.chunkCnMode,

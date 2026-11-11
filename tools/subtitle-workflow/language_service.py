@@ -144,7 +144,7 @@ def build_request_fingerprint(model_name, system_prompt, payload_obj, extra_conf
     cache_config = {
         key: value
         for key, value in (extra_config or {}).items()
-        if key not in {"api_key", "deadline"}
+        if key not in {"api_key", "deadline", "bypass_cache"}
     }
     fingerprint_payload = {
         "model_name": model_name,
@@ -190,7 +190,8 @@ def request_gemini_with_cache(cache_dir: Path, model_name, system_prompt, payloa
     cache_path = cache_dir / f"{fingerprint}.json"
     repository = DurableJsonRepository()
 
-    cached = _load_gemini_cache(repository, cache_path, fingerprint)
+    bypass_cache = bool((extra_config or {}).get("bypass_cache"))
+    cached = None if bypass_cache else _load_gemini_cache(repository, cache_path, fingerprint)
     if cached is not None:
         if log_func is not None:
             log_func(f"{log_prefix}：命中缓存：{cache_path.name}")
@@ -206,7 +207,7 @@ def request_gemini_with_cache(cache_dir: Path, model_name, system_prompt, payloa
 
     extra_config = extra_config or {}
     with request_lock:
-        cached = _load_gemini_cache(repository, cache_path, fingerprint)
+        cached = None if bypass_cache else _load_gemini_cache(repository, cache_path, fingerprint)
         if cached is not None:
             if log_func is not None:
                 log_func(f"{log_prefix}：等待后命中缓存：{cache_path.name}")
@@ -544,11 +545,20 @@ def strip_markdown_json_fence(raw_text: str) -> str:
 
 
 def lightly_repair_json_text(raw_text: str) -> str:
-    text = str(raw_text or "")
-    text = text.replace("“", "\"").replace("”", "\"").replace("‘", "'").replace("’", "'")
-    text = re.sub(r'([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:', r'\1"\2":', text)
-    text = re.sub(r',(\s*[}\]])', r'\1', text)
-    return text
+    # Protect existing JSON strings, including escapes. Syntax cleanup must not
+    # rewrite Chinese quotes or JSON examples inside an explanation's value.
+    parts = re.split(r'("(?:\\.|[^"\\])*")', str(raw_text or ""))
+    for index in range(0, len(parts), 2):
+        text = parts[index]
+        # Some responses contain a stray diff marker before a property. Only
+        # remove a line-leading marker between { / comma and a quoted key colon.
+        if index + 2 < len(parts) and parts[index + 2].lstrip().startswith(":"):
+            text = re.sub(r'([{,]\s*\n[ \t]*)[-+]([ \t]*)$', r'\1\2', text)
+        text = text.replace("“", "\"").replace("”", "\"").replace("‘", "'").replace("’", "'")
+        text = re.sub(r'([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:', r'\1"\2":', text)
+        text = re.sub(r',(\s*[}\]])', r'\1', text)
+        parts[index] = text
+    return "".join(parts)
 
 
 def build_json_error_context(raw_text: str, error: json.JSONDecodeError) -> str:

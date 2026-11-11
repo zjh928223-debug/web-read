@@ -28,7 +28,7 @@ export function getSettlementOverview(settlement = {}) {
   } else if (settlement.readError) {
     state = 'error';
     message = '读取失败，请重试。';
-  } else if (!candidates.length) {
+  } else if (!candidates.length && !(settlement.reviewCandidates || []).length) {
     if (applied.size || skipped.size || legacyProcessed) {
       state = 'processed';
       message = '本篇暂无待整理的生词。';

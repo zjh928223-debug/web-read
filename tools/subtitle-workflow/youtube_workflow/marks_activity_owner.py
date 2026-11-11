@@ -1226,6 +1226,15 @@ class MarksActivityOwner:
         except MarksActivityOwnerStorageError as error:
             return self._error_response(operation, request_id, correlation_id, error.code, outcome="manual-recovery", status="manual-recovery", details=error.details)
         current_revision = int(current["revision"])
+        if kind == 'marks':
+            # Older clients used explanation imports to create marks. Preserve
+            # existing legacy rows, but never let that path add or rewrite one.
+            existing_marks = current.get('payload', {}).get('marks', [])
+            if any(isinstance(mark, Mapping)
+                   and (mark.get('sourceType') or mark.get('source')) == 'annotation-lightweight-import'
+                   and mark not in existing_marks for mark in command_payload['marks']):
+                return self._error_response(operation, request_id, correlation_id, 'invalid-request',
+                    revision=current_revision, details={'reason': 'annotation-cannot-create-marks'})
         created_at = _utc_now()
         pending = self._make_receipt(
             job_id=job,

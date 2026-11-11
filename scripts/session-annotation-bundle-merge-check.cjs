@@ -134,7 +134,7 @@ async function main() {
       },
       {
         targetId: 'target-b',
-        markedText: 'Different',
+        markedText: 'Beta',
         sentence: 'Beta sentence.',
         boundary: 'Beta boundary'
       },
@@ -150,7 +150,8 @@ async function main() {
   assert.equal(merged.importedCount, 2);
   assert.equal(merged.skippedCount, 2);
   assert.deepEqual(merged.missingTargetIds, ['missing-target']);
-  assert.deepEqual(merged.markedTextMismatchTargetIds, ['target-b']);
+  assert.deepEqual(merged.markedTextMismatchTargetIds, []);
+  await assert.rejects(() => api.buildManualLightweightImportedBundle({items:[{targetId:'target-b',markedText:'Different',meaning:'wrong'}]},scope,storage,deps), /target/);
   assert.equal(merged.generated.audioKey, scope.audioKey);
   assert.equal(merged.generated.documentId, scope.documentId);
   assert.equal(merged.generated.source, 'manual-lightweight-import');
@@ -169,8 +170,10 @@ async function main() {
   const changed = await importMeaning({ sourceSentence: 'Alpha sentence.', meaning: 'new explanation' });
   assert.equal(changed.generated.items[0].simpleMeaning, '', 'changed explanation cannot retain an old short');
   assert.equal(changed.generated.items[0].simple_meaning, '', 'old alias cannot revive the stale short');
+  targets[0].sentenceText = 'Another Alpha sentence.';
   const changedContext = await importMeaning({ sourceSentence: 'Another Alpha sentence.', meaning: 'old explanation' });
   assert.equal(changedContext.generated.items[0].simpleMeaning, '');
+  targets[0].sentenceText = 'Alpha sentence.';
   const joint = await importMeaning({ sourceSentence: 'Alpha sentence.', meaning: 'new explanation', simpleMeaning: '新短义' });
   assert.equal(joint.generated.items[0].simpleMeaning, '新短义');
   assert.equal(joint.generated.items[0].meaning, 'new explanation');

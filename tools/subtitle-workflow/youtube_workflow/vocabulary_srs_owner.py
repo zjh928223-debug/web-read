@@ -612,10 +612,18 @@ class VocabularySrsOwner:
         self,
         operation: str,
         *,
+        payload: Mapping[str, Any] | None = None,
         request_id: str,
         correlation_id: str,
     ) -> dict[str, Any]:
         try:
+            record_ids = (payload or {}).get("recordIds")
+            if record_ids is not None and (
+                operation != "snapshot" or not isinstance(record_ids, list)
+                or not 1 <= len(record_ids) <= 100
+                or any(not isinstance(key, str) or not 1 <= len(key) <= 512 for key in record_ids)
+            ):
+                raise VocabularySrsOwnerError("invalid-request")
             request_id = _identity(request_id, "requestId")
             correlation_id = _identity(correlation_id, "correlationId")
         except VocabularySrsOwnerError:
@@ -630,6 +638,9 @@ class VocabularySrsOwner:
             payload = {"empty": True, "found": False, "revision": 0, "records": {}}
             return self._envelope(operation, request_id, correlation_id, "read", "not-applicable", 0, payload, _typed_error("not-found", correlation_id))
         keys = self._query_keys(operation, document["records"])
+        if record_ids is not None:
+            selected_ids = set(record_ids)
+            keys = [key for key in keys if key in selected_ids]
         # Each repository read yields private decoded data, not cached content.
         selected = {key: document["records"][key] for key in keys}
         payload = {

@@ -11,6 +11,8 @@ from typing import Callable
 from fastapi import HTTPException
 
 from .core import DEFAULT_GEMINI_MODEL, GEMINI_CACHE_DIR, load_json_file, utc_now_iso
+from .annotation_output_contract import validate_annotation_template
+from .annotation_batch_execution import execute_annotation_batches
 from .annotation_backfill_template import (
     ANNOTATION_BACKFILL_PROMPT_PATH,
     ANNOTATION_BACKFILL_JOINT_PROMPT_PATH,
@@ -21,7 +23,6 @@ from .annotation_backfill_template import (
     normalize_annotation_backfill_retry_count,
     normalize_annotation_backfill_retry_delay,
     plan_annotation_backfill_requests,
-    is_transient_annotation_backfill_error,
     parse_annotation_backfill_response,
     validate_annotation_backfill_batch_result,
     merge_annotation_backfill_results,
@@ -103,6 +104,11 @@ class AnnotationBackfillRuntime:
         if not output_dir:
             raise HTTPException(status_code=409, detail="job outputDir is missing")
         is_srs_refinement = is_srs_meaning_refinement_request(payload, template)
+        if not is_srs_refinement:
+            try:
+                validate_annotation_template(template)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
         backfill_dir = output_dir / "_workflow" / (
             "srs-meaning-refinement" if is_srs_refinement else "annotation-backfill"
         )
@@ -149,81 +155,50 @@ class AnnotationBackfillRuntime:
         def log_annotation_backfill(message: str) -> None:
             self._log(f"annotation-backfill {job_id}: {message}")
 
-        result: dict = {"items": []}
+        def check_control():
+            if cancel_event is not None and cancel_event.is_set():
+                raise AnnotationBackfillCanceled("annotation backfill canceled")
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError("annotation backfill deadline exceeded")
+
+        resumed_count = 0
         try:
-            for batch_index, request_template in enumerate(request_templates, start=1):
-                batch_items = request_template.get("items") if isinstance(request_template.get("items"), list) else []
-                if len(request_templates) > 1:
-                    self._write_json(runs_dir / f"{run_id}-batch-{batch_index}-template.json", request_template)
-                    log_annotation_backfill(
-                        f"request batch {batch_index}/{len(request_templates)} items={len(batch_items)}"
-                    )
-                for attempt_index in range(max_retries + 1):
-                    if cancel_event is not None and cancel_event.is_set():
-                        raise AnnotationBackfillCanceled("annotation backfill canceled")
-                    if deadline is not None and time.monotonic() >= deadline:
-                        raise TimeoutError("annotation backfill deadline exceeded")
-                    try:
-                        response_text = self.requester(
-                            GEMINI_CACHE_DIR,
-                            model,
-                            prompt,
-                            request_template,
-                            extra_config={
-                                "api_key": api_key,
-                                "base_url": base_url,
-                                "response_mime_type": "application/json",
-                                "temperature": 0.1,
-                                "deadline": time.time() + max(0.0, deadline - time.monotonic()) if deadline else None,
-                            },
-                            log_func=log_annotation_backfill,
-                            log_prefix="annotation-backfill",
-                        )
-                        if cancel_event is not None and cancel_event.is_set():
-                            raise AnnotationBackfillCanceled("annotation backfill canceled")
-                        if deadline is not None and time.monotonic() >= deadline:
-                            raise TimeoutError("annotation backfill deadline exceeded")
-                        break
-                    except Exception as exc:
-                        if attempt_index >= max_retries or not is_transient_annotation_backfill_error(exc):
-                            raise exc
-                        retry_count += 1
-                        safe_detail = self._redact(str(exc), [api_key])
-                        log_annotation_backfill(
-                            f"transient failure in batch {batch_index}/{len(request_templates)}; "
-                            f"retry {attempt_index + 1}/{max_retries}: {safe_detail}"
-                        )
-                        if retry_delay_seconds > 0:
-                            retry_wait = retry_delay_seconds * (2 ** attempt_index)
-                            retry_wait += self.retry_jitter(retry_wait)
-                            if cancel_event is not None and cancel_event.wait(retry_wait):
-                                raise AnnotationBackfillCanceled("annotation backfill canceled")
-                            if cancel_event is None:
-                                time.sleep(retry_wait)
+            check_control()
+            if is_srs_refinement:
+                # Keep the independently reviewed SRS single-call contract.
+                response_text = self.requester(
+                    GEMINI_CACHE_DIR, model, prompt, template,
+                    extra_config={
+                        "api_key": api_key, "base_url": base_url,
+                        "response_mime_type": "application/json", "temperature": 0.1,
+                        "deadline": time.time() + max(0.0, deadline - time.monotonic()) if deadline else None,
+                    }, log_func=log_annotation_backfill, log_prefix="annotation-backfill",
+                )
+                check_control()
                 try:
-                    batch_result = parse_annotation_backfill_response(response_text, log_func=log_annotation_backfill)
-                    validate_annotation_backfill_batch_result(request_template, batch_result, normalize_simple_meanings=joint_meanings)
-                except Exception as exc:
-                    (backfill_dir / "latest-result.raw.txt").write_text(str(response_text or ""), encoding="utf-8")
-                    (runs_dir / f"{run_id}-batch-{batch_index}-result.raw.txt").write_text(
-                        str(response_text or ""),
-                        encoding="utf-8",
-                    )
-                    safe_detail = self._redact(str(exc), [api_key])
-                    self._log(
-                        f"annotation-backfill {job_id}: response parse/validation failed in batch "
-                        f"{batch_index}/{len(request_templates)}: {safe_detail}"
-                    )
-                    raise HTTPException(status_code=502, detail=safe_detail)
-                result = merge_annotation_backfill_results(result, batch_result)
+                    result = parse_annotation_backfill_response(response_text, log_func=log_annotation_backfill)
+                    validate_annotation_backfill_batch_result(template, result)
+                except Exception:
+                    (backfill_dir / 'latest-result.raw.txt').write_text(str(response_text or ''), encoding='utf8')
+                    (runs_dir / f'{run_id}-batch-1-result.raw.txt').write_text(str(response_text or ''), encoding='utf8')
+                    raise
+            else:
+                result, retry_count, resumed_count = execute_annotation_batches(
+                    template, request_templates, directory=backfill_dir, run_id=run_id,
+                    model=model, base_url=base_url, prompt=prompt, joint_meanings=joint_meanings,
+                    api_key=api_key, requester=self.requester, cache_dir=GEMINI_CACHE_DIR,
+                    max_retries=max_retries, retry_delay=retry_delay_seconds, retry_jitter=self.retry_jitter,
+                    check_control=check_control, cancel_event=cancel_event, deadline=deadline,
+                    write_json=self._write_json, log=log_annotation_backfill,
+                )
         except Exception as exc:
             if isinstance(exc, (AnnotationBackfillCanceled, TimeoutError)):
                 raise
             if isinstance(exc, HTTPException):
-                raise exc
+                raise
             safe_detail = self._redact(str(exc), [api_key])
             self._log(f"annotation-backfill {job_id}: request failed: {safe_detail}")
-            raise HTTPException(status_code=502, detail=safe_detail)
+            raise HTTPException(status_code=502, detail=safe_detail) from exc
 
         if payload.get("mergeWithLatest"):
             try:
@@ -232,6 +207,7 @@ class AnnotationBackfillRuntime:
                 existing_result = {}
             result = merge_annotation_backfill_results(existing_result, result)
 
+        check_control()
         metadata = {
             "schemaVersion": 1,
             "jobId": job_id,
@@ -240,10 +216,11 @@ class AnnotationBackfillRuntime:
             "generatedAt": utc_now_iso(),
             "itemCount": len(result.get("items") or []),
             "templateItemCount": len(template.get("items") or []),
-            "requestItemCount": len(template.get("items") or []),
+            "requestItemCount": len(template.get("items") or []) - resumed_count,
             "batchSize": batch_size,
             "batchCount": len(request_templates),
             "retryCount": retry_count,
+            "resumedItemCount": resumed_count,
             "mergeWithLatest": bool(payload.get("mergeWithLatest")),
             "purpose": SRS_MEANING_REFINEMENT_PURPOSE if is_srs_refinement else "annotation_backfill",
             "meaningStrategy": "joint-short-context-v1" if joint_meanings else "separate",

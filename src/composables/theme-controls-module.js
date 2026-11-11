@@ -11,14 +11,20 @@ export function initThemeControls(deps) {
     themeStore.init();
 
     themeToggleBtn.addEventListener('click', function () {
-        var currentTheme = localStorage.getItem('theme') || 'light';
-        var nextTheme = currentTheme === 'light' ? 'dark' : (currentTheme === 'dark' ? 'custom' : 'light');
-        themeStore.applyThemeMode(nextTheme);
-        if (nextTheme === 'custom') {
-            themeStore.openCustomThemePanel();
-        } else {
+        if (themeToggleBtn.getAttribute('aria-expanded') === 'true') {
             themeStore.closeCustomThemePanel();
+        } else {
+            themeStore.openCustomThemePanel();
         }
+    });
+
+    ['light', 'dark', 'custom'].forEach(function (mode) {
+        var button = document.getElementById('theme-mode-' + mode);
+        if (!button) return;
+        button.addEventListener('click', function () {
+            themeStore.applyThemeMode(mode);
+            themeStore.openCustomThemePanel();
+        });
     });
 
     [
@@ -36,15 +42,11 @@ export function initThemeControls(deps) {
             colors[key] = input.value;
             themeStore.applyCustomTheme(colors);
         });
-        input.addEventListener('change', function () {
-            themeStore.closeCustomThemePanel();
-        });
     });
 
     if (themeCustomResetBtn) {
         themeCustomResetBtn.addEventListener('click', function () {
             themeStore.applyCustomTheme(themeStore.CUSTOM_THEME_DEFAULTS);
-            themeStore.closeCustomThemePanel();
         });
     }
 }

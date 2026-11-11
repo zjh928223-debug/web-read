@@ -16,6 +16,8 @@ export function getSettlementMeaningView(candidate = {}, { refining = false } = 
   let message = valid ? '' : '暂无精简义';
   if (candidate.refinement_save_pending) {
     state = 'unsaved'; message = '待保存，可重试保存';
+  } else if (candidate.refinement_phonetic_only && valid) {
+    message = candidate.refinement_status === 'pending' ? '音标补充中…' : '';
   } else if (refining || (candidate.refinement_status === 'pending'
     && !isSettlementMeaningRefinementPendingRetryable(candidate))) {
     state = 'pending'; message = '精简中…';
@@ -28,6 +30,7 @@ export function getSettlementMeaningView(candidate = {}, { refining = false } = 
   } else if (!valid && candidate.refinement_status === 'completed') {
     state = 'missing-result'; message = '未返回精简义';
   }
-  return { original, simple: valid ? simple : '', state, message,
+  return { original, simple: valid ? simple : original, state, message: original || valid ? '' : message,
+    usingOriginal: !valid && !!original,
     expandable: original.length > 100 || original.includes('\n') };
 }

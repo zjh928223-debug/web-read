@@ -7,25 +7,29 @@
         size="reader"
         class="small-btn youtube-material-entry"
         data-ui-owner="workflow"
+        :title="taskSummary"
+        aria-label="素材处理"
+        :aria-description="`${taskSummary}${completionSignal ? ' · 有任务完成' : ''}`"
         @click="openPanel"
       >
         <span>素材处理</span>
-        <small v-if="activeTaskCount" class="youtube-material-entry-count is-active">{{ activeTaskEntryText }}</small>
-        <small v-if="failedTaskCount" class="youtube-material-entry-count is-failed">{{ failedTaskCount }}</small>
-        <small v-if="completionSignal" class="youtube-material-entry-count is-complete">✓</small>
+        <span class="youtube-material-entry-indicators">
+          <small v-show="activeTaskCount" class="youtube-material-entry-count is-active" :title="`${activeTaskCount} 项处理中：${activeTaskEntryText}`">{{ activeTaskEntryText }}</small>
+          <small v-show="failedTaskCount" class="youtube-material-entry-count is-failed" :title="`${failedTaskCount} 项需要处理`">{{ failedTaskCount }}</small>
+          <small v-show="completionSignal" class="youtube-material-entry-count is-complete" title="有任务完成">✓</small>
+        </span>
       </Button>
     </div>
   </Teleport>
 
   <Teleport to="#reader-article-status-root">
     <div class="reader-article-status rw:flex rw:min-w-0 rw:flex-col rw:gap-1 rw:break-words" :aria-busy="openingJobId ? 'true' : 'false'">
-      <strong class="rw:leading-5">{{ openingJobId ? articleTitleBeforeOpen : currentArticleTitle }}</strong>
-      <span class="rw:text-sm rw:leading-5 rw:text-[var(--text-sub)]" role="status" aria-live="polite" aria-atomic="true">{{ readerOpenMessage }}</span>
+      <h1 class="reader-article-title" :class="{ 'reader-article-title--empty': (openingJobId ? articleTitleBeforeOpen : currentArticleTitle) === '尚未打开文章' }">{{ openingJobId ? articleTitleBeforeOpen : currentArticleTitle }}</h1>
     </div>
   </Teleport>
 
   <div class="youtube-workflow">
-    <div v-if="panelOpen" class="youtube-workflow-backdrop">
+    <div v-if="panelPrepared || panelOpen" v-show="panelOpen" class="youtube-workflow-backdrop" @click.self="closePanel">
       <section ref="panelDialogRoot" class="youtube-workflow-panel" role="dialog" aria-modal="true" aria-label="素材处理" :aria-busy="panelPending ? 'true' : 'false'" @pointerdown.stop>
         <header class="youtube-workflow-header">
           <div>
@@ -106,7 +110,15 @@
             </Button>
           </nav>
 
-          <main class="youtube-workflow-content">
+          <main ref="workflowContentRoot" class="youtube-workflow-content">
+            <div v-if="completedMaterials.length" class="youtube-workflow-completion-notice" role="status" aria-live="polite">
+              <div>
+                <strong>{{ completedMaterials.length === 1 ? '素材处理完成' : `${completedMaterials.length} 项素材处理完成` }}</strong>
+                <p>{{ jobDisplayTitle(completedMaterials[0]) }}{{ completedMaterials.length > 1 ? ` 等 ${completedMaterials.length} 项` : '' }}</p>
+                <small>已保存到素材库，点击“打开”即可开始阅读。</small>
+              </div>
+              <Button v-if="workflowView !== 'library'" type="button" variant="outline" size="default" data-ui-owner="workflow" @click="showCompletedMaterials">查看刚完成的素材</Button>
+            </div>
             <p v-if="workflowMutationNotice" class="youtube-workflow-hint" data-workflow-mutation-notice role="status" aria-live="polite" data-tone="warning">
               {{ workflowMutationNotice }}
             </p>
@@ -117,7 +129,30 @@
                 </div>
               </div>
 
-              <form class="youtube-workflow-form youtube-add-material-form" @submit.prevent="enqueueUrls">
+              <div class="youtube-primary-actions" role="group" aria-label="素材类型">
+                <Button type="button" size="default" data-ui-owner="workflow" :variant="materialType === 'video' ? 'secondary' : 'ghost'" :aria-pressed="materialType === 'video'" :disabled="starting" @click="materialType = 'video'">视频链接</Button>
+                <Button type="button" size="default" data-ui-owner="workflow" :variant="materialType === 'article' ? 'secondary' : 'ghost'" :aria-pressed="materialType === 'article'" :disabled="starting" @click="materialType = 'article'">粘贴文章</Button>
+              </div>
+              <form v-if="materialType === 'article'" class="youtube-workflow-form youtube-add-material-form" @submit.prevent="enqueueArticle">
+                <label class="youtube-material-link-label">
+                  <span>文章标题（可选）</span>
+                  <Input v-model="articleTitle" data-ui-owner="workflow" name="article-title" maxlength="200" placeholder="例如：今天想读的文章" :disabled="starting" />
+                </label>
+                <label class="youtube-material-link-label">
+                  <span>英文正文</span>
+                  <Textarea v-model="articleText" data-ui-owner="workflow" name="article-text" rows="12" class="rw:min-h-[220px] rw:resize-y" placeholder="把英文文章粘贴到这里，可以保留段落。" :disabled="starting" aria-describedby="article-paste-hint" />
+                </label>
+                <p id="article-paste-hint" class="youtube-workflow-hint" :data-tone="articleText.length > 30000 ? 'warning' : undefined">{{ articleText.length.toLocaleString() }} / 30,000 字符 · 自动生成 AI 切分、中文释义和 Aria 自然美式语音，保存后可连续播放与跟读。</p>
+                <p v-if="articleNotice" class="youtube-workflow-hint" data-tone="warning" role="alert">{{ articleNotice }}</p>
+                <div v-if="!apiKey.trim() && !credentialStatus.stored" class="youtube-add-credential-needed">
+                  <span>需要先保存 Gemini API Key</span>
+                  <Button type="button" variant="outline" size="default" data-ui-owner="workflow" @click="setWorkflowView('settings')">去设置</Button>
+                </div>
+                <div class="youtube-primary-actions youtube-add-submit-row">
+                  <Button type="submit" variant="default" size="default" data-ui-owner="workflow" :disabled="starting || !articleText.trim() || articleText.length > 30000 || (!apiKey.trim() && !credentialStatus.stored)">{{ starting ? '正在提交…' : '生成并保存' }}</Button>
+                </div>
+              </form>
+              <form v-else class="youtube-workflow-form youtube-add-material-form" @submit.prevent="enqueueUrls">
                 <label class="youtube-material-link-label">
                   <span>视频链接</span>
                   <Input
@@ -240,24 +275,20 @@
                       <span class="youtube-job-status-badge">{{ jobStageProgressText(group.displayJob) }}</span>
                       <span v-if="group.attemptCount > 1" class="youtube-task-attempt-count">{{ group.attemptCount }} 次尝试</span>
                     </div>
-                    <small class="youtube-job-source">{{ taskSourceText(group.displayJob) }}</small>
-                    <small class="youtube-job-source">{{ jobRequestProvenanceText(group.displayJob) }}</small>
+                    <template v-if="group.statusKind !== 'failed'">
+                      <small class="youtube-job-source">{{ taskSourceText(group.displayJob) }}</small>
+                      <small class="youtube-job-source">{{ jobRequestProvenanceText(group.displayJob) }}</small>
+                    </template>
                     <div class="youtube-job-progress" aria-hidden="true">
                       <span :style="{ width: `${jobProgressPercent(group.displayJob)}%` }"></span>
                     </div>
-                    <small v-if="group.displayJob.error" class="youtube-workflow-error">{{ failureReasonText(group.displayJob) }}</small>
+                    <p v-if="group.statusKind === 'failed'" class="youtube-task-failure-summary" role="status">{{ failureReasonText(group.displayJob) }}</p>
                     <div v-if="group.statusKind === 'active'" class="youtube-job-log" aria-label="运行日志">
                       <div class="youtube-job-log-title">当前过程</div>
                       <ul>
                         <li v-for="line in jobLogLines(group.displayJob)" :key="line">{{ line }}</li>
                       </ul>
                     </div>
-                    <details v-if="group.attemptCount > 1" class="youtube-task-attempt-details">
-                      <summary>查看以往尝试</summary>
-                      <p v-for="attempt in group.attempts.slice(1)" :key="attempt.jobId">
-                        {{ exactJobTime(attempt) }} · {{ failureReasonText(attempt) }}
-                      </p>
-                    </details>
                   </div>
                   <div class="youtube-workflow-job-actions">
                     <Button
@@ -301,6 +332,22 @@
                       取消
                     </Button>
                   </div>
+                  <div v-if="group.statusKind === 'failed' || group.attemptCount > 1" class="youtube-task-diagnostics">
+                    <details v-if="group.statusKind === 'failed'" :key="group.displayJob.jobId" class="youtube-task-failure-details">
+                      <summary>查看完整详情</summary>
+                      <pre class="youtube-task-diagnostic-scroll" tabindex="0" role="region" aria-label="完整任务详情">{{ taskFailureDetails(group.displayJob) }}</pre>
+                    </details>
+                    <details v-if="group.attemptCount > 1" class="youtube-task-attempt-details">
+                      <summary>查看以往尝试</summary>
+                      <div v-for="attempt in group.attempts.slice(1)" :key="attempt.jobId">
+                        <p>{{ exactJobTime(attempt) }} · {{ failureReasonText(attempt) }}</p>
+                        <details class="youtube-task-failure-details">
+                          <summary>查看本次完整详情</summary>
+                          <pre class="youtube-task-diagnostic-scroll" tabindex="0" role="region" aria-label="以往尝试完整详情">{{ taskFailureDetails(attempt) }}</pre>
+                        </details>
+                      </div>
+                    </details>
+                  </div>
                 </article>
               </section>
             </section>
@@ -314,17 +361,19 @@
               </div>
               <p v-if="readerActivityNotice" class="youtube-workflow-hint" data-tone="warning">{{ readerActivityNotice }}</p>
               <section class="youtube-workflow-history youtube-material-library-list">
-                <div v-if="libraryPending && !recentJobs.length" class="youtube-workflow-empty">正在读取素材库…</div>
-                <div v-else-if="!recentJobs.length" class="youtube-workflow-empty">暂无素材</div>
+                <div v-if="libraryPending && !libraryDisplayJobs.length" class="youtube-workflow-empty">正在读取素材库…</div>
+                <div v-else-if="!libraryDisplayJobs.length" class="youtube-workflow-empty">暂无素材</div>
                 <article
-                  v-for="job in recentJobs"
+                  v-for="job in libraryDisplayJobs"
                   :key="job.jobId"
                   class="youtube-workflow-job youtube-workflow-library-job"
                   :data-status="job.needsRepair ? 'needs-repair' : 'ready'"
+                  :data-just-completed="visibleCompletedJobIds.includes(job.jobId) ? 'true' : undefined"
                 >
                   <div class="youtube-workflow-job-main">
                     <strong class="youtube-job-title">{{ jobDisplayTitle(job) }}</strong>
                     <div class="youtube-job-status-line">
+                      <span v-if="visibleCompletedJobIds.includes(job.jobId)" class="youtube-library-completed-badge">刚刚完成</span>
                       <span>{{ libraryTimeLabel(job) }} · {{ libraryRelativeTime(job) }}</span>
                       <span>{{ libraryExactTime(job) }}</span>
                       <span v-if="job.needsRepair" class="youtube-library-repair-state">需要修复</span>
@@ -654,30 +703,6 @@
       </div>
     </Teleport>
 
-    <Teleport to="body">
-      <aside
-        v-if="materialNotice"
-        class="youtube-material-notice"
-        role="status"
-        aria-live="polite"
-        @mouseenter="pauseMaterialNotice"
-        @mouseleave="resumeMaterialNotice"
-      >
-        <span>{{ materialNotice.message }}</span>
-        <Button type="button" variant="default" size="default" data-ui-owner="workflow" @click="runMaterialNoticeAction">{{ materialNotice.actionLabel }}</Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          class="youtube-material-notice-close"
-          data-ui-owner="workflow"
-          aria-label="关闭提示"
-          @click="clearMaterialNotice"
-        >
-          ×
-        </Button>
-      </aside>
-    </Teleport>
   </div>
 </template>
 
@@ -689,6 +714,7 @@ import { Textarea } from './ui/textarea/index.js'
 import { useAudioStore } from '../pinia-stores/audio.js'
 import { useChunkStore } from '../pinia-stores/chunk.js'
 import { useTranscriptStore } from '../pinia-stores/transcript.js'
+import { useUiStore } from '../pinia-stores/ui.js'
 import { runtimeState } from '../composables/runtime-state-facade.js'
 import { buildCurrentSentenceDocId } from '../composables/reader-public-facades.js'
 import { bridgeToPinia } from '../composables/pinia-bridge-module.js'
@@ -710,6 +736,7 @@ import {
   findDuplicateMaterial,
   groupTaskAttempts,
 } from '../services/workflow/material-center-model.js'
+import { taskFailureSummary as failureReasonText, taskFailureDetails } from '../services/workflow/task-failure.js'
 
 const terminalStatuses = new Set(['ready', 'failed', 'canceled'])
 const readerPersistence = useReaderSessionPersistenceContext()
@@ -726,9 +753,20 @@ const currentArticleTitle = computed(() => {
 })
 const articleTitleBeforeOpen = ref('尚未打开文章')
 const readerOpenMessage = ref('从素材库打开材料，或在阅读设置中导入本地文件')
+const uiStore = useUiStore()
+watch(readerOpenMessage, message => {
+  if (!message || message.startsWith('已打开：') || message.startsWith('打开失败：')) return
+  uiStore.showNotice('reader-open', message, /失败|未打开/.test(message) ? 'error' : 'info')
+})
 
 const panelOpen = ref(false)
+const panelPrepared = ref(false)
+let panelPrepareHandle = null
 const linkInput = ref('')
+const materialType = ref('video')
+const articleTitle = ref('')
+const articleText = ref('')
+const articleNotice = ref('')
 const batchInputExpanded = ref(false)
 const linkCards = ref([])
 const linkNotice = ref('')
@@ -755,15 +793,14 @@ const openingJobId = ref('')
 const videoPriority = ref(true)
 const qualityPending = ref(false)
 const panelDialogRoot = ref(null)
+const workflowContentRoot = ref(null)
 const qualityDialogRoot = ref(null)
 const qualityDialogStatus = ref(null)
 const qualityModal = ref(null)
-const materialNotice = ref(null)
 const currentJobId = readerPersistence.currentJobId
 const loadedReadyJobs = new Set()
 let linkSequence = 0
 let readerSessionLoader = null
-let materialNoticeTimer = 0
 const diagnosticsDownloader = createObjectUrlDownloader()
 const panelDialogController = createDialogController()
 const qualityDialogController = createDialogController()
@@ -930,7 +967,34 @@ const activeTaskEntryText = computed(() => {
   return jobStageFraction(group?.displayJob)
 })
 const taskSummary = computed(() => `${activeTaskCount.value} 项处理中 · ${failedTaskCount.value} 项需要处理`)
-const librarySummary = computed(() => `${recentJobs.value.length}${libraryHasMore.value ? '+' : ''} 项`)
+const librarySummary = computed(() => `${libraryDisplayJobs.value.length}${libraryHasMore.value ? '+' : ''} 项`)
+const completedMaterials = computed(() => visibleCompletedJobIds.value
+  .map((id) => queueJobs.value.find((job) => job.jobId === id && job.status === 'ready'))
+  .filter(Boolean))
+const libraryDisplayJobs = computed(() => {
+  const recent = new Map(recentJobs.value.map((job) => [job.jobId, job]))
+  const completed = completedMaterials.value.map((job) => recent.get(job.jobId) || job)
+  const completedIds = new Set(completed.map((job) => job.jobId))
+  return [...completed, ...recentJobs.value.filter((job) => !completedIds.has(job.jobId))]
+})
+
+let pendingCompletionNavigation = false
+watch(() => [visibleCompletedJobIds.value, activeTaskCount.value, starting.value], ([ids], [previousIds]) => {
+  if (ids.some((id) => !previousIds.includes(id))) {
+    pendingCompletionNavigation = panelOpen.value && (workflowView.value === 'queue' || starting.value)
+  }
+  if (pendingCompletionNavigation && panelOpen.value && workflowView.value === 'queue' && !starting.value
+    && completedMaterials.value.length && activeTaskCount.value === 0) {
+    pendingCompletionNavigation = false
+    showCompletedMaterials()
+  }
+}, { flush: 'post' })
+
+async function showCompletedMaterials() {
+  setWorkflowView('library')
+  await nextTick()
+  if (workflowContentRoot.value) workflowContentRoot.value.scrollTop = 0
+}
 
 function noteBackendConfigEdit(key) {
   if (applyingBackendConfig) return
@@ -979,6 +1043,12 @@ async function refreshPreferredVideo() {
 }
 
 onMounted(() => {
+  // Build the hidden shell during idle time; closing keeps it for the next open.
+  // This does not fetch the library or move keyboard focus.
+  const preparePanel = () => { panelPrepareHandle = null; if (!panelDisposed) panelPrepared.value = true }
+  panelPrepareHandle = typeof window.requestIdleCallback === 'function'
+    ? window.requestIdleCallback(preparePanel)
+    : window.setTimeout(preparePanel, 500)
   window.localStorage.removeItem(['youtubeWorkflow', 'apiKey'].join('.'))
   workflowMutations.cleanupReceipts()
   refreshPreferredVideo()
@@ -986,7 +1056,10 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   panelDisposed = true
-  if (materialNoticeTimer) window.clearTimeout(materialNoticeTimer)
+  if (panelPrepareHandle !== null) {
+    if (typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(panelPrepareHandle)
+    else window.clearTimeout(panelPrepareHandle)
+  }
   qualityActionGuard.dispose()
   qualityDialogController.dispose()
   panelDialogController.dispose()
@@ -1194,6 +1267,33 @@ function removeLinkCard(id) {
   if (!linkCards.value.length) linkNotice.value = ''
 }
 
+async function enqueueArticle() {
+  if (starting.value || !articleText.value.trim() || articleText.value.length > 30000) return
+  if (!apiKey.value.trim() && !credentialStatus.value.stored) return
+  starting.value = true
+  articleNotice.value = ''
+  const payload = { ...buildCreateJobPayload(''), sourceType: 'text-only',
+    articleText: articleText.value.trim(), title: articleTitle.value.trim(),
+    geminiMode: 'real', videoPriority: false }
+  if (apiKey.value.trim()) payload.apiKey = apiKey.value.trim()
+  try {
+    const job = await runPendingWorkflowAction('create-article', 'create', '', payload, action =>
+      youtubeWorkflowClient.createJob(action.payload, workflowMutationOptions(action)))
+    rememberWorkflowRevision(job)
+    updateJob({ ...job, title: payload.title || payload.articleText.split('\n')[0].slice(0, 80) })
+    forgetPendingWorkflowAction('create-article')
+    articleTitle.value = ''
+    articleText.value = ''
+    workflowView.value = 'queue'
+    startPolling()
+  } catch (error) {
+    if (isWorkflowMutationConflict(error)) await handleWorkflowMutationConflict(error)
+    articleNotice.value = error?.message || String(error)
+  } finally {
+    starting.value = false
+  }
+}
+
 async function enqueueUrls() {
   if (!canEnqueue.value) return
   commitLinkInput()
@@ -1237,6 +1337,7 @@ async function enqueueUrls() {
 }
 
 function openPanel() {
+  panelPrepared.value = true
   panelOpen.value = true
   workflowView.value = 'library'
   workflowLibrary.resetLibraryRetry()
@@ -1251,6 +1352,7 @@ function openPanel() {
 }
 
 function setWorkflowView(view) {
+  if (view !== 'queue') pendingCompletionNavigation = false
   workflowView.value = view
   if (view === 'queue') refreshQueue()
   if (view === 'library') refreshLibrary()
@@ -1261,6 +1363,7 @@ function setWorkflowView(view) {
 }
 
 function closePanel() {
+  pendingCompletionNavigation = false
   panelOpen.value = false
   apiKey.value = ''
 }
@@ -1458,6 +1561,7 @@ async function loadJob(job) {
     if (!result || result.status !== 'loaded' || panelDisposed || !readerPersistence.isCurrentLoad(loadToken)) return
     clearMaterialRepairState(job.jobId)
     if (!readerPersistence.activateJob(job, loadToken)) return
+    workflowLibrary.acknowledgeCompletion(job.jobId)
     readerOpenMessage.value = `已打开：${result.manifest?.title || jobDisplayTitle(job)}`
     readerPersistence.endLoad(loadToken)
     loadedReadyJobs.add(job.jobId)
@@ -1471,7 +1575,7 @@ async function loadJob(job) {
     })
     const audio = getAudio()
     if (audio) audio.pause()
-    if (shouldResumeAudio) resumeReaderAudioFromPanel()
+    if (shouldResumeAudio && result.manifest?.sourceType !== 'text-only') resumeReaderAudioFromPanel()
   } catch (err) {
     if (!panelDisposed && readerPersistence.isCurrentLoad(loadToken)) showMaterialLoadFailure(job, err)
   } finally {
@@ -1518,28 +1622,18 @@ function showMaterialLoadFailure(job, error) {
     repairReason: failure.message,
     repairAction: failure.action,
   })
-  materialNotice.value = { ...failure, message: `打开失败：${jobDisplayTitle(job)}。${failure.message}`, job, error }
-  resumeMaterialNotice()
-}
-
-function pauseMaterialNotice() {
-  if (materialNoticeTimer) window.clearTimeout(materialNoticeTimer)
-  materialNoticeTimer = 0
-}
-
-function resumeMaterialNotice() {
-  pauseMaterialNotice()
-  if (!materialNotice.value) return
-  materialNoticeTimer = window.setTimeout(clearMaterialNotice, 10000)
+  const notice = { ...failure, message: `打开失败：${jobDisplayTitle(job)}。${failure.message}`, job, error }
+  uiStore.showToast(notice.message, 'error', 8000, {
+    source: 'material-load',
+    action: { label: notice.actionLabel, run: () => runMaterialNoticeAction(notice) },
+  })
 }
 
 function clearMaterialNotice() {
-  pauseMaterialNotice()
-  materialNotice.value = null
+  if (uiStore.toastSource === 'material-load') uiStore.dismissToast()
 }
 
-function runMaterialNoticeAction() {
-  const notice = materialNotice.value
+function runMaterialNoticeAction(notice) {
   if (!notice) return
   clearMaterialNotice()
   openPanel()
@@ -1585,6 +1679,7 @@ function jobLogLines(job) {
       transcribing: '正在使用 WhisperX 生成逐词字幕…',
       segmenting: '正在请求 Gemini 生成英语语块…',
       translating: '正在请求 Gemini 生成中文翻译…',
+      synthesizing: '正在生成 Aria 美式语音…',
       validating: '正在校验字幕、语块和阅读器文件…',
     }
     return [fallback[stage] || '后台正在处理，等待下一条进度…']
@@ -1626,23 +1721,6 @@ function taskSourceText(job) {
 
 function exactJobTime(job) {
   return exactDateTime(job?.updatedAt || job?.finishedAt || job?.createdAt)
-}
-
-function failureReasonText(job) {
-  const error = job?.error || {}
-  const reason = String(error.message || '').trim()
-  const diagnosticText = [error.code, reason, ...(Array.isArray(job?.logSummary) ? job.logSummary : [])]
-    .filter(Boolean)
-    .join('\n')
-  if (
-    error.code === 'YOUTUBE_MEDIA_HTTP_403'
-    || (/\b403\b|forbidden/iu.test(diagnosticText) && /youtube|yt-dlp|download video data/iu.test(diagnosticText))
-  ) {
-    return 'YouTube 媒体授权失败（HTTP 403），请重新处理'
-  }
-  if (reason) return reason
-  const category = String(error.category || '').trim()
-  return category ? `${errorLabel(category)}需要重新处理` : '处理未完成，请重试'
 }
 
 function libraryStamp(job) {
@@ -1795,6 +1873,9 @@ function historySourceText(job) {
 
 function jobStageFraction(job) {
   const stage = String(job?.stage || job?.status || '').toLowerCase()
+  if (job?.sourceType === 'text-only' || job?.request?.sourceType === 'text-only') {
+    return { queued: '等待中', segmenting: '1/3', translating: '1/3', synthesizing: '2/3', validating: '3/3', ready: '3/3' }[stage] || ''
+  }
   if (stage === 'queued') return '等待中'
   if (stage === 'downloading') return '1/4'
   if (stage === 'transcribing') return '2/4'
@@ -1808,6 +1889,9 @@ function jobStageProgressText(job) {
   if (job?.status === 'failed') return '处理失败'
   if (job?.status === 'canceled') return '已取消'
   if (stage === 'queued') return '等待开始'
+  if (job?.sourceType === 'text-only' || job?.request?.sourceType === 'text-only') {
+    return { segmenting: '1/3 · AI 切分与翻译', translating: '1/3 · AI 切分与翻译', synthesizing: '2/3 · 生成 Aria 美式语音', validating: '3/3 · 正在保存', ready: '3/3 · 已完成' }[stage] || statusText(job || {})
+  }
   if (stage === 'downloading') return '1/4 · 下载素材'
   if (stage === 'transcribing') return '2/4 · 生成字幕'
   if (stage === 'segmenting' || stage === 'translating') return '3/4 · AI 切分与翻译'
@@ -1827,6 +1911,7 @@ function jobProgressPercent(job) {
     transcribing: 50,
     segmenting: 75,
     translating: 75,
+    synthesizing: 85,
     validating: 92,
     ready: 100,
     failed: 100,
@@ -2098,6 +2183,7 @@ function statusText(job) {
     transcribing: 'Whisper 转写中',
     segmenting: 'AI 切分中',
     translating: '翻译中',
+    synthesizing: '语音生成中',
     validating: '校验中',
     ready: '可打开',
     failed: '失败',

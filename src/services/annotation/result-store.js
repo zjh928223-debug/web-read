@@ -201,6 +201,7 @@ function buildWordIndex(nextItems) {
 
 function firstInteger(source, keys) {
     for (const key of keys) {
+        if (source[key] == null || source[key] === '') continue;
         const value = Number(source[key]);
         if (Number.isInteger(value)) return value;
     }

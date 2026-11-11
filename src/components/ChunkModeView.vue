@@ -27,11 +27,12 @@
               :data-word-index="word.globalIndex != null ? word.globalIndex : widx"
               :data-word-start="word.start"
               :data-word-end="word.end"
+              :data-word-text="wordText(word)"
               :class="wordClasses(word)"
               @pointerenter="prepareReaderWordHover"
               @click.stop="onWordClick(word, $event)"
               @contextmenu="onWordContextMenu(word, $event)"
-            >{{ wordText(word) }}</span>{{ wordSeparator(word, widx, chunk.words) }}
+            ><span class="reader-word-text">{{ wordText(word) }}</span></span>{{ wordSeparator(word, widx, chunk.words) }}
           </template>
         </template>
       </div>

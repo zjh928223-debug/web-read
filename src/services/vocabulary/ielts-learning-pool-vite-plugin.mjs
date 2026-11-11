@@ -37,6 +37,9 @@ export function createIeltsLearningPoolVitePlugin(options = {}) {
         ? payload.candidates.filter((item) => item?.priority === true).map(normalizeCandidate).filter(Boolean)
         : []
       const pool = {
+        phonetics: (Array.isArray(payload?.candidates) ? payload.candidates : [])
+          .map((item) => ({ word: normalizeWord(item?.lemma), phonetic: normalizeText(item?.phonetic) }))
+          .filter((item) => item.word && item.phonetic),
         schemaVersion: 'ielts-learning-pool.response.v1',
         source: 'cambridge-04-21-reading-vocabulary-local',
         candidateCount: Number(payload?.candidate_count) || 0,
@@ -80,6 +83,11 @@ export function createIeltsLearningPoolVitePlugin(options = {}) {
       return
     }
 
+    if (requestUrl.searchParams.has('phonetics')) {
+      const words = new Set(uniqueWords(requestUrl.searchParams.get('phonetics')))
+      writeJson(res, 200, { available: true, schemaVersion: 'settlement-phonetics.v1', items: pool.phonetics.filter((item) => words.has(item.word)) })
+      return
+    }
     const requestedLemmas = uniqueWords(requestUrl.searchParams.get('lemmas'))
     const items = requestedLemmas.length
       ? pool.candidates

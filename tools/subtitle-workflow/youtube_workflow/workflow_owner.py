@@ -342,6 +342,9 @@ def _validate_safe_value(value: Any, *, key_hint: str = "", depth: int = 0) -> N
             raise WorkflowOwnerError("invalid-request")
         return
     if isinstance(value, str):
+        if key_hint == "articleText":
+            _validate_article_text(value)
+            return
         _safe_text(value)
         return
     if isinstance(value, list):
@@ -363,6 +366,11 @@ def _validate_safe_value(value: Any, *, key_hint: str = "", depth: int = 0) -> N
             _validate_safe_value(item, key_hint=key, depth=depth + 1)
         return
     raise WorkflowOwnerError("invalid-request")
+
+
+def _validate_article_text(value: str) -> None:
+    if len(value) > 30000 or any(ord(char) < 0x20 and char not in "\n\r\t" for char in value):
+        raise WorkflowOwnerError("invalid-request")
 
 
 def _safe_snapshot_path(value: Any) -> str:
@@ -431,6 +439,9 @@ def _validate_snapshot_safe_value(value: Any, *, key_hint: str = "", depth: int 
             raise WorkflowOwnerError("invalid-request")
         return
     if isinstance(value, str):
+        if key_hint == "articleText":
+            _validate_article_text(value)
+            return
         _safe_text(value)
         return
     if isinstance(value, list):
@@ -1301,7 +1312,9 @@ class WorkflowOwner:
             raise WorkflowOwnerError("invalid-request")
         value = dict(payload)
         if operation == "job":
-            if set(value) - {"jobId"}:
+            if set(value) - {"jobId", "includeBackupRecords"}:
+                raise WorkflowOwnerError("invalid-request")
+            if "includeBackupRecords" in value and not isinstance(value["includeBackupRecords"], bool):
                 raise WorkflowOwnerError("invalid-request")
             if "jobId" in value:
                 _identity(value["jobId"], "jobId", pattern=_SAFE_JOB_ID)
@@ -1714,7 +1727,7 @@ class WorkflowOwner:
             }
             if len(public) == 1:
                 payload_result["job"] = public[0]
-            if "jobId" not in query_payload:
+            if "jobId" not in query_payload and query_payload.get("includeBackupRecords", True):
                 try:
                     backup = self.backup_adapter.collect()
                 except Exception:
@@ -1886,6 +1899,9 @@ class WorkflowOwner:
                 "replacePolicy",
                 "videoPriority",
                 "forceReprocess",
+                "sourceType",
+                "articleText",
+                "title",
             )
             if key in request
         }

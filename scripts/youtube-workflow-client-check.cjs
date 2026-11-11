@@ -162,6 +162,7 @@ async function main() {
   assert.equal(workflowOwnerRefreshes, 1);
 
   const workflowCommands = [];
+  const workflowQueries = [];
   let workflowRevision = 0;
   const workflowCommandReceipts = new Map();
   const workflowRevisionToken = (revision) => `w1:j${revision}:${'a'.repeat(16)}:h0:${'b'.repeat(16)}:c${'c'.repeat(16)}:i${'d'.repeat(16)}`;
@@ -183,6 +184,10 @@ async function main() {
   globalThis.__windowsOwnerDomainCutover = {
     isAuthoritative(domain) { return domain === 'workflow'; },
     async query(request) {
+      workflowQueries.push(request);
+      if (request.operation === 'job' && !request.payload?.jobId) {
+        assert.equal(request.payload?.includeBackupRecords, false, 'queue/revision queries must skip backup collection');
+      }
       return {
         outcome: 'read',
         revision: workflowRevisionToken(workflowRevision),
@@ -225,6 +230,9 @@ async function main() {
     },
   };
   try {
+    const queueSnapshot = await client.getJobsSnapshot([], { includeAll: true });
+    assert.equal(queueSnapshot.jobs[0].jobId, workflowJob.jobId);
+    assert.equal(workflowQueries.at(-1).payload.includeBackupRecords, false);
     const createSecret = 'SECRET-WORKFLOW-CREATE-CLIENT';
     const createdWorkflowJob = await client.createJob(
       {

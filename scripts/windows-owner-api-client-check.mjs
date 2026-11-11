@@ -472,6 +472,15 @@ abortController.abort()
 await assert.rejects(abortPromise, (error) => error.code === 'aborted')
 assert.equal(abortCalls, 1)
 
+// Headers can arrive before a slow response body exceeds the deadline.
+const bodyTimeoutClient = createWindowsOwnerApiClient({
+  profileId: 'optimization', timeoutMs: 15,
+  fetchImpl: async (_url, options) => ({ json: () => new Promise((resolve, reject) => {
+    options.signal.addEventListener('abort', () => reject(Object.assign(new Error('body aborted'), { name: 'AbortError' })), { once: true })
+  }) }),
+})
+await assert.rejects(bodyTimeoutClient.query({ domain: 'workflow', operation: 'health' }), error => error.code === 'timeout')
+
 const timeoutClient = createWindowsOwnerApiClient({
   profileId: 'optimization',
   timeoutMs: 15,

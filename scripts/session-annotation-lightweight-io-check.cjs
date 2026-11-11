@@ -39,19 +39,12 @@ async function main() {
     "from './session-annotation-bundle-merge.js';",
     "from '../services/runtime/download-object-url.js';",
     'export function createSessionAnnotationLightweightIoRuntime',
-    'replaceExisting: options.replaceExisting !== false'
+    'bundle: committedBundle'
   ].forEach((pattern) => {
     assert.ok(moduleSource.includes(pattern), `lightweight IO module should contain ${pattern}`);
   });
-  assert.ok(
-    moduleSource.includes('function excludePreviewGeneratedItems(items)'),
-    'lightweight import should define the preview-item boundary'
-  );
+  assert.doesNotMatch(moduleSource, /rebuildMarksFromAnnotationItems|excludePreviewGeneratedItems/, 'explanation imports must never change user marks');
   assert.equal(moduleSource.includes('setTimeout(() => urlApi.revokeObjectURL'), false);
-  assert.ok(
-    moduleSource.includes("'rebuildMarksFromAnnotationItems')(excludePreviewGeneratedItems("),
-    'lightweight import should not rebuild reader marks from preview-scan items'
-  );
   ['window.', 'document.', 'localStorage'].forEach((pattern) => {
     assert.equal(moduleSource.includes(pattern), false, `lightweight IO module should use injected browser APIs, not ${pattern}`);
   });

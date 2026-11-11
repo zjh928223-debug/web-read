@@ -53,7 +53,8 @@ _ABSOLUTE_PATH = re.compile(
     r"^(?:[A-Za-z]:[\\/]|\\\\|/(?:Users|home|tmp|var|mnt|Volumes|private|opt|Program Files|Windows|Documents and Settings)(?:[\\/]|$))",
     re.IGNORECASE,
 )
-_FILE_URI = re.compile(r"^file:", re.IGNORECASE)
+# A file URI has a target; the standalone prose token "file:" has none.
+_FILE_URI = re.compile(r"^file:\S", re.IGNORECASE)
 
 _MEDIA_FIELDS = frozenset(
     {"mediaId", "kind", "size", "contentType", "etag", "revision", "authorizedUrl"}
@@ -306,7 +307,11 @@ def _validate_candidate(value: Any, *, profile_id: str) -> dict[str, Any]:
         raise _SnapshotValidationError("invalid-request")
     if not isinstance(marks, list):
         raise _SnapshotValidationError("invalid-request")
-    media = _validate_media(value.get("media"))
+    text_only = audio_meta.get("sourceType") == "text-only"
+    if text_only and value.get("media") is None and not audio_meta.get("streamUrl"):
+        media = None
+    else:
+        media = _validate_media(value.get("media"))
     if "media" in audio_meta and audio_meta.get("media") != media:
         raise _SnapshotValidationError("invalid-request")
     candidate = {
@@ -438,7 +443,7 @@ def _state_summary(state: _ReadState) -> dict[str, Any]:
             "status": "valid",
             "contentId": state.snapshot["contentId"],
             "revision": state.snapshot["revision"],
-            "mediaIdentity": state.snapshot["media"]["mediaId"],
+            "mediaIdentity": (state.snapshot["media"] or {}).get("mediaId"),
             "checksum": state.snapshot["checksum"],
         }
     if state.status == "missing":
@@ -514,7 +519,7 @@ class ReaderSessionOwner:
                 "previous": _state_summary(previous),
                 "contentId": current.snapshot["contentId"] if current_ok else None,
                 "sessionRevision": current.snapshot["revision"] if current_ok else None,
-                "mediaIdentity": current.snapshot["media"]["mediaId"] if current_ok else None,
+                "mediaIdentity": (current.snapshot["media"] or {}).get("mediaId") if current_ok else None,
             }
             if status == "manual-recovery":
                 failure_state = current if not current_ok else previous
@@ -547,7 +552,7 @@ class ReaderSessionOwner:
                 "found": True,
                 "contentId": snapshot["contentId"],
                 "sessionRevision": snapshot["revision"],
-                "mediaIdentity": snapshot["media"]["mediaId"],
+                "mediaIdentity": (snapshot["media"] or {}).get("mediaId"),
                 "checksum": snapshot["checksum"],
             }
             if operation == "snapshot":
@@ -681,12 +686,12 @@ class ReaderSessionOwner:
                     "candidateRevision": normalized["revision"],
                     "candidateChecksum": prepared.candidate_checksum,
                     "contentId": normalized["contentId"],
-                    "mediaIdentity": normalized["media"]["mediaId"],
+                    "mediaIdentity": (normalized["media"] or {}).get("mediaId"),
                     "expiresInSeconds": int(self.prepare_ttl_seconds),
                 },
                 "contentId": normalized["contentId"],
                 "sessionRevision": normalized["revision"],
-                "mediaIdentity": normalized["media"]["mediaId"],
+                "mediaIdentity": (normalized["media"] or {}).get("mediaId"),
             },
         )
 
@@ -1419,7 +1424,7 @@ class ReaderSessionOwner:
                 "receiptId": receipt.get("receiptId"),
                 "contentId": current.snapshot["contentId"] if receipt_matches else None,
                 "sessionRevision": receipt.get("revision"),
-                "mediaIdentity": current.snapshot["media"]["mediaId"] if receipt_matches else None,
+                "mediaIdentity": (current.snapshot["media"] or {}).get("mediaId") if receipt_matches else None,
             }
         raw_error = result.get("error")
         error = None
@@ -1469,7 +1474,7 @@ class ReaderSessionOwner:
                 "candidateChecksum": _snapshot_checksum(candidate),
                 "contentId": candidate["contentId"],
                 "sessionRevision": candidate["revision"],
-                "mediaIdentity": candidate["media"]["mediaId"],
+                "mediaIdentity": (candidate["media"] or {}).get("mediaId"),
                 "operation": operation,
             }
         if source is not None:
@@ -1485,7 +1490,7 @@ class ReaderSessionOwner:
             return {
                 "contentId": snapshot["contentId"],
                 "sessionRevision": snapshot["revision"],
-                "mediaIdentity": snapshot["media"]["mediaId"],
+                "mediaIdentity": (snapshot["media"] or {}).get("mediaId"),
                 "checksum": snapshot["checksum"],
             }
         return {"contentId": None, "sessionRevision": None, "mediaIdentity": None}

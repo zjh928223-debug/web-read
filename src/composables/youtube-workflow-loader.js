@@ -170,8 +170,8 @@ function createJsonFileLike(payload, filename) {
   }
 }
 
-function validateGeneratedSession({ audioUrl, transcript, chunkData, validateTranscriptData, validateChunkData }) {
-  if (typeof audioUrl !== 'string' || !audioUrl) throw new Error('audio stream is missing')
+function validateGeneratedSession({ audioUrl, textOnly = false, transcript, chunkData, validateTranscriptData, validateChunkData }) {
+  if (!textOnly && (typeof audioUrl !== 'string' || !audioUrl)) throw new Error('audio stream is missing')
   const normalizedTranscript = validateTranscriptData ? validateTranscriptData(transcript) : transcript
   if (!normalizedTranscript || !Array.isArray(normalizedTranscript.segments) || !normalizedTranscript.segments.length) {
     throw new Error('transcript JSON must contain segments')
@@ -518,19 +518,21 @@ export function createYoutubeWorkflowLoader(deps = {}) {
     try {
       const requestOptions = { signal: load.controller.signal }
       let audioUrl = ownerMode ? 'owner-media-pending' : ''
-      if (!ownerMode) {
-        if (typeof client.mediaUrl !== 'function') throw new Error('workflow Range media URL is not available')
-        if (typeof client.probeMediaRange !== 'function') throw new Error('workflow Range media probe is not available')
-        audioUrl = client.mediaUrl(jobId, 'audio')
-      }
       const contentRequests = [
         client.getSession(jobId, requestOptions),
         client.getFile(jobId, 'transcript', requestOptions),
         client.getFile(jobId, 'chunkData', requestOptions),
         prepareReaderMarks(jobId, requestOptions),
       ]
-      if (!ownerMode) contentRequests.push(client.probeMediaRange(jobId, 'audio', requestOptions))
       const [manifest, transcriptBlob, chunkBlob, marksPayload] = await Promise.all(contentRequests)
+      const textOnly = manifest.sourceType === 'text-only'
+      if (textOnly) audioUrl = ''
+      else if (!ownerMode) {
+        if (typeof client.mediaUrl !== 'function') throw new Error('workflow Range media URL is not available')
+        if (typeof client.probeMediaRange !== 'function') throw new Error('workflow Range media probe is not available')
+        audioUrl = client.mediaUrl(jobId, 'audio')
+        await client.probeMediaRange(jobId, 'audio', requestOptions)
+      }
       if (!isCurrentLoad(load)) return supersededResult(load)
       const [transcriptPrepared, chunkPrepared] = await Promise.all([
         blobToJson(transcriptBlob, 'transcript'),
@@ -539,6 +541,7 @@ export function createYoutubeWorkflowLoader(deps = {}) {
       if (!isCurrentLoad(load)) return supersededResult(load)
       const validated = validateGeneratedSession({
         audioUrl,
+        textOnly,
         transcript: transcriptPrepared.value,
         chunkData: chunkPrepared.value,
         validateTranscriptData: deps.validateTranscriptData || (typeof window !== 'undefined' && window.DataUtils ? window.DataUtils.validateTranscriptData : null),
@@ -554,7 +557,7 @@ export function createYoutubeWorkflowLoader(deps = {}) {
       if (!isCurrentLoad(load)) return supersededResult(load)
 
       let mediaDescriptor = null
-      if (ownerMode) {
+      if (ownerMode && !textOnly) {
         if (typeof readerSessionOwner.resolveWorkflowMediaDescriptor === 'function') {
           mediaDescriptor = await readerSessionOwner.resolveWorkflowMediaDescriptor({
             jobId,
@@ -579,6 +582,7 @@ export function createYoutubeWorkflowLoader(deps = {}) {
         lastModified: Date.now(),
         type: 'application/octet-stream',
         source: 'youtube-workflow',
+        ...(['text-only', 'pasted-article'].includes(manifest.sourceType) ? { sourceType: manifest.sourceType } : {}),
         jobId,
         streamUrl: audioUrl,
         readerSessionIdentity: identity.status,

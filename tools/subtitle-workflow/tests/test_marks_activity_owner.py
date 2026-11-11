@@ -9,6 +9,22 @@ from youtube_workflow.reader_marks_activity import ReaderMarksCommitJournal
 
 
 class MarksActivityOwnerTests(unittest.TestCase):
+    def test_annotation_import_cannot_add_marks_but_user_edits_still_work(self):
+        owner = self.make_owner()
+        scope = self.scope()
+        manual = {'globalIndex': 2, 'word': 'stable', 'sourceType': 'manual-mark'}
+        saved = self.command(owner, 'marks-commit', {**scope, 'marks': [manual]}, 0, 'manual-first')
+        self.assertEqual(saved['outcome'], 'committed')
+        auto = {'globalIndex': 1, 'word': 'really', 'sourceType': 'annotation-lightweight-import'}
+        rejected = self.command(owner, 'marks-commit', {**scope, 'marks': [manual, auto]}, 1, 'auto-add')
+        self.assertEqual(rejected['outcome'], 'rejected')
+        self.assertEqual(rejected['error']['details']['reason'], 'annotation-cannot-create-marks')
+        current = owner.query('marks', payload=scope, **self.ids('after-reject'))
+        self.assertEqual(current['payload']['marks'], [manual])
+        self.assertEqual(current['revision'], 1)
+        added = {'globalIndex': 3, 'word': 'word', 'sourceType': 'manual-mark'}
+        self.assertEqual(self.command(owner, 'marks-commit', {**scope, 'marks': [manual, added]}, 1, 'user-add')['outcome'], 'committed')
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)

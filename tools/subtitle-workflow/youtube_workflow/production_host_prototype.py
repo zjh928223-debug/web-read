@@ -640,7 +640,7 @@ class PathPreservingAsgiDispatch:
                     request_id=request_id,
                     correlation_id=correlation_id,
                 )
-            if domain in {"marks-activity", "workflow"}:
+            if domain in {"marks-activity", "workflow", "vocabulary-srs"}:
                 return owner.query(
                     owner_request.operation,
                     payload=payload,

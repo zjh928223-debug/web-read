@@ -37,6 +37,20 @@ try {
   const api = Object.assign({}, ...await Promise.all(modulePaths.map((file) => import(pathToFileURL(file).href))))
   await race(api, createMemoryOwner(api), false)
   await race(api, createMemoryOwner(api), true)
+  {
+    let calls = 0
+    const owner = { async query(request) {
+      calls++
+      assert.deepEqual(request.payload, { recordIds: ['vocabulary-article-srs-settlement-progress:article'] })
+      await new Promise(resolve => setTimeout(resolve, 10))
+      return { outcome: 'read', revision: 1, payload: { records: {} } }
+    }, async command() { throw new Error('read must not write') } }
+    const integration = api.createWindowsOwnerVocabularySrsIntegration({ owner })
+    await Promise.all([1,2,3].map(() => integration.settlementProgressRepository.getProgress('article')))
+    assert.equal(calls, 1, 'same in-flight progress reads are shared')
+    await integration.settlementProgressRepository.getProgress('article')
+    assert.equal(calls, 2, 'later reads remain fresh')
+  }
   await boundaries(api)
   await reviewRace(api, createMemoryOwner(api))
   await articleBatchClock(api, createMemoryOwner(api))

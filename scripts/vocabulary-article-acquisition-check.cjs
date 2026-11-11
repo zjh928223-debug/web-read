@@ -19,7 +19,7 @@ async function loadModules(repoRoot) {
     'vocabulary-service.js',
     'srs-candidates.js',
     'srs-pending-candidates.js',
-    'settlement-meaning-refinement.js',
+    'settlement-meaning-refinement.js', 'settlement-phonetics.js',
 
     'article-srs-settlement.js',
   ];
@@ -93,6 +93,7 @@ function candidate(overrides = {}) {
     language: 'en',
     entry_type: 'word',
     meaning: '地震的',
+    simple_meaning: '地震的',
     group: 'ready',
     eligible: true,
     relearn: false,
@@ -110,9 +111,11 @@ function candidate(overrides = {}) {
   return {
     ...base,
     ...overrides,
+    simple_meaning: overrides.simple_meaning || overrides.meaning || base.simple_meaning,
     context: overrides.context === null ? null : {
       ...base.context,
       ...(overrides.context || {}),
+      simple_meaning: overrides.context?.simple_meaning || overrides.simple_meaning || overrides.meaning || base.simple_meaning,
     },
   };
 }

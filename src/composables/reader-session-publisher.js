@@ -89,7 +89,14 @@ export function createReaderSessionPublisher(deps = {}) {
 
   async function publishPreparedSession(prepared) {
     deps.applyCurrentAudioMeta(prepared.audioMeta)
-    if (audioPlayer) audioPlayer.src = prepared.audioUrl
+    if (audioPlayer) {
+      audioPlayer.pause?.()
+      if (prepared.audioUrl) audioPlayer.src = prepared.audioUrl
+      else {
+        audioPlayer.removeAttribute('src')
+        audioPlayer.load?.()
+      }
+    }
     if (mediaSource && typeof mediaSource.setAudioElement === 'function') mediaSource.setAudioElement(audioPlayer)
     if (mediaSource && typeof mediaSource.loadJobMedia === 'function') mediaSource.loadJobMedia(prepared.media)
     deps.processTranscript(prepared.transcript)

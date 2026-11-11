@@ -14,7 +14,7 @@ async function importVocabularyApi(repoRoot) {
 
     'article-srs-settlement.js',
     'article-srs-settlement-progress.js',
-    'settlement-meaning-refinement.js',
+    'settlement-meaning-refinement.js', 'settlement-phonetics.js',
     'srs-scheduler.js',
     'vocabulary-learning-models.js',
     'vocabulary-acquisition-repository.js',
@@ -595,6 +595,15 @@ async function main() {
     'an in-flight candidate should remain visible instead of disappearing as already processed',
   );
 
+  // Application now requires the selected candidates' saved compact meanings.
+  const readyMeanings = ['地震相关', '认为理所当然', '重聚', '地壳与地幔', '地壳构造的'];
+  settlement.candidates.forEach((candidate, index) => {
+    candidate.simple_meaning = readyMeanings[index];
+    candidate.context.simple_meaning = readyMeanings[index];
+    candidate.refinement_status = 'completed';
+    candidate.refinement_save_pending = false;
+    delete candidate.refinement_error;
+  });
   const wordsOnlyVocabulary = await createService(api);
   const wordsOnlySelection = api.selectArticleSrsSettlementCandidates({
     candidates: settlement.candidates,
@@ -680,6 +689,9 @@ async function main() {
     sourceUrl: 'https://example.test/settlement',
   });
   assert.equal(rebuiltAfterCompleteApply.candidates.length, 0);
+  assert.equal(rebuiltAfterCompleteApply.reviewCandidates.length, 5, 'already added words remain available for article review');
+  assert.ok(rebuiltAfterCompleteApply.reviewCandidates.every(item => item.application_status === 'applied' && item.eligible === false));
+  assert.equal(api.selectArticleSrsSettlementCandidates({candidates: rebuiltAfterCompleteApply.reviewCandidates}).selectedCandidates.length, 0, 'review rows cannot be submitted again');
   assert.equal(rebuiltAfterCompleteApply.summary.processed, 5);
   assert.equal(rebuiltAfterCompleteApply.summary.completed, true);
   const staleRepeatResult = await api.applyArticleSrsSettlement({

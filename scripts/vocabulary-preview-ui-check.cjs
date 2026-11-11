@@ -193,7 +193,7 @@ async function runStaleRefinementButtonCheck() {
       });
       try {
         await controller.openSettlement();
-        const refineButton = document.querySelector('.vocabulary-preview-dialog--settlement .vocabulary-preview-dialog__footer button');
+        const refineButton = document.querySelector('.vocabulary-preview-dialog--settlement .vocabulary-preview-dialog__primary-actions button');
         return { disabled: refineButton ? refineButton.disabled : null };
       } finally {
         controller.dispose();

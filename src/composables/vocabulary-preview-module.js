@@ -1,6 +1,7 @@
 import { createSettlementDialog } from '../features/vocabulary-preview/create-article-settlement-dialog.js';
 import {
   applyArticleSrsSettlement,
+  assertArticleSrsSettlementMeaningsReady,
   applyArticleSrsSettlementProgress,
   buildArticleSrsSettlement,
 
@@ -139,6 +140,7 @@ export function createVocabularyPreviewController(deps = {}) {
   let settlementOpening = false;
   let settlementOpeningId = 0;
   let settlementSelectionWrite = Promise.resolve();
+  let previousArticleId = getCurrentIdentity(state).jobId;
   const refinementsInFlight = new Map();
   // Retry only the owner write after a returned result. This cache is transient;
   // persisted progress and its claim token remain the authority.
@@ -203,6 +205,8 @@ export function createVocabularyPreviewController(deps = {}) {
       if (requestId !== settlementProgressBadgeRequestId) return;
       const currentIdentity = getCurrentIdentity(state);
       if (currentIdentity.jobId !== identity.jobId) return;
+      const cached = settlementCache.get(identity.jobId);
+      if (cached) cached.value = applyArticleSrsSettlementProgress(cached.value, progress);
       updateSettlementProgressBadge(getArticleSrsSettlementProgressStatus(progress));
     } catch (_error) {
       if (requestId === settlementProgressBadgeRequestId) updateSettlementProgressBadge('none');
@@ -221,9 +225,16 @@ export function createVocabularyPreviewController(deps = {}) {
 
   function refreshAvailability() {
     const identity = getCurrentIdentity(state);
+    if (state.currentAudioMeta && previousArticleId && previousArticleId !== identity.jobId) {
+      const departedArticleId = previousArticleId;
+      previousArticleId = identity.jobId;
+      settlementDialog.close();
+      finalizeArticleRecycle(departedArticleId);
+    } else if (identity.jobId) previousArticleId = identity.jobId;
     const available = !!identity.jobId;
     updateSettlementProgressBadge('none');
     void refreshSettlementProgressBadge(identity);
+    void warmSettlement(identity);
         if (settleButton) {
       settleButton.disabled = !available || settlementOpening;
       settleButton.title = settlementOpening
@@ -233,99 +244,139 @@ export function createVocabularyPreviewController(deps = {}) {
     }
       }
 
+  function finalizeArticleRecycle(articleId) {
+    // Selection saves may still be in flight when another material is opened.
+    const operation = settlementSelectionWrite.then(async () => {
+      const progress = await settlementProgressRepository.getProgress(articleId);
+      const targetIds = progress?.removed_target_ids || progress?.removedTargetIds || [];
+      if (!targetIds.length) return;
+      await settlementProgressRepository.recordSkip(articleId, { skippedTargetIds: targetIds });
+      settlementCache.delete(articleId);
+    });
+    settlementSelectionWrite = operation.catch(error => {
+      showError('VOCABULARY_SETTLEMENT_RECYCLE', `清空上一篇回收区失败，内容仍保留：${error?.message || '请稍后重试'}`);
+    });
+  }
+
+  const settlementCache = new Map();
+  const warmingSettlements = new Set();
+
+  function cacheSettlement(identity, value) {
+    settlementCache.delete(identity.jobId);
+    settlementCache.set(identity.jobId, { audioKey: identity.audioKey, value });
+    if (settlementCache.size > 4) settlementCache.delete(settlementCache.keys().next().value);
+  }
+
+  async function warmSettlement(identity) {
+    if (!identity.jobId || settlementOpening || settlementCache.has(identity.jobId) || warmingSettlements.has(identity.jobId)) return;
+    warmingSettlements.add(identity.jobId);
+    try {
+      await settlementSelectionWrite;
+      const value = await readSettlement(identity, false);
+      if (!settlementOpening && getCurrentIdentity(state).jobId === identity.jobId) cacheSettlement(identity, value);
+    } catch { /* Opening presents read failures; speculative warming stays quiet. */ }
+    finally { warmingSettlements.delete(identity.jobId); }
+  }
+
+  async function readSettlement(identity, reconcile = true) {
+    await settlementSelectionWrite;
+    const { scope, bundle } = await loadCurrentAnnotationBundle(windowObject);
+    if (getCurrentIdentity(state).jobId !== identity.jobId) {
+      throw new Error('当前文章已切换，请重新打开“整理本篇生词”。');
+    }
+    const sourceInfo = getSourceInfo(state, scope);
+    const generatedItems = getGeneratedItemsFromBundle(bundle);
+    // Qualification depends on current vocabulary/context, not only annotations.
+    // Bulk-read on each opening; saved valid meanings are still reused below.
+    const builtSettlement = await buildArticleSrsSettlement({
+      items: generatedItems,
+      vocabularyService,
+      sourceId: sourceInfo.sourceId,
+      sourceTitle: sourceInfo.sourceTitle,
+      sourceUrl: sourceInfo.sourceUrl,
+    });
+    let progress = await settlementProgressRepository.getProgress(sourceInfo.sourceId);
+    if (getCurrentIdentity(state).jobId !== identity.jobId) {
+      throw new Error('当前文章已切换，请重新打开“整理本篇生词”。');
+    }
+    const candidateTargetIds = (Array.isArray(builtSettlement.candidates) ? builtSettlement.candidates : [])
+      .map((candidate) => normalizeText(candidate && (candidate.targetId || candidate.target_id)))
+      .filter(Boolean);
+    const alreadyAppliedTargetIds = (Array.isArray(builtSettlement.excluded) ? builtSettlement.excluded : [])
+      .filter((candidate) => candidate && candidate.reason === 'already_added_current_article')
+      .map((candidate) => normalizeText(candidate && (candidate.targetId || candidate.target_id)))
+      .filter(Boolean);
+    const settlementTargetIds = Array.from(new Set([
+      ...candidateTargetIds,
+      ...alreadyAppliedTargetIds,
+    ]));
+    const knownTargetIds = new Set(progress && progress.settlement_target_ids || []);
+    const knownAppliedTargetIds = new Set(progress && progress.applied_target_ids || []);
+    const requiresProgressReconciliation = settlementTargetIds.some((targetId) => !knownTargetIds.has(targetId))
+      || alreadyAppliedTargetIds.some((targetId) => !knownAppliedTargetIds.has(targetId));
+    if (reconcile && requiresProgressReconciliation && typeof settlementProgressRepository.recordSettlementTargets === 'function') {
+      progress = await settlementProgressRepository.recordSettlementTargets(
+        sourceInfo.sourceId,
+        settlementTargetIds,
+        { appliedTargetIds: alreadyAppliedTargetIds },
+      );
+    }
+    if (getCurrentIdentity(state).jobId !== identity.jobId) {
+      throw new Error('当前文章已切换，请重新打开“整理本篇生词”。');
+    }
+    const settlement = applyArticleSrsSettlementProgress(builtSettlement, progress);
+    settlement.articleId = sourceInfo.sourceId;
+    settlement.generatedItemCount = generatedItems.length;
+    if (settlement.summary && settlement.summary.completed) {
+      updateSettlementProgressBadge('completed');
+    } else if (settlement.summary && settlement.summary.processing > 0) {
+      updateSettlementProgressBadge('processing');
+    } else if (settlement.summary && settlement.summary.processed > 0) {
+      updateSettlementProgressBadge('processed');
+    }
+    const pendingSave = refinementsPendingSave.get(sourceInfo.sourceId);
+    if (pendingSave) {
+      pendingSave.candidates = pendingSave.candidates.filter((candidate) => {
+        const row = progress?.refinements?.find((item) => item.target_id === candidate.targetId);
+        return row?.attempt_token === pendingSave.claimToken && row.status === 'pending'
+          && row.input_key === getSettlementMeaningRefinementInputKey(candidate, sourceInfo.sourceId);
+      });
+      if (!pendingSave.candidates.length) refinementsPendingSave.delete(sourceInfo.sourceId);
+      else copyRefinementState(settlement.candidates, pendingSave.candidates, sourceInfo.sourceId);
+    }
+
+    return settlement;
+  }
+
   async function openSettlement(options = {}) {
     if (settlementOpening) return null;
+    await settlementSelectionWrite;
     const openingId = ++settlementOpeningId;
     const restoreFocusTarget = options.restoreFocusTarget || documentObject.activeElement;
+    const identity = getCurrentIdentity(state);
+    if (!identity.jobId) {
+      showError('VOCABULARY_SETTLEMENT', '请先打开标准素材库里的文章');
+      return null;
+    }
+    const saved = settlementCache.get(identity.jobId);
+    const cached = saved?.audioKey === identity.audioKey ? saved.value : null;
     settlementOpening = true;
+    if (cached) settlementDialog.open({ ...cached, refreshing: true }, restoreFocusTarget);
+    else settlementDialog.openLoading('正在整理本篇生词…', restoreFocusTarget);
     try {
-      const identity = getCurrentIdentity(state);
-      if (!identity.jobId) {
-        showError('VOCABULARY_SETTLEMENT', '请先打开标准素材库里的文章');
-        return null;
-      }
-      if (settleButton) {
-        settleButton.disabled = true;
-        settleButton.textContent = '正在整理本篇…';
-        settleButton.title = '正在整理本篇生词，请稍候';
-      }
-      settlementDialog.openLoading('正在整理本篇生词…', restoreFocusTarget);
-      await settlementSelectionWrite;
+      const settlement = await readSettlement(identity);
       if (openingId !== settlementOpeningId) return null;
-      const { scope, bundle } = await loadCurrentAnnotationBundle(windowObject);
-      if (openingId !== settlementOpeningId) return null;
-      if (getCurrentIdentity(state).jobId !== identity.jobId) {
-        throw new Error('当前文章已切换，请重新打开“整理本篇生词”。');
-      }
-      const sourceInfo = getSourceInfo(state, scope);
-      const generatedItems = getGeneratedItemsFromBundle(bundle);
-      // Qualification depends on current vocabulary/context, not only annotations.
-      // Bulk-read on each opening; saved valid meanings are still reused below.
-      const builtSettlement = await buildArticleSrsSettlement({
-        items: generatedItems,
-        vocabularyService,
-        sourceId: sourceInfo.sourceId,
-        sourceTitle: sourceInfo.sourceTitle,
-        sourceUrl: sourceInfo.sourceUrl,
-      });
-      if (openingId !== settlementOpeningId) return null;
-      let progress = await settlementProgressRepository.getProgress(sourceInfo.sourceId);
-      if (openingId !== settlementOpeningId) return null;
-      if (getCurrentIdentity(state).jobId !== identity.jobId) {
-        throw new Error('当前文章已切换，请重新打开“整理本篇生词”。');
-      }
-      const candidateTargetIds = (Array.isArray(builtSettlement.candidates) ? builtSettlement.candidates : [])
-        .map((candidate) => normalizeText(candidate && (candidate.targetId || candidate.target_id)))
-        .filter(Boolean);
-      const alreadyAppliedTargetIds = (Array.isArray(builtSettlement.excluded) ? builtSettlement.excluded : [])
-        .filter((candidate) => candidate && candidate.reason === 'already_added_current_article')
-        .map((candidate) => normalizeText(candidate && (candidate.targetId || candidate.target_id)))
-        .filter(Boolean);
-      const settlementTargetIds = Array.from(new Set([
-        ...candidateTargetIds,
-        ...alreadyAppliedTargetIds,
-      ]));
-      const knownTargetIds = new Set(progress && progress.settlement_target_ids || []);
-      const knownAppliedTargetIds = new Set(progress && progress.applied_target_ids || []);
-      const requiresProgressReconciliation = settlementTargetIds.some((targetId) => !knownTargetIds.has(targetId))
-        || alreadyAppliedTargetIds.some((targetId) => !knownAppliedTargetIds.has(targetId));
-      if (requiresProgressReconciliation && typeof settlementProgressRepository.recordSettlementTargets === 'function') {
-        progress = await settlementProgressRepository.recordSettlementTargets(
-          sourceInfo.sourceId,
-          settlementTargetIds,
-          { appliedTargetIds: alreadyAppliedTargetIds },
-        );
-      }
-      if (openingId !== settlementOpeningId) return null;
-      if (getCurrentIdentity(state).jobId !== identity.jobId) {
-        throw new Error('当前文章已切换，请重新打开“整理本篇生词”。');
-      }
-      const settlement = applyArticleSrsSettlementProgress(builtSettlement, progress);
-      settlement.articleId = sourceInfo.sourceId;
-      settlement.generatedItemCount = generatedItems.length;
-      if (settlement.summary && settlement.summary.completed) {
-        updateSettlementProgressBadge('completed');
-      } else if (settlement.summary && settlement.summary.processing > 0) {
-        updateSettlementProgressBadge('processing');
-      } else if (settlement.summary && settlement.summary.processed > 0) {
-        updateSettlementProgressBadge('processed');
-      }
-      const pendingSave = refinementsPendingSave.get(sourceInfo.sourceId);
-      if (pendingSave) {
-        pendingSave.candidates = pendingSave.candidates.filter((candidate) => {
-          const row = progress?.refinements?.find((item) => item.target_id === candidate.targetId);
-          return row?.attempt_token === pendingSave.claimToken && row.status === 'pending'
-            && row.input_key === getSettlementMeaningRefinementInputKey(candidate, sourceInfo.sourceId);
-        });
-        if (!pendingSave.candidates.length) refinementsPendingSave.delete(sourceInfo.sourceId);
-        else copyRefinementState(settlement.candidates, pendingSave.candidates, sourceInfo.sourceId);
-      }
-      settlementDialog.open(settlement, restoreFocusTarget);
+      cacheSettlement(identity, settlement);
+      if (cached) settlementDialog.update(settlement);
+      else settlementDialog.open(settlement, restoreFocusTarget);
       return settlement;
     } catch (error) {
       if (openingId !== settlementOpeningId) return null;
-      const message = error && error.message ? error.message : '整理本篇生词失败';
-      settlementDialog.openError(message);
+      const message = error?.message || '整理本篇生词失败';
+      if (cached) {
+        settlementDialog.update({ ...cached, refreshing: true });
+        settlementDialog.setStatus('最新进度核对失败，可继续浏览和发音；关闭重开可重试。', 'error');
+      } else settlementDialog.openError(message);
       showError('VOCABULARY_SETTLEMENT', message);
       return null;
     } finally {
@@ -337,6 +388,11 @@ export function createVocabularyPreviewController(deps = {}) {
   }
 
   function cancelSettlementOpening() {
+    const snapshot = settlementDialog.getSnapshot();
+    const identity = getCurrentIdentity(state);
+    if (snapshot.articleId === identity.jobId && !snapshot.loading && !snapshot.refreshing && !snapshot.readError) {
+      cacheSettlement(identity, snapshot);
+    }
     settlementOpeningId += 1;
     settlementOpening = false;
     refreshAvailability();
@@ -347,7 +403,7 @@ export function createVocabularyPreviewController(deps = {}) {
     targets.forEach((candidate) => {
       const source = sourceMap.get(candidate.targetId);
       if (!source || getSettlementMeaningRefinementInputKey(source, articleId) !== getSettlementMeaningRefinementInputKey(candidate, articleId)) return;
-      ['simple_meaning', 'simpleMeaning', 'refinement_attempted', 'refinement_status',
+      ['simple_meaning', 'simpleMeaning', 'phonetic', 'phonetic_source', 'refinement_phonetic_only', 'refinement_attempted', 'refinement_status',
         'refinement_attempted_at', 'refinement_error', 'refinement_save_pending'].forEach((key) => {
         candidate[key] = source[key];
       });
@@ -422,10 +478,12 @@ export function createVocabularyPreviewController(deps = {}) {
         return { candidates: reconciled, stats: { requested: matching.length, updated, rejected, missing: matching.length - updated - rejected } };
       }
     }
+    options.onProgress?.();
     const refinableCandidates = getSettlementMeaningRefinementCandidates(candidates, { automatic: options.automatic });
     const apiKey = getSessionApiKey(windowObject);
     const initialTemplate = buildSettlementMeaningRefinementTemplate({
       candidates: refinableCandidates,
+      includeMissingPhonetics: false,
       sourceId: articleId,
     });
     if (!initialTemplate.items.length) {
@@ -449,6 +507,7 @@ export function createVocabularyPreviewController(deps = {}) {
       .map((refinement) => [normalizeText(refinement && refinement.target_id), refinement]));
     const template = buildSettlementMeaningRefinementTemplate({
       candidates: claimedCandidates,
+      includeMissingPhonetics: false,
       sourceId: articleId,
     });
     const payload = {
@@ -461,6 +520,7 @@ export function createVocabularyPreviewController(deps = {}) {
     if (apiKey) payload.apiKey = apiKey;
     if (apiKey) persistSessionApiKey(windowObject, apiKey);
     claimedCandidates.forEach((candidate) => {
+      candidate.refinement_phonetic_only = claimedRefinements.get(normalizeText(candidate.targetId))?.phonetic_only === true;
       candidate.refinement_attempted = true;
       candidate.refinement_status = 'pending';
       candidate.refinement_attempted_at = claimedRefinements.get(normalizeText(candidate && candidate.targetId))?.attempted_at || '';
@@ -571,6 +631,7 @@ export function createVocabularyPreviewController(deps = {}) {
         return { background: true };
       }
       const selection = selectArticleSrsSettlementCandidates(options);
+      assertArticleSrsSettlementMeaningsReady(selection.selectedCandidates);
       const claim = await settlementProgressRepository.claimApplication(articleId, {
         candidateTargetIds: selection.selectedTargetIds,
         allCandidateTargetIds: (Array.isArray(options.candidates) ? options.candidates : [])

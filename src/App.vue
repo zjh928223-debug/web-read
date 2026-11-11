@@ -15,7 +15,7 @@
           variant="floating"
           size="reader"
           data-ui-owner="reader"
-          class="learning-entry-button"
+          class="learning-entry-button learning-entry-review"
           type="button"
           title="复习当前已到期的单词"
           @click="openSrsReview"
@@ -24,7 +24,7 @@
           variant="floating"
           size="reader"
           data-ui-owner="reader"
-          class="learning-entry-button"
+          class="learning-entry-button learning-entry-preview"
           type="button"
           title="首次接触：一个主要义和一条可追溯真实短句"
           @click="openPassagePreview"
@@ -33,7 +33,7 @@
           variant="floating"
           size="reader"
           data-ui-owner="reader"
-          class="learning-entry-button"
+          class="learning-entry-button learning-entry-settings"
           type="button"
           title="设置每组固定的预习单词数量"
           @click="openPassagePreviewSettings"
@@ -235,7 +235,6 @@ const dictionaryClient = createOptionalLocalDictionaryClient()
 let legacyMigrationTimer = null
 let legacyMigrationStopped = false
 let vocabularyOwnerRecoveryTimer = null
-let reviewWarmupTimer = null
 let articleReconciliationTimer = null
 let articleReconciliationStopped = false
 let articleReconciledSinceRefresh = false
@@ -247,7 +246,7 @@ function refreshVocabularyOwnerReadiness() {
     const wasNotReady = vocabularySrsNotReady.value
     vocabularySrsNotReady.value = owner.ownerReady !== true
     if (wasNotReady && !vocabularySrsNotReady.value) {
-      void srsReviewV2Service.warmReviewData?.().catch(() => {})
+      if (isSrsReviewOpen.value) void srsReviewV2Service.warmReviewData?.().catch(() => {})
       void replayPersistedPassagePreviewAcquisitions()
     }
     return !vocabularySrsNotReady.value
@@ -269,6 +268,9 @@ function startVocabularyOwnerRecovery() {
 }
 
 function openSrsReview() {
+  // Loading the full review history must follow review intent, rather than
+  // competing with the material library on every reader startup.
+  void srsReviewV2Service.warmReviewData?.().catch(() => {})
   if (articleReconciledSinceRefresh) {
     articleReconciledSinceRefresh = false
     srsReviewCacheVersion.value += 1
@@ -348,7 +350,6 @@ async function reconcileArticleLearningInBackground() {
     } else if (articleReconciledSinceRefresh && !isSrsReviewOpen.value) {
       articleReconciledSinceRefresh = false
       srsReviewCacheVersion.value += 1
-      await srsReviewV2Service.warmReviewData?.()
     }
   } catch (error) {
     console.warn('[article-learning] background reconciliation paused', error)
@@ -368,10 +369,6 @@ onMounted(() => {
     void replayPersistedPassagePreviewAcquisitions()
   }
   if (document.hidden) scheduleLegacyVocabularyMigration(1000)
-  reviewWarmupTimer = window.setTimeout(() => {
-    reviewWarmupTimer = null
-    void srsReviewV2Service.warmReviewData?.().catch(() => {})
-  }, 0)
   scheduleArticleLearningReconciliation(0)
 })
 
@@ -382,7 +379,6 @@ onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', handleLegacyMigrationVisibilityChange)
   if (legacyMigrationTimer !== null) window.clearTimeout(legacyMigrationTimer)
   if (vocabularyOwnerRecoveryTimer !== null) window.clearInterval(vocabularyOwnerRecoveryTimer)
-  if (reviewWarmupTimer !== null) window.clearTimeout(reviewWarmupTimer)
   if (articleReconciliationTimer !== null) window.clearTimeout(articleReconciliationTimer)
 })
 

@@ -5,6 +5,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..');
+const port = Number(process.env.READ_WEB_SETTLEMENT_TEST_PORT || 4592);
 const out = process.env.N5_06_EVIDENCE || 'C:/Users/0/AppData/Local/Temp/reader-n5-completion-20261007/06';
 const entry = `
 import '/styles.css';
@@ -26,7 +27,7 @@ document.addEventListener('keydown',e=>{if(isReaderShortcutEventAllowed(e,docume
 trigger.onclick=()=>dialog.open({articleId:'s16-fixture',candidates:targets,summary:{}},trigger);
 window.test06={open:()=>trigger.click(),snapshot:()=>({changes,spoken,stops,applies,bodyKeys,active:document.querySelector('[data-active="true"]')?.dataset.targetId,focus:document.activeElement?.className,region:document.activeElement?.dataset.meaningRegion}),
 setFailure:v=>failSelection=v,finishSelection:()=>resolveSelection?.(),startRefine:()=>{window.holdRefine=true;targets[0].simple_meaning='';dialog.open({articleId:'s16-fixture',candidates:targets,summary:{}},trigger)},
-progress:()=>refineProgress?.(),finishRefine:()=>{window.holdRefine=false;pendingRefines.shift()?.({requested:1,updated:1})},
+progress:()=>refineProgress?.(),finishRefine:()=>{window.holdRefine=false;if(targets[0])targets[0].simple_meaning='河岸';pendingRefines.shift()?.({requested:1,updated:1})},
 top:()=>{const el=document.querySelector('#other');el.hidden=false;secondary.open(el,{initialFocus:el.querySelector('button'),onRequestClose:()=>{secondary.close();el.hidden=true}})},
 removeTarget:()=>{targets.splice(1,1);refineProgress?.()},empty:()=>{targets.splice(0);refineProgress?.()},close:()=>dialog.close()};
 `;
@@ -41,7 +42,7 @@ async function main() {
       res.setHeader('Content-Type', 'text/html');
       res.end(await vite.transformIndexHtml(req.url, '<!doctype html><html><head><title>N5-06 bounded dialog check</title></head><body><button id="open">整理本篇生词</button><input id="typing"><section id="other" hidden><button>上层窗口</button></section><script type="module" src="/__06-entry.js"></script></body></html>'));
     }); } };
-    server = await createServer({ root, configFile: path.join(root, 'vite.config.mjs'), plugins: [plugin], server: { host: '127.0.0.1', port: 5184, strictPort: true } });
+    server = await createServer({ root, cacheDir: path.join(out, 'vite-cache'), configFile: path.join(root, 'vite.config.mjs'), plugins: [plugin], server: { host: '127.0.0.1', port, strictPort: true } });
     await server.listen();
     browser = await chromium.launch({ headless: true });
     for (const width of [1280, 390]) {
@@ -49,7 +50,7 @@ async function main() {
       page.on('pageerror', error => errors.push(error.message));
       page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
       await page.route('**/api/**', route => route.abort('blockedbyclient'));
-      await page.goto('http://127.0.0.1:5184/__06.html');
+      await page.goto(`http://127.0.0.1:${port}/__06.html`);
       assert.equal(await page.title(), 'N5-06 bounded dialog check');
       await page.locator('#open').click();
       const dialog = page.locator('.vocabulary-preview-dialog--settlement');
@@ -63,28 +64,39 @@ async function main() {
       await page.keyboard.press('ArrowDown');
       assert.match(await dialog.locator('.vocabulary-preview-dialog__status').innerText(), /最后一个/);
       await page.keyboard.press('ArrowUp');
-      await page.keyboard.press('d');
-      assert.equal((await page.evaluate(() => test06.snapshot())).region, 'original');
-      await page.keyboard.press('d');
-      assert.equal((await page.evaluate(() => test06.snapshot())).region, 'simple');
-      const meaningGeometry = await page.evaluate(() => {
-        const focus=document.activeElement.getBoundingClientRect(),list=document.querySelector('.vocabulary-preview-dialog__list').getBoundingClientRect();
-        return { focusTop:focus.top,focusBottom:focus.bottom,listTop:list.top,listBottom:list.bottom };
+      assert.equal(await rows.nth(1).locator('[data-meaning-region="original"]').count(), 0);
+      assert.equal(await rows.nth(1).locator('.vocabulary-preview-dialog__meaning-toggle').count(), 0);
+      assert.equal(await rows.nth(1).getAttribute('data-active'), 'true');
+      const compactBefore = await rows.nth(1).boundingBox();
+      const nextBefore = await rows.nth(2).boundingBox();
+      await page.keyboard.press('e');
+      assert.equal(await dialog.locator('.vocabulary-preview-dialog__comparison-panel [data-meaning-region="original"]').isVisible(),true);
+      const compactAfter = await rows.nth(1).boundingBox();
+      const nextAfter = await rows.nth(2).boundingBox();
+      assert.equal(compactAfter.height, compactBefore.height, 'comparison does not change card height');
+      assert.equal(nextAfter.y, nextBefore.y, 'comparison never shifts the next vocabulary row');
+      const originalScroll = await dialog.locator('.vocabulary-preview-dialog__comparison-content').evaluate(element => {
+        element.scrollTop = element.scrollHeight;
+        return { clientHeight: element.clientHeight, scrollHeight: element.scrollHeight, scrollTop: element.scrollTop };
       });
-      assert.ok(meaningGeometry.focusTop >= meaningGeometry.listTop - 1 && meaningGeometry.focusBottom <= meaningGeometry.listBottom + 1, 'D must reveal the focused meaning region inside the list');
+      assert.ok(originalScroll.scrollHeight > originalScroll.clientHeight && originalScroll.scrollTop > 0, 'long originals remain fully accessible through inner scrolling');
+      await page.keyboard.press('d');
+      assert.equal((await page.evaluate(() => test06.snapshot())).region,'original');
+      await page.keyboard.press('d');
+      assert.equal((await page.evaluate(() => test06.snapshot())).region,'simple');
       await page.keyboard.press('e');
-      assert.equal(await rows.nth(1).getAttribute('data-expanded'), 'true');
-      await page.keyboard.press('e');
-      assert.equal(await rows.nth(1).getAttribute('data-expanded'), 'false');
-      await page.keyboard.press('Enter');
-      assert.equal(await rows.nth(1).getAttribute('data-expanded'), 'true');
+      assert.equal(await dialog.locator('.vocabulary-preview-dialog__comparison-panel').isVisible(),false);
       await page.keyboard.press('r');
       assert.deepEqual((await page.evaluate(() => test06.snapshot())).spoken, ['bank']);
+      assert.equal(await rows.nth(1).getAttribute('data-speaking'), 'true');
+      assert.equal(await rows.nth(1).locator('.vocabulary-preview-dialog__speaker span').innerText(), '发音');
+      assert.notEqual(await rows.nth(1).evaluate(e => getComputedStyle(e).backgroundColor), await rows.first().evaluate(e => getComputedStyle(e).backgroundColor));
       await page.keyboard.press('r');
-      assert.equal(await rows.nth(1).locator('.vocabulary-preview-dialog__speaker').getAttribute('aria-pressed'), 'false');
+      assert.equal(await rows.nth(1).locator('.vocabulary-preview-dialog__speaker').getAttribute('aria-pressed'), 'true');
+      assert.deepEqual((await page.evaluate(() => test06.snapshot())).spoken, ['bank', 'bank'], 'a repeated R restarts pronunciation');
       await page.evaluate(() => finishSpeech());
       await page.keyboard.press('m');
-      await page.waitForFunction(() => document.querySelector('[data-target-id="financial"] .vocabulary-preview-dialog__selection-button').disabled === false);
+      await page.waitForFunction(() => document.querySelector('.vocabulary-preview-dialog__current-actions .vocabulary-preview-dialog__selection-button').disabled === false);
       assert.equal(await rows.nth(1).getAttribute('data-removed'), 'true');
       assert.equal((await page.evaluate(() => test06.snapshot())).active, 'financial');
       await page.keyboard.press('m');
@@ -119,14 +131,14 @@ async function main() {
       await rows.nth(1).locator('.vocabulary-preview-dialog__item-main').focus();
       await page.evaluate(() => test06.startRefine());
       await rows.nth(1).locator('.vocabulary-preview-dialog__item-main').focus();
-      await page.keyboard.press('d');
+      await rows.nth(1).locator('[data-meaning-region="simple"]').focus();
       await page.evaluate(() => test06.progress());
       assert.equal((await page.evaluate(() => test06.snapshot())).active, 'financial');
-      assert.equal((await page.evaluate(() => test06.snapshot())).region, 'original');
+      assert.equal((await page.evaluate(() => test06.snapshot())).region, 'simple');
       await page.evaluate(() => test06.finishRefine());
       await page.waitForFunction(() => document.querySelector('.vocabulary-preview-dialog__status').textContent.includes('AI 精简完成'));
       assert.equal((await page.evaluate(() => test06.snapshot())).active, 'financial');
-      assert.equal((await page.evaluate(() => test06.snapshot())).region, 'original');
+      assert.equal((await page.evaluate(() => test06.snapshot())).region, 'simple');
       await page.evaluate(() => test06.startRefine());
       await page.keyboard.press('Escape');
       await page.locator('#open').click();
@@ -142,18 +154,20 @@ async function main() {
       await dialog.locator('.vocabulary-preview-dialog__close').click();
       await page.locator('#open').click();
       await page.evaluate(() => { window.holdSelection=false;test06.finishSelection(); });
-      await dialog.locator('.vocabulary-preview-dialog__primary-actions button').filter({ hasText: '只加入单词' }).click();
-      assert.deepEqual((await page.evaluate(() => test06.snapshot())).applies.at(-1).targets, ['river', 'financial']);
+      await dialog.getByRole('button', { name: '加入精简释义', exact: true }).click();
+      assert.deepEqual((await page.evaluate(() => test06.snapshot())).applies.at(-1).targets, ['river', 'financial', 'phrase']);
       assert.equal(await rows.count(), 3);
       const other = dialog.locator('.vocabulary-preview-dialog__other-actions');
       await other.locator('summary').click();
       await other.getByRole('button', { name: '跳过本篇剩余候选', exact: true }).click();
       await rows.first().dispatchEvent('keydown', { key: 'r' });
-      assert.equal((await page.evaluate(() => test06.snapshot())).spoken.length, 1);
+      assert.equal((await page.evaluate(() => test06.snapshot())).spoken.length, 2);
       await other.getByRole('button', { name: '取消', exact: true }).click();
-      const geometry = await rows.first().evaluate(row => { const p=row.querySelector('.vocabulary-preview-dialog__pronunciation-actions').getBoundingClientRect(),s=row.querySelector('.vocabulary-preview-dialog__selection-actions').getBoundingClientRect();return {gap: s.x>=p.right?s.x-p.right:s.y-p.bottom,overflow:row.scrollWidth>row.clientWidth+1}; });
-      assert.ok(geometry.gap >= 15.5);
+      const geometry = await rows.first().evaluate(row => { const p=row.querySelector('.vocabulary-preview-dialog__speaker').getBoundingClientRect();return {height:p.height,overflow:row.scrollWidth>row.clientWidth+1}; });
+      assert.ok(geometry.height <= 30);
       assert.equal(geometry.overflow, false);
+      assert.equal(await rows.locator('.vocabulary-preview-dialog__selection-button').count(),0);
+      assert.equal(await dialog.locator('.vocabulary-preview-dialog__current-actions .vocabulary-preview-dialog__selection-button').count(),1);
       await page.screenshot({ path: path.join(out, `dialog-${width}.png`) });
       const focusable = dialog.locator('button:not([disabled]):visible, [tabindex="0"]:visible');
       await focusable.last().focus();
@@ -181,7 +195,7 @@ async function main() {
       assert.equal(await dialog.locator('.vocabulary-preview-dialog__close').evaluate(el => el === document.activeElement), true);
       await page.evaluate(() => test06.finishRefine());
       await page.keyboard.press('Escape');
-      evidence.push({ width, title:await page.title(), url:page.url(), keyboardMouse:true, targetFocus:true, boundaries:true, regions:true, expansion:true, speech:'controlled dependency', restoreAndFailure:true, topAndEditableIsolation:true, asyncEpochAndFocus:true, wordsRetainsPhrase:true, gap:geometry.gap, dragResize:true, repeatedOpenAndReturn:true });
+      evidence.push({ width, title:await page.title(), url:page.url(), keyboardMouse:true, targetFocus:true, boundaries:true, simpleMeaningFocus:true, sharedActions:true, originalComparison:true, speech:'controlled dependency', restoreAndFailure:true, topAndEditableIsolation:true, asyncEpochAndFocus:true, wordsAndPhrasesTogether:true, compactButtonHeight:geometry.height, dragResize:true, repeatedOpenAndReturn:true });
       await page.close();
     }
     assert.deepEqual(errors, []);

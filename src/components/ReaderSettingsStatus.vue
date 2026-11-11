@@ -1,7 +1,5 @@
 <template>
-  <Teleport to="#reader-mode-status-root">
-    <span class="reader-mode-status rw:inline-flex rw:items-center rw:rounded-full rw:bg-[var(--rw-ui-muted)] rw:px-3 rw:py-1 rw:text-sm" role="status">阅读模式：{{ chunk.isChunkMode ? 'AI切分' : '普通文本' }}</span>
-  </Teleport>
+  <ReaderBackgroundSettings />
   <Teleport to="#reader-settings-control-root">
     <Button
       id="reader-settings-toggle"
@@ -26,7 +24,7 @@
         :class="{ active: wordEffect === 'magnify' }"
         :aria-pressed="wordEffect === 'magnify'"
         @click="setWordEffect('magnify')"
-      >悬停微放大</Button>
+      ><span class="reader-word-effect-check" aria-hidden="true">{{ wordEffect === 'magnify' ? '✓' : '' }}</span>悬停微放大</Button>
       <Button
         id="reader-word-effect-underline"
         type="button"
@@ -36,7 +34,7 @@
         :class="{ active: wordEffect === 'underline' }"
         :aria-pressed="wordEffect === 'underline'"
         @click="setWordEffect('underline')"
-      >灰色下划线</Button>
+      ><span class="reader-word-effect-check" aria-hidden="true">{{ wordEffect === 'underline' ? '✓' : '' }}</span>灰色下划线</Button>
     </div>
     <p class="rw:m-0 rw:mt-4">悬停或滑过单词定位，再按“标记词”快捷键标注；自动记住本浏览器的选择。</p>
   </Teleport>
@@ -55,12 +53,26 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import ReaderBackgroundSettings from './ReaderBackgroundSettings.vue'
 import { Button } from './ui/button/index.js'
 import { useChunkStore } from '../pinia-stores/chunk.js'
+import { useTranscriptStore } from '../pinia-stores/transcript.js'
+import { useUiStore } from '../pinia-stores/ui.js'
+import { useAudioStore } from '../pinia-stores/audio.js'
 import { recordBestEffortFailure } from '../services/runtime/best-effort.js'
 
 const chunk = useChunkStore()
+const transcript = useTranscriptStore()
+const ui = useUiStore()
+const audioStore = useAudioStore()
+watch(() => audioStore.currentAudioMeta?.sourceType, (sourceType) => {
+  const player = document.getElementById('audio-player')
+  if (player) player.dataset.textOnly = String(sourceType === 'text-only')
+}, { immediate: true })
+watch(() => [chunk.isChunkMode, transcript.segments.length > 0], ([chunkMode, hasArticle]) => {
+  if (hasArticle) ui.showNotice('reader-mode', `阅读模式：${chunkMode ? 'AI切分' : '普通文本'}`)
+}, { immediate: true })
 const media = ref({ videoAvailable: false, videoPreferred: false })
 const settingsOpen = ref(false)
 const wordEffect = ref('magnify')
@@ -75,6 +87,14 @@ function syncSettings() {
 function toggleSettings() {
   if (!settingsElement) return
   settingsElement.open = !settingsElement.open
+  syncSettings()
+}
+
+function closeSettingsOnOutsideClick(event) {
+  if (!settingsElement?.open) return
+  const path = event.composedPath()
+  if (path.includes(settingsElement) || path.includes(document.getElementById('reader-settings-toggle'))) return
+  settingsElement.open = false
   syncSettings()
 }
 
@@ -116,6 +136,7 @@ onMounted(() => {
   settingsElement = document.getElementById('reader-settings')
   syncSettings()
   settingsElement?.addEventListener('toggle', syncSettings)
+  document.addEventListener('click', closeSettingsOnOutsideClick, true)
   const source = window.__mediaSource
   if (typeof source?.subscribe === 'function') {
     unsubscribe = source.subscribe(next => { media.value = next })
@@ -123,6 +144,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  document.removeEventListener('click', closeSettingsOnOutsideClick, true)
   settingsElement?.removeEventListener('toggle', syncSettings)
   settingsElement = null
   if (typeof unsubscribe === 'function') unsubscribe()

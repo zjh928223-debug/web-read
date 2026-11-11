@@ -246,7 +246,7 @@ class ServiceAppTests(unittest.TestCase):
             def controlled_requester(_cache_dir, _model, _prompt, payload, **_kwargs):
                 provider_started.set()
                 provider_release.wait(2)
-                return json.dumps({"items": payload["items"]})
+                return json.dumps({"items": [dict(row, boundary=row["targetId"], type="word", meaning="意思", memoryHint="提示") for row in payload["items"]]})
 
             credential_store = MemoryCredentialStore()
             credential_store.set_secret("SECRET")
@@ -348,7 +348,7 @@ class ServiceAppTests(unittest.TestCase):
                 releases[model].wait(2)
                 with lock:
                     active[model] -= 1
-                return json.dumps({"items": payload.get("items", [])})
+                return json.dumps({"items": [dict(row, boundary=row["targetId"], type="word", meaning="意思", memoryHint="提示") for row in payload.get("items", [])]})
 
             credential_store = MemoryCredentialStore()
             credential_store.set_secret("SECRET")
@@ -1556,10 +1556,18 @@ class ServiceAppTests(unittest.TestCase):
                     self.assertEqual(len(calls), 1)
                     self.assertEqual([item["targetId"] for item in calls[0]], ["target-1", "target-2"])
                     self.assertEqual(failed["error"]["category"], "upstream")
-                    self.assertIn("target-2", failed["error"]["message"])
+                    self.assertIn("已保存 1/2", failed["error"]["message"])
                     output_dir = Path(client.get(f"/api/jobs/{ready['jobId']}/session").json()["outputDir"])
                     backfill_dir = output_dir / "_workflow" / "annotation-backfill"
                     self.assertFalse((backfill_dir / "latest-result.json").exists())
+                    progress = json.loads(next((backfill_dir / "progress").glob("*.json")).read_text(encoding="utf8"))
+                    self.assertEqual([item["targetId"] for item in progress["result"]["items"]], ["target-1"])
+                    resumed = self._run_backfill(client, ready["jobId"], {
+                        "template": template, "model": "gemini-test", "maxRetries": 0,
+                    })
+                    self.assertEqual([item["targetId"] for item in calls[1]], ["target-2"])
+                    self.assertEqual([item["targetId"] for item in resumed["result"]["items"]], ["target-1", "target-2"])
+                    self.assertEqual(resumed["metadata"]["resumedItemCount"], 1)
             finally:
                 manager.close()
 

@@ -57,10 +57,9 @@ export function getCurrentSegmentIndex(segments, words, wordStarts, time) {
         }
     }
     if (ans === -1) return time < (segments[0].start ?? 0) ? 0 : -1;
-    const seg = segments[ans];
-    const segEnd = seg.end ?? seg.start ?? 0;
-    if (time <= segEnd) return ans;
-    return ans < segments.length - 1 ? ans + 1 : ans;
+    // A sentence-ending annotation can stop in the following silent gap.
+    // Keep the latest sentence that has started until the next one starts.
+    return ans;
 }
 
 export function getSegmentCheckpoints(segments, segIndex) {

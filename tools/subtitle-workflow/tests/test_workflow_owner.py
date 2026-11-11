@@ -83,6 +83,26 @@ class WorkflowOwnerTests(unittest.TestCase):
         self.assertFalse(owner.receipts.receipt_path.exists())
         self.assertNotIn(str(self.root), json.dumps(capabilities))
 
+    def test_queue_query_skips_backup_collection_but_keeps_jobs_and_revision(self):
+        owner = self.make_owner()
+        created = self.command(owner, "job-start", self.job(), 0, "queue-job")
+        self.assertEqual(created["outcome"], "committed")
+        full = owner.query("job", **self.ids("full-job-query"))
+        self.assertIn("backupRecords", full["payload"])
+
+        with patch.object(owner.backup_adapter, "collect", side_effect=AssertionError("queue must not collect a backup")) as collect:
+            queue = owner.query("job", payload={"includeBackupRecords": False}, **self.ids("queue-query"))
+        self.assertEqual(queue["outcome"], "read")
+        self.assertEqual(queue["revision"], full["revision"])
+        self.assertEqual(queue["payload"]["records"], full["payload"]["records"])
+        self.assertEqual(queue["payload"]["sourceRevision"], full["payload"]["sourceRevision"])
+        self.assertFalse(any(key.startswith("backup") for key in queue["payload"]))
+        collect.assert_not_called()
+
+        for invalid in (0, "false", None):
+            rejected = owner.query("job", payload={"includeBackupRecords": invalid}, **self.ids("invalid-backup-option"))
+            self.assertEqual(rejected["outcome"], "rejected")
+
     def test_empty_snapshot_clears_canonical_state_and_retains_recovery_evidence(self):
         owner = self.make_owner()
         job = {**self.job(), "outputDir": "job-1"}

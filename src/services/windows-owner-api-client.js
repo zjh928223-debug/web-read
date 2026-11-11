@@ -232,10 +232,6 @@ async function execute(envelope, { signal, timeoutMs, fetchImpl }) {
     }
     return validateResponse(raw, envelope)
   } catch (error) {
-    if (error instanceof WindowsOwnerApiError) {
-      if (isMutation && dispatched) return unknownResult(envelope, 'invalid-response')
-      throw error
-    }
     if (signal?.aborted) {
       if (isMutation && dispatched) return unknownResult(envelope, 'aborted')
       throw abortedError()
@@ -246,6 +242,10 @@ async function execute(envelope, { signal, timeoutMs, fetchImpl }) {
         category: 'timeout',
         retryable: true,
       })
+    }
+    if (error instanceof WindowsOwnerApiError) {
+      if (isMutation && dispatched) return unknownResult(envelope, 'invalid-response')
+      throw error
     }
     if (isMutation && dispatched) return unknownResult(envelope, 'upstream')
     throw new WindowsOwnerApiError('upstream', 'owner API transport failed', {

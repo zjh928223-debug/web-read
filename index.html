@@ -6,17 +6,23 @@
   <title>Advanced Seek Player + Smart Chunking (Pro)</title>
   <link rel="stylesheet" href="./styles.css" />
   <link rel="stylesheet" href="/src/styles/workflow-ui.css" />
-  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500&family=Noto+Serif+SC:wght@400;500&display=swap" rel="stylesheet">
 </head>
 <body>
   
   <div id="main-app-area">
     <div class="container rw:gap-4">
       <div class="controls rw:box-border rw:flex rw:min-h-16 rw:flex-wrap rw:items-center rw:gap-4 rw:rounded-[var(--radius-lg)] rw:border rw:border-[var(--rw-ui-border)] rw:bg-[var(--rw-ui-card)] rw:px-4 rw:py-3 rw:shadow-sm rw:justify-between" data-reader-toolbar="main">
+        <div class="reader-toolbar-scroll" tabindex="0" role="region" aria-label="阅读工具栏（可横向滚动）">
+        <div class="reader-toolbar-row">
         <div class="reader-mode-switch rw:flex rw:flex-wrap rw:items-center rw:gap-4">
           <div id="theme-controls" class="rw:relative">
-            <button id="theme-toggle" data-ui-owner="reader" title="切换浅色/深色/自定义模式">☀</button>
+            <button id="theme-toggle" type="button" data-ui-owner="reader" title="配色设置" aria-label="配色设置" aria-controls="theme-custom-panel" aria-expanded="false">☀</button>
             <div id="theme-custom-panel" class="rw:absolute rw:left-0 rw:top-full" hidden>
+              <div class="theme-mode-options" role="group" aria-label="配色模式">
+                <button id="theme-mode-light" type="button" data-ui-owner="reader" aria-pressed="true">浅色</button>
+                <button id="theme-mode-dark" type="button" data-ui-owner="reader" aria-pressed="false">深色</button>
+                <button id="theme-mode-custom" type="button" data-ui-owner="reader" aria-pressed="false">自定义</button>
+              </div>
               <div class="theme-custom-row">
                 <label for="theme-custom-bg">背景</label>
                 <input type="color" id="theme-custom-bg" value="#eef2f7">
@@ -42,14 +48,35 @@
           </div>
           <button id="toggle-chunk-btn" data-ui-owner="reader" title="在普通文本与已有的 AI 切分之间切换">AI切分</button>
         </div>
-        <div class="rw:flex rw:flex-wrap rw:items-center rw:gap-4">
+        <div class="reader-task-toolbars">
+          <div data-reader-toolbar="annotations">
+            <div class="transcript-actions rw:gap-4">
+              <span id="annotation-navigation-status" hidden></span>
+              <span id="annotation-mark-count" hidden data-count="0"></span>
+              <button id="btn-annotation-backfill-ai" type="button" data-ui-owner="reader" title="自动导出轻回填模板、请求 Gemini 并导入解释结果">AI解释标注</button>
+              <button id="btn-settle-article-vocabulary" type="button" data-ui-owner="reader" title="确认本文已学完后，整理本篇生词到 SRS">已学完本篇</button>
+            </div>
+          </div>
+          <div data-reader-toolbar="learning">
+            <div id="srs-review-entry-root"></div>
+          </div>
+        </div>
+        <div class="reader-main-settings rw:flex rw:flex-wrap rw:items-center rw:gap-4">
           <div id="reader-settings-control-root"></div>
           <div id="youtube-reader-controls-root" class="rw:flex rw:items-center"></div>
+        </div>
+
+        </div>
+        </div>
+        <div class="reader-main-audio" data-reader-toolbar="audio">
+          <audio id="audio-player" class="rw:m-0 rw:block rw:h-9 rw:w-full rw:rounded-full rw:scheme-light rw:dark:scheme-dark" controls></audio>
         </div>
       </div>
       <details id="reader-settings" class="reader-settings rw:hidden rw:open:block">
         <summary hidden>阅读设置</summary>
+        <div class="reader-settings-heading"><strong>阅读设置</strong><span>点击外部收起</span></div>
         <div class="reader-settings-grid rw:mt-4 rw:grid rw:grid-cols-1 rw:gap-4 rw:lg:grid-cols-2">
+          <div id="reader-background-settings-root" class="rw:contents"></div>
           <section class="reader-settings-group rw:flex rw:flex-col rw:gap-4 rw:p-5" aria-labelledby="reader-playback-settings-title">
             <h3 class="rw:m-0" id="reader-playback-settings-title">播放与跟随</h3>
             <div class="reader-settings-row speed-controls rw:flex rw:flex-wrap rw:items-center rw:gap-4" aria-label="播放速度">
@@ -84,9 +111,9 @@
             <div id="reader-word-effect-control-root"></div>
             <p class="rw:m-0">普通文本支持播放词、句高亮；AI切分支持词高亮与独立的当前块背景。句高亮设置用于普通文本。</p>
           </section>
-          <section class="reader-settings-group rw:flex rw:flex-col rw:gap-4 rw:p-5" aria-labelledby="reader-hotkey-settings-title">
+          <section class="reader-settings-group rw:flex rw:flex-col rw:gap-4 rw:p-5 rw:lg:col-span-2" aria-labelledby="reader-hotkey-settings-title">
             <h3 class="rw:m-0" id="reader-hotkey-settings-title">快捷键</h3>
-            <div class="reader-settings-hotkeys rw:grid rw:grid-cols-1 rw:gap-x-8 rw:gap-y-4 rw:xl:grid-cols-2">
+            <div class="reader-settings-hotkeys rw:grid rw:grid-cols-1 rw:gap-x-8 rw:gap-y-4 rw:sm:grid-cols-2 rw:xl:grid-cols-4">
               <label for="hotkey-backward-input" class="rw:grid rw:grid-cols-[5rem_7rem] rw:items-center rw:gap-4 rw:min-w-0 rw:text-sm">上一句<input id="hotkey-backward-input" class="hotkey-input-wide" data-ui-owner="reader" type="text" value="ArrowLeft" title="设置后退快捷键" /></label>
               <label for="hotkey-forward-input" class="rw:grid rw:grid-cols-[5rem_7rem] rw:items-center rw:gap-4 rw:min-w-0 rw:text-sm">下一句<input id="hotkey-forward-input" class="hotkey-input-wide" data-ui-owner="reader" type="text" value="ArrowRight" title="设置前进快捷键" /></label>
               <label for="hotkey-input" class="rw:grid rw:grid-cols-[5rem_7rem] rw:items-center rw:gap-4 rw:min-w-0 rw:text-sm">标记词<input id="hotkey-input" class="hotkey-input" data-ui-owner="reader" type="text" maxlength="1" value="m" /></label>
@@ -114,33 +141,11 @@
           </section>
         </div>
       </details>
-      <div class="rw:box-border rw:flex rw:min-h-16 rw:flex-wrap rw:items-center rw:gap-4 rw:rounded-[var(--radius-lg)] rw:border rw:border-[var(--rw-ui-border)] rw:bg-[var(--rw-ui-card)] rw:px-4 rw:py-3 rw:shadow-sm" data-reader-toolbar="audio">
-        <audio id="audio-player" class="rw:m-0 rw:block rw:h-9 rw:w-full rw:rounded-full rw:scheme-light rw:dark:scheme-dark" controls></audio>
-      </div>
-      <div class="extra-controls rw:box-border rw:flex rw:min-h-16 rw:flex-wrap rw:items-center rw:gap-4 rw:rounded-[var(--radius-lg)] rw:border rw:border-[var(--rw-ui-border)] rw:bg-[var(--rw-ui-card)] rw:px-4 rw:py-3 rw:shadow-sm rw:justify-center" data-reader-toolbar="sentences">
-        <div class="reader-seek-controls rw:flex rw:flex-wrap rw:items-center rw:justify-center rw:gap-4">
-          <button id="btn-prev-sentence" data-ui-owner="reader">上一句</button>
-          <button id="btn-next-sentence" data-ui-owner="reader">下一句</button>
-        </div>
-      </div>
-      <div class="transcript-header rw:box-border rw:flex rw:min-h-16 rw:flex-wrap rw:items-center rw:gap-4 rw:rounded-[var(--radius-lg)] rw:border rw:border-[var(--rw-ui-border)] rw:bg-[var(--rw-ui-card)] rw:px-4 rw:py-3 rw:shadow-sm rw:justify-center" data-reader-toolbar="annotations">
-        <div class="transcript-actions rw:gap-4">
-          <span class="annotation-navigation-controls rw:inline-flex rw:flex-wrap rw:items-center rw:gap-4" title="浏览已解释或手动标记词；音频保持当前进度">
-            <button id="btn-prev-annotation-word" type="button" data-ui-owner="reader">上个标注词</button>
-            <button id="btn-next-annotation-word" type="button" data-ui-owner="reader">下个标注词</button>
-          </span>
-          <span id="annotation-navigation-status" class="rw:empty:hidden" role="status" aria-live="polite"></span>
-          <span id="annotation-mark-count" class="mark-count-badge" data-ui-owner="reader" role="status" aria-live="polite" data-count="0" title="当前文章已标记 0 个重点词">已标记 0</span>
-          <button id="btn-annotation-backfill-ai" type="button" data-ui-owner="reader" title="自动导出轻回填模板、请求 Gemini 并导入解释结果">AI解释标注</button>
-          <button id="btn-settle-article-vocabulary" type="button" data-ui-owner="reader" title="确认本文已学完后，整理本篇生词到 SRS">已学完本篇</button>
-          <div id="srs-review-entry-root"></div>
-        </div>
-      </div>
+
 
       <div class="reading-shell rw:box-border rw:min-w-0 rw:rounded-[var(--radius-lg)] rw:border rw:border-[var(--rw-ui-border)] rw:bg-[var(--rw-ui-card)] rw:p-5">
-        <header class="rw:flex rw:min-w-0 rw:flex-col rw:items-start rw:justify-between rw:gap-4 rw:sm:flex-row">
-          <div id="reader-article-status-root" class="rw:min-w-0 rw:flex-1"></div>
-          <div id="reader-mode-status-root"></div>
+        <header class="reader-article-header">
+          <div id="reader-article-status-root"></div>
         </header>
         <div id="transcript-container" style="display: none;">请按顺序加载文件...</div>
         <div id="vue-root"></div>

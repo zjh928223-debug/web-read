@@ -90,7 +90,7 @@ VIDEO_PROBE_CACHE_NAME = "video-probe-cache.json"
 DEFAULT_EDGE_TTS_VOICE = "en-US-AriaNeural"
 MERRIAM_GENERAL_MEANING_SOURCE = "merriam-webster-collegiate+gemini:v2"
 TERMINAL_STATUSES = {"ready", "failed", "canceled"}
-ALLOWED_STATUSES = {"queued", "downloading", "transcribing", "segmenting", "translating", "validating", "ready", "failed", "canceled"}
+ALLOWED_STATUSES = {"queued", "downloading", "transcribing", "segmenting", "translating", "synthesizing", "validating", "ready", "failed", "canceled"}
 DEFAULT_JOB_EVENT_LIMIT = 500
 DEFAULT_TERMINAL_SUMMARY_LIMIT = 5
 DEFAULT_REQUEST_METRIC_SAMPLE_LIMIT = 512
@@ -649,6 +649,9 @@ class JobRecord:
                 "error": self.error,
                 "logSummary": event_summary or list(self.terminal_summary),
             }
+            if self.request.source_type == "text-only":
+                snapshot["sourceType"] = "text-only"
+                snapshot["title"] = self.request.title or self.request.article_text.splitlines()[0][:80]
             if self.manifest:
                 snapshot["title"] = self.manifest.get("title", "")
                 snapshot["outputDir"] = self.manifest.get("outputDir", "")
@@ -1134,7 +1137,8 @@ class JobManager:
             request = self._with_saved_credential(request)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
-        self._require_workflow_tools("downloading")
+        if request.source_type != "text-only":
+            self._require_workflow_tools("downloading")
         fingerprint = _request_fingerprint(request, operation="create")
         job_id = uuid.uuid4().hex[:12]
         record = JobRecord(
@@ -1657,6 +1661,9 @@ class JobManager:
             replace_policy=request.replace_policy,
             video_priority=request.video_priority,
             force_reprocess=request.force_reprocess,
+            source_type=request.source_type,
+            article_text=request.article_text,
+            title=request.title,
         )
 
     def _load_persisted_jobs(self) -> None:
@@ -2015,6 +2022,9 @@ class JobManager:
             auto_open_when_ready=original.request.auto_open_when_ready,
             replace_policy=original.request.replace_policy,
             video_priority=original.request.video_priority,
+            source_type=original.request.source_type,
+            article_text=original.request.article_text,
+            title=original.request.title,
         )
         if request.gemini_mode == "real" and not request.api_key:
             raise HTTPException(status_code=409, detail="apiKey is no longer available for this failed job")
@@ -2049,7 +2059,8 @@ class JobManager:
         checkpoint = previous_manifest.get("checkpoint") if isinstance(previous_manifest.get("checkpoint"), dict) else {}
         requested_stage = str(payload.get("stage") or "").strip()
         retry_stage = resolve_retry_stage(checkpoint, requested_stage or None)
-        self._require_workflow_tools(retry_stage)
+        if original.request.source_type != "text-only":
+            self._require_workflow_tools(retry_stage)
         request = WorkflowRequest(
             url=original.request.url,
             gemini_mode=original.request.gemini_mode,
@@ -2059,6 +2070,9 @@ class JobManager:
             auto_open_when_ready=original.request.auto_open_when_ready,
             replace_policy=original.request.replace_policy,
             video_priority=coerce_bool(payload.get("videoPriority", payload.get("video_priority", original.request.video_priority)), original.request.video_priority),
+            source_type=original.request.source_type,
+            article_text=original.request.article_text,
+            title=original.request.title,
         )
         try:
             request = self._with_saved_credential(request)
@@ -3260,7 +3274,10 @@ class JobManager:
         record.runner = runner
         try:
             record.add_event({"status": "running", "stage": "queued", "message": "任务已入队。"})
-            if record.retry_source_manifest and hasattr(runner, "retry_from_stage"):
+            if record.request.source_type == "text-only":
+                from .text_article import run_text_article
+                manifest = run_text_article(runner, record.request, record.job_id, record.add_event, record.cancel_event)
+            elif record.retry_source_manifest and hasattr(runner, "retry_from_stage"):
                 manifest = runner.retry_from_stage(
                     record.request,
                     record.job_id,

@@ -131,7 +131,7 @@ async function main() {
       sentence: 'Synthetic sentence',
       markedText: 'Synthetic'
     }, lookup, deps).matchType,
-    'targetId-encoded-range'
+    'none'
   );
 
   assert.throws(

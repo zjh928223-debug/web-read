@@ -22,9 +22,6 @@
 你的任务是：
 基于每个 item 的 markedText 以及它在当前文章中的实际用法，为每个 item 生成以下字段：
 - targetId
-- markedText
-- sourceSentence
-- occurrenceIndex
 - boundary
 - type
 - meaning
@@ -41,18 +38,18 @@
 
 1. 保留原始 targetId，不要改写，不要丢失。
 
-2. 保留原始 markedText，不要改写，不要替换成别的形式。
+2. markedText 仅用于理解目标，不需要在结果中抄回；本地会按 targetId 保留原文。
 
-3. 保留原始 sourceSentence，不要改写，不要替换成 anchorSentence，也不要输出别的句子代替它。
+3. sourceSentence 仅作为原文依据，不需要在结果中抄回；本地会按 targetId 保留原句。
 
-4. 保留原始 occurrenceIndex，不要改写，不要丢失。
+4. occurrenceIndex 由本地保管，不需要在结果中返回。
 
 5. 当前句的判定规则：
 - 优先使用 anchorSentence 作为“判断 boundary / type / meaning / memoryHint”时的主句
 - 如果某个 item 没有 anchorSentence，再使用 sourceSentence
 - 如果两者都没有，再退回 sentence
 注意：
-输出字段里的 sourceSentence 仍然必须原样返回输入中的 sourceSentence。
+sourceSentence 不属于输出字段，由本地保留输入原值。
 
 6. sentenceBefore、sentenceAfter、articleText、articleSentences 可以作为有效参考：
 - 它们可以帮助你理解当前表达在本文里的真正含义、语气、逻辑作用和引申方向
@@ -193,9 +190,6 @@ sentence: and even officially recognized by UNESCO as part of Korea's intangible
   "items": [
     {
       "targetId": "...",
-      "markedText": "...",
-      "sourceSentence": "...",
-      "occurrenceIndex": 0,
       "boundary": "...",
       "type": "...",
       "meaning": "...",
@@ -203,3 +197,5 @@ sentence: and even officially recognized by UNESCO as part of Korea's intangible
     }
   ]
 }
+
+输出结构由接口 JSON Schema 约束。只返回声明的字段，不输出原文副本、diff 加减号或额外说明；每个 targetId 恰好返回一次。所有字符串必须正确转义；不确定的记忆提示可用空字符串，meaning 仍须给出本文释义。

@@ -10,7 +10,9 @@ import {
   isSettlementSimpleMeaningValid,
   getSettlementMeaningRefinementInputKey,
   SETTLEMENT_MEANING_REFINEMENT_PROMPT_VERSION,
+  isSettlementSimpleMeaningReady,
 } from './settlement-meaning-refinement.js';
+import { normalizeSettlementPhonetic } from './settlement-phonetics.js';
 
 export const ARTICLE_SRS_SETTLEMENT_PROGRESS_STORE_KEY = 'vocabulary-article-srs-settlement-progress';
 
@@ -68,6 +70,8 @@ function normalizeRefinement(refinement) {
     target_id: targetId,
     input_key: normalizeNullableText(refinement.input_key),
     simple_meaning: getSimpleMeaning(refinement),
+    phonetic: normalizeSettlementPhonetic(refinement.phonetic) || null,
+    phonetic_only: refinement.phonetic_only === true,
     prompt_version: Number(refinement.prompt_version || refinement.promptVersion) || 0,
     status,
     attempt_token: normalizeText(refinement.attempt_token || refinement.attemptToken),
@@ -218,6 +222,7 @@ export function createArticleSrsSettlementProgressRepository(storage) {
           && sameInput
           && existing.prompt_version === promptVersion
           && (existing.status === 'completed' && isSettlementSimpleMeaningValid(existing.simple_meaning, candidate.entry_type)
+              && (!options.includeMissingPhonetics || options.automatic || candidate.entry_type === 'phrase' || candidate.phonetic)
             || existing.status === 'pending' && !pendingIsRetryable)) return;
         if (options.automatic && sameInput && existing?.prompt_version === promptVersion) return;
         claimedTargetIds.push(targetId);
@@ -225,7 +230,8 @@ export function createArticleSrsSettlementProgressRepository(storage) {
           ...(existing || {}),
           target_id: targetId,
           input_key: inputKey,
-          simple_meaning: sameInput ? existing?.simple_meaning || null : null,
+          simple_meaning: sameInput ? existing?.simple_meaning || getSimpleMeaning(candidate) : null,
+          phonetic_only: isSettlementSimpleMeaningReady(candidate),
           prompt_version: promptVersion,
           status: 'pending',
           attempt_token: claimToken,
@@ -263,6 +269,7 @@ export function createArticleSrsSettlementProgressRepository(storage) {
           target_id: targetId,
           input_key: inputKey,
           simple_meaning: getSimpleMeaning(candidate),
+          phonetic: candidate.phonetic_source === 'ai' ? candidate.phonetic : existing?.phonetic || null,
           prompt_version: promptVersion,
           status: 'completed',
           attempted_at: byTargetId.get(targetId) && byTargetId.get(targetId).attempted_at || refinedAt,
@@ -598,16 +605,21 @@ export function applyArticleSrsSettlementProgress(settlement = {}, progress = nu
   ]);
   const sourceCandidates = Array.isArray(next.candidates) ? next.candidates : [];
   const matchedProcessedTargetIds = new Set();
-  next.candidates = sourceCandidates.map((candidate) => {
+  const displayCandidates = [...sourceCandidates, ...(next.reviewCandidates || [])].map((candidate) => {
     const targetId = getTargetId(candidate);
     const refinement = refinements.get(targetId);
     const inputKey = getSettlementMeaningRefinementInputKey(candidate, normalizedProgress.article_id);
     if (refinement && (!refinement.input_key || refinement.input_key === inputKey)) {
       candidate.refinement_attempted = true;
+      candidate.refinement_phonetic_only = refinement.phonetic_only === true;
       candidate.refinement_status = refinement.status;
       candidate.refinement_attempted_at = refinement.attempted_at;
       candidate.refinement_error = refinement.error || '';
       candidate.refinement_input_key = inputKey;
+      if (refinement.phonetic && !candidate.phonetic && candidate.entry_type !== 'phrase') {
+        candidate.phonetic = refinement.phonetic;
+        candidate.phonetic_source = 'ai';
+      }
       if (refinement.simple_meaning) {
         candidate.simple_meaning = refinement.simple_meaning;
         candidate.simpleMeaning = refinement.simple_meaning;
@@ -628,15 +640,24 @@ export function applyArticleSrsSettlementProgress(settlement = {}, progress = nu
         }
       }
       candidate.refinement_attempted = false;
+      candidate.refinement_phonetic_only = false;
       candidate.refinement_status = '';
       candidate.refinement_save_pending = false;
     }
     if (processedTargetIds.has(targetId)) matchedProcessedTargetIds.add(targetId);
+    if (normalizedProgress.applied_target_ids.includes(targetId)) candidate.application_status = 'applied';
+    else if (normalizedProgress.skipped_target_ids.includes(targetId)) candidate.application_status = 'skipped';
+    if (candidate.application_status) candidate.eligible = false;
     candidate.application_processing = processingTargetIds.has(targetId);
     return candidate;
-  }).filter((candidate) => !matchedProcessedTargetIds.has(getTargetId(candidate)));
+  });
+  next.candidates = displayCandidates.filter((candidate) => !candidate.application_status);
+  next.reviewCandidates = displayCandidates.filter((candidate) => candidate.application_status);
   const baseSummary = summarizeArticleSrsSettlement(next.candidates, next.excluded);
-  const processed = (baseSummary.processed || 0) + matchedProcessedTargetIds.size;
+  const processed = new Set([
+    ...(next.excluded || []).filter((item) => item.reason === 'already_added_current_article').map(getTargetId),
+    ...matchedProcessedTargetIds,
+  ]).size;
   next.summary = {
     ...baseSummary,
     processed,

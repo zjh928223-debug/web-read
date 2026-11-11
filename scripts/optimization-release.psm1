@@ -167,10 +167,8 @@ function Invoke-OptimizationProcessCapture {
     [AllowNull()][string]$StandardInput = $null,
     [hashtable]$Environment = @{}
   )
-  $captureRoot = Join-Path ([IO.Path]::GetTempPath()) ('read-web-optimization-process-' + [Guid]::NewGuid().ToString('N'))
-  $stdoutPath = Join-Path $captureRoot 'stdout.log'
-  $stderrPath = Join-Path $captureRoot 'stderr.log'
-  New-Item -ItemType Directory -Force -Path $captureRoot | Out-Null
+  # Capture uses redirected pipes only. Requiring a writable TEMP here made
+  # healthy runtimes appear missing when Explorer inherited C:\Windows\TEMP.
   $process = $null
   try {
     $startInfo = New-Object Diagnostics.ProcessStartInfo
@@ -208,9 +206,6 @@ function Invoke-OptimizationProcessCapture {
     }
   } finally {
     if ($null -ne $process) { $process.Dispose() }
-    if (Test-Path -LiteralPath $captureRoot) {
-      Remove-Item -LiteralPath $captureRoot -Recurse -Force -ErrorAction SilentlyContinue
-    }
   }
 }
 
@@ -246,9 +241,13 @@ function Get-OptimizationCommandVersion {
       -FilePath $FilePath `
       -ArgumentList $Arguments `
       -WorkingDirectory (Get-Location).Path
-    if ($result.exitCode -ne 0) { return '' }
+    if ($result.exitCode -ne 0) {
+      Write-Warning "Version probe failed for '$FilePath' (exit $($result.exitCode)): $($result.stderr.Trim())"
+      return ''
+    }
     return (($result.stdout + "`n" + $result.stderr) -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 1).Trim()
   } catch {
+    Write-Warning "Version probe failed for '$FilePath': $($_.Exception.Message)"
     return ''
   }
 }

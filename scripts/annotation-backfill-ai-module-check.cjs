@@ -268,7 +268,7 @@ async function importModule(filePath) {
       path.join(tempInput, 'input-styles.mjs'),
       rewriteSource(fs.readFileSync(path.join(repoRoot, 'src', 'components', 'ui', 'input', 'input-styles.js'), 'utf8')),
     );
-    ['vocabulary-models.js', 'vocabulary-repository.js', 'vocabulary-persistence.js', 'srs-candidates.js', 'srs-pending-candidates.js', 'article-srs-settlement.js', 'article-srs-settlement-progress.js', 'settlement-meaning-refinement.js', 'srs-scheduler.js', 'ielts-learning-pools.js', 'vocabulary-learning-models.js', 'vocabulary-acquisition-repository.js', 'vocabulary-context-evidence.js', 'vocabulary-learning-events.js', 'legacy-vocabulary-audit.js', 'vocabulary-learning-uow.js', 'vocabulary-acquisition-service.js', 'srs-review-session-ledger.js', 'srs-review-service-v2.js', 'exam-vocabulary-importer.js', 'exam-vocabulary-context-matcher.js', 'legacy-vocabulary-reassessment.js', 'legacy-vocabulary-migration.js', 'vocabulary-service.js', 'index.js'].forEach((file) => {
+    ['vocabulary-models.js', 'vocabulary-repository.js', 'vocabulary-persistence.js', 'srs-candidates.js', 'srs-pending-candidates.js', 'article-srs-settlement.js', 'article-srs-settlement-progress.js', 'settlement-meaning-refinement.js', 'settlement-phonetics.js', 'srs-scheduler.js', 'ielts-learning-pools.js', 'vocabulary-learning-models.js', 'vocabulary-acquisition-repository.js', 'vocabulary-context-evidence.js', 'vocabulary-learning-events.js', 'legacy-vocabulary-audit.js', 'vocabulary-learning-uow.js', 'vocabulary-acquisition-service.js', 'srs-review-session-ledger.js', 'srs-review-service-v2.js', 'exam-vocabulary-importer.js', 'exam-vocabulary-context-matcher.js', 'legacy-vocabulary-reassessment.js', 'legacy-vocabulary-migration.js', 'vocabulary-service.js', 'index.js'].forEach((file) => {
       const sourcePath = path.join(repoRoot, 'src', 'services', 'vocabulary', file);
       if (fs.existsSync(sourcePath)) {
         fs.writeFileSync(path.join(tempVocabulary, file.replace(/\.js$/, '.mjs')), rewriteSource(fs.readFileSync(sourcePath, 'utf8')));
@@ -747,7 +747,7 @@ async function main() {
       jobId: 'job-1',
       payload: { template: createTemplate(['target-1']), model: 'gemini-annotation-test', apiKey: 'SECRET-RUN-ONLY' },
     }]);
-    assert.deepEqual(imported, [createResult(['target-1'])]);
+    assert.deepEqual(imported, [{ ...createResult(['target-1']), audioKey: 'audio-1' }]);
     assert.deepEqual(importOptions, [{ replaceExisting: false }]);
     assert.equal(storage.getItem('annotationBackfillAi.model'), 'gemini-annotation-test');
     assert.equal(storage.getItem('annotationBackfillAi.apiKey'), null);
@@ -836,7 +836,7 @@ async function main() {
     assert.equal(summary.records[0].itemCount, 2);
     await controller.run({ model: 'gemini-history-model', apiKey: 'SECRET-RUN-ONLY' });
     assert.deepEqual(calls, [], 'fully covered saved result from the selected model should be imported without calling Gemini');
-    assert.deepEqual(imported, [cached]);
+    assert.deepEqual(imported, [{ ...cached, audioKey: 'audio-1' }]);
     assert.ok(notices.some((notice) => notice.type === 'success' && /未调用/.test(notice.message)));
     assert.match(controller.getStatusSnapshot().modelProvenance.finalSubmittedState, /未提交/);
     assert.match(controller.getStatusSnapshot().modelProvenance.reuseText, /复用已有结果/);
@@ -930,7 +930,7 @@ async function main() {
     assert.equal(typeof controller.importSavedBackfillRun, 'function');
     await controller.importSavedBackfillRun('old-run');
     assert.deepEqual(runResultCalls, [{ jobId: 'job-1', runId: 'old-run' }]);
-    assert.deepEqual(imported, [oldResult]);
+    assert.deepEqual(imported, [{ ...oldResult, audioKey: 'audio-1' }]);
     assert.deepEqual(calls, [], 'selecting a saved explanation tab should not call Gemini');
     assert.equal(controller.getStatusSnapshot().annotationSummary.selectedRunId, 'old-run');
     assert.equal(controller.getStatusSnapshot().annotationSummary.records[1].current, true);
@@ -1056,7 +1056,7 @@ async function main() {
     assert.equal(calls[0].payload.model, 'gemini-new-model');
     assert.deepEqual(calls[0].payload.template.items.map((item) => item.targetId), ['target-1', 'target-2']);
     assert.equal(calls[0].payload.mergeWithLatest, undefined);
-    assert.deepEqual(imported, [regenerated]);
+    assert.deepEqual(imported, [{ ...regenerated, audioKey: 'audio-1' }]);
   }
 
   {
@@ -1145,7 +1145,7 @@ async function main() {
     await controller.run({ model: 'gemini-selected-model', apiKey: 'SECRET-RUN-ONLY' });
     assert.deepEqual(runResultCalls, [{ jobId: 'job-1', runId: 'selected-model-run' }]);
     assert.deepEqual(calls, [], 'existing explanations for the selected model should not be sent again');
-    assert.deepEqual(imported, [selectedModelResult]);
+    assert.deepEqual(imported, [{ ...selectedModelResult, audioKey: 'audio-1' }]);
   }
 
   {
@@ -1182,7 +1182,7 @@ async function main() {
     assert.equal(confirmMessages.length, 1);
     assert.match(confirmMessages[0], /已有 1 个/);
     assert.match(confirmMessages[0], /新增 1 个/);
-    assert.deepEqual(imported, [cached], 'existing explanations should still be restored before cancellation');
+    assert.deepEqual(imported, [{ ...cached, audioKey: 'audio-1' }], 'existing explanations should still be restored before cancellation');
     assert.deepEqual(calls, [], 'canceling the confirmation should avoid Gemini');
   }
 
@@ -1212,7 +1212,7 @@ async function main() {
       },
     });
     await controller.run({ model: 'gemini-2.5-flash', apiKey: 'SECRET-RUN-ONLY' });
-    assert.deepEqual(imported[0], cached);
+    assert.deepEqual(imported[0], { ...cached, audioKey: 'audio-1' });
     assert.equal(calls.length, 1);
     assert.deepEqual(calls[0].payload.template.items.map((item) => item.targetId), ['target-3']);
     assert.equal(calls[0].payload.mergeWithLatest, true);

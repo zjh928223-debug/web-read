@@ -78,7 +78,6 @@ export function createSessionAnnotationRuntime(deps = {}) {
     });
     const buildSyntheticAnnotationTargetFromEncodedId = annotationMarksRuntime.buildSyntheticAnnotationTargetFromEncodedId;
     const normalizeAnnotationMark = annotationMarksRuntime.normalizeAnnotationMark;
-    const rebuildMarksFromAnnotationItems = annotationMarksRuntime.rebuildMarksFromAnnotationItems;
 
     const annotationLightweightIoRuntime = createSessionAnnotationLightweightIoRuntime({
         state,
@@ -98,7 +97,6 @@ export function createSessionAnnotationRuntime(deps = {}) {
         getAnnotationGenerationStorage,
         getAnnotationGenerationScope,
         refreshGeneratedAnnotationIndexForCurrentDocument,
-        rebuildMarksFromAnnotationItems,
         syncAnnotationGenerationEntryStatus,
         showToast: globals.showToast
     });

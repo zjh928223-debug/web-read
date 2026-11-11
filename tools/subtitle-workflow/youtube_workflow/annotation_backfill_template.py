@@ -21,9 +21,12 @@ SRS_MEANING_REFINEMENT_SOURCE = "article-srs-meaning-refinement"
 SRS_MEANING_REFINEMENT_PROMPT = """
 You will receive a JSON object for SRS meaning refinement.
 Return only valid JSON in this exact shape:
-{"items":[{"targetId":"...","simpleMeaning":"..."}]}
+{"items":[{"targetId":"...","simpleMeaning":"...","phonetic":"/.../"}]}
 
 For each item, keep targetId unchanged and generate a very short Chinese simpleMeaning.
+If preserveSimpleMeaning is true, copy currentSimpleMeaning exactly without rewriting it.
+For a word with requestPhonetic=true, also return American English IPA for markedText as written, including inflection endings.
+For phrases, requestPhonetic=false, or uncertain pronunciations, return an empty phonetic string. Do not use respelling.
 simpleMeaning is the short Chinese lexical gloss of markedText/boundary as written, not the named entity, concrete referent, or explanation object that the expression points to in the article.
 Use sentence, localContext, and contextualExplanation only to choose the expression's sense. Do not directly compress contextualExplanation into the answer.
 Even when contextualExplanation explicitly identifies a concrete entity, never substitute that entity for markedText/boundary unless the entity name is explicitly present in markedText/boundary itself.
@@ -192,12 +195,16 @@ def normalize_annotation_backfill_retry_delay(value) -> float:
 def is_transient_annotation_backfill_error(exc: Exception) -> bool:
     detail = str(exc or "").lower()
     return (
-        "503" in detail
+        isinstance(exc, (TimeoutError, ConnectionError))
+        or "503" in detail
         or "429" in detail
         or "unavailable" in detail
         or "high demand" in detail
         or "rate limit" in detail
         or "temporarily" in detail
+        or "timed out" in detail
+        or "connection reset" in detail
+        or "gemini returned an empty response" in detail
     )
 
 

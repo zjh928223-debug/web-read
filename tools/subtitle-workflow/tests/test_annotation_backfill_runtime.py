@@ -35,6 +35,23 @@ class AnnotationBackfillRuntimeTests(unittest.TestCase):
             time.sleep(0.005)
         self.fail(f"operation did not reach {status}: {current}")
 
+    def test_repaired_annotation_response_completes_and_preserves_explanation(self):
+        raw = '''{"items": [{
+          "targetId": "appeared", "boundary": "appeared", "type": "word", "meaning": "出现",
+-         "memoryHint": "指UI元素的“浮现”或“加载显示”。"
+        }]}'''
+        with tempfile.TemporaryDirectory() as temporary:
+            output_dir = Path(temporary)
+            runtime = self.make_runtime(output_dir, lambda *args, **kwargs: raw)
+            try:
+                operation = runtime.start("job", {"template": {"items": [{"targetId": "appeared"}]}})
+                completed = self.wait_status(runtime, operation, "ready")
+                saved = json.loads((output_dir / '_workflow/annotation-backfill/latest-result.json').read_text(encoding='utf-8'))
+                self.assertEqual(saved, completed['response']['result'])
+                self.assertEqual(saved['items'][0]['memoryHint'], '指UI元素的“浮现”或“加载显示”。')
+            finally:
+                runtime.close()
+
     def test_cancel_holds_the_model_slot_until_provider_returns_and_close_joins_threads(self):
         before_threads = set(threading.enumerate())
         first_started = threading.Event()
@@ -48,7 +65,7 @@ class AnnotationBackfillRuntimeTests(unittest.TestCase):
                 first_release.wait(2)
             elif target == "second":
                 second_started.set()
-            return json.dumps({"items": payload["items"]})
+            return json.dumps({"items": [dict(row, boundary=row["targetId"], type="word", meaning="意思", memoryHint="提示") for row in payload["items"]]})
 
         with tempfile.TemporaryDirectory() as temporary:
             runtime = self.make_runtime(Path(temporary), requester)
@@ -70,7 +87,7 @@ class AnnotationBackfillRuntimeTests(unittest.TestCase):
                 self.assertFalse(second_started.wait(0.05), "cancellation released a still-running provider slot")
                 first_release.set()
                 completed = self.wait_status(runtime, second, "ready")
-                self.assertEqual(completed["result"]["items"], [{"targetId": "second"}])
+                self.assertEqual(completed["result"]["items"][0]["targetId"], "second")
             finally:
                 first_release.set()
                 runtime.close()
@@ -87,7 +104,7 @@ class AnnotationBackfillRuntimeTests(unittest.TestCase):
         def requester(cache_dir, model, prompt, payload, **kwargs):
             started.set()
             release.wait(2)
-            return json.dumps({"items": payload["items"]})
+            return json.dumps({"items": [dict(row, boundary=row["targetId"], type="word", meaning="意思", memoryHint="提示") for row in payload["items"]]})
 
         with tempfile.TemporaryDirectory() as temporary:
             runtime = self.make_runtime(Path(temporary), requester)

@@ -27,11 +27,9 @@ export function useWorkflowLibrary({
   const completionSignal = ref(false)
   const visibleCompletedJobIds = ref([])
   const repairStates = new Map()
-  const completedTaskTimers = new Map()
   const pollingRestartTimers = new Set()
   let jobPollingScheduler = null
   let workflowSnapshotFlight = null
-  let completionSignalTimer = 0
   let libraryRetryTimer = 0
   let libraryRetryCount = 0
   let disposed = false
@@ -167,15 +165,7 @@ export function useWorkflowLibrary({
     else queueJobs.value.push(fresh)
     if (fresh.status === 'ready' && previous && previous.status !== 'ready') {
       completionSignal.value = true
-      visibleCompletedJobIds.value = [...new Set([...visibleCompletedJobIds.value, fresh.jobId])]
-      const previousTaskTimer = completedTaskTimers.get(fresh.jobId)
-      if (previousTaskTimer) window.clearTimeout(previousTaskTimer)
-      completedTaskTimers.set(fresh.jobId, window.setTimeout(() => {
-        visibleCompletedJobIds.value = visibleCompletedJobIds.value.filter((jobId) => jobId !== fresh.jobId)
-        completedTaskTimers.delete(fresh.jobId)
-      }, 5000))
-      if (completionSignalTimer) window.clearTimeout(completionSignalTimer)
-      completionSignalTimer = window.setTimeout(() => { completionSignal.value = false }, 5000)
+      visibleCompletedJobIds.value = [fresh.jobId, ...visibleCompletedJobIds.value.filter((id) => id !== fresh.jobId)]
       refreshLibrary()
     }
     if (terminalStatuses.has(fresh.status) && (!previous || previous.status !== fresh.status)) {
@@ -246,6 +236,7 @@ export function useWorkflowLibrary({
   }
 
   function removeLibraryRecord(jobId) {
+    acknowledgeCompletion(jobId)
     recentJobs.value = recentJobs.value.filter(item => item.jobId !== jobId)
     removeQueueJobs([jobId])
   }
@@ -254,13 +245,15 @@ export function useWorkflowLibrary({
     queueJobs.value = queueJobs.value.filter(job => job.status !== 'failed')
   }
 
+  function acknowledgeCompletion(jobId) {
+    visibleCompletedJobIds.value = visibleCompletedJobIds.value.filter((id) => id !== jobId)
+    completionSignal.value = visibleCompletedJobIds.value.length > 0
+  }
+
   function dispose() {
     if (disposed) return
     disposed = true
     resetLibraryRetry()
-    if (completionSignalTimer) window.clearTimeout(completionSignalTimer)
-    completedTaskTimers.forEach(timer => window.clearTimeout(timer))
-    completedTaskTimers.clear()
     pollingRestartTimers.forEach(timer => window.clearTimeout(timer))
     pollingRestartTimers.clear()
     jobPollingScheduler?.dispose()
@@ -273,6 +266,6 @@ export function useWorkflowLibrary({
     refreshQueue, requestWorkflowSnapshot, refreshLibrary, refreshRecent, refreshJob,
     setLibraryTimeScope, loadMoreLibrary, resetLibraryRetry, updateJob,
     startPolling, stopPolling, mergeRecentReaderItem, recordMaterialRepair,
-    clearMaterialRepairState, removeQueueJobs, removeLibraryRecord, removeFailedJobs, dispose,
+    clearMaterialRepairState, removeQueueJobs, removeLibraryRecord, removeFailedJobs, acknowledgeCompletion, dispose,
   })
 }

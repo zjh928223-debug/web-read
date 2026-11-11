@@ -20,7 +20,7 @@ export const buttonVariants = cva(
       },
       size: {
         default: 'rw:h-9 rw:px-4 rw:py-2 rw:has-[>svg]:px-3',
-        reader: 'rw:h-9 rw:min-h-9 rw:min-w-16 rw:px-3.5 rw:py-0 rw:text-[15px] rw:leading-[22px]',
+        reader: 'rw:h-7 rw:min-h-7 rw:min-w-12 rw:px-3.5 rw:py-0 rw:text-[13px] rw:font-normal rw:leading-[18px] rw:tracking-[0.06em]',
         xs: 'rw:h-6 rw:gap-1 rw:rounded-md rw:px-2 rw:text-xs rw:has-[>svg]:px-1.5 rw:[&_svg:not([class*="size-"])]:size-3',
         sm: 'rw:h-8 rw:rounded-md rw:gap-1.5 rw:px-3 rw:has-[>svg]:px-2.5',
         lg: 'rw:h-10 rw:px-6 rw:has-[>svg]:px-4',

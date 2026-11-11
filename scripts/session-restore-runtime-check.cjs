@@ -206,6 +206,15 @@ async function main() {
   assert.equal(committedDiagnostics.at(-1).payload.source, 'committed');
   assert.equal(committedDiagnostics.at(-1).payload.revision, committedSession.revision);
 
+  committedSession.audioMeta = { name: 'article.audio', sourceType: 'text-only', streamUrl: '' };
+  committedAudioPlayer.removeAttribute = function () { this.src = ''; };
+  committedCalls.length = 0;
+  const textResult = await committedRuntime.restoreSession();
+  assert.equal(textResult.status, 'restored');
+  assert.equal(committedAudioPlayer.src, '', 'text restore must clear previous media');
+  assert.equal(committedCalls.some(call => call[0] === 'legacyLoad' && call[1] === 'audio'), false,
+    'text restore must not attach a stale legacy audio blob');
+
   for (const failure of [
     {
       name: 'inconsistent result',

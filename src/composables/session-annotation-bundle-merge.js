@@ -84,7 +84,10 @@ export function buildManualLightweightImportedBundle(parsed, scope, storage, dep
       const resolved = resolveManualLightweightImportTarget(item, targetLookup, deps);
       const target = resolved.target;
       if (!target) {
-        if (resolved.reason === 'ambiguous-without-occurrenceIndex') {
+        if (resolved.reason === 'markedText-mismatch') {
+          markedTextMismatchTargetIds.push(item.targetId);
+          skippedItems.push(item.targetId);
+        } else if (resolved.reason === 'ambiguous-without-occurrenceIndex') {
           ambiguousItems.push(item.targetId || item.markedText || `item-${item.index}`);
         } else {
           missingTargetIds.push(item.targetId);
@@ -103,7 +106,7 @@ export function buildManualLightweightImportedBundle(parsed, scope, storage, dep
 
       const resolvedTargetId = normalizeAnnotationTextValue(target.id || item.targetId);
       const existing = nextByTargetId.get(resolvedTargetId) || nextByTargetId.get(item.targetId) || {};
-      const blockId = normalizeAnnotationTextValue(existing.blockId || target.sentenceId || 'manual-import');
+      const blockId = normalizeAnnotationTextValue(target.sentenceId || 'manual-import');
       const boundary = item.boundary
         || normalizeAnnotationTextValue(existing.boundary)
         || normalizeAnnotationTextValue(target.sentenceText || target.sentencePlainText || target.boundary || target.markedText);
@@ -128,13 +131,11 @@ export function buildManualLightweightImportedBundle(parsed, scope, storage, dep
         ...(sameMeaningInput ? {} : { simple_meaning: '' }),
         memoryHint: item.memoryHint || normalizeAnnotationTextValue(existing.memoryHint),
         sourceSentence: normalizeAnnotationTextValue(item.sourceSentence || existing.sourceSentence || boundary),
-        occurrenceKey: normalizeAnnotationTextValue(existing.occurrenceKey || target.occurrenceKey),
-        occurrenceGlobalStart: Number.isInteger(Number(existing.occurrenceGlobalStart))
-          ? Number(existing.occurrenceGlobalStart)
-          : (Number.isInteger(Number(target.occurrenceGlobalStart)) ? Number(target.occurrenceGlobalStart) : null),
-        occurrenceGlobalEnd: Number.isInteger(Number(existing.occurrenceGlobalEnd))
-          ? Number(existing.occurrenceGlobalEnd)
-          : (Number.isInteger(Number(target.occurrenceGlobalEnd)) ? Number(target.occurrenceGlobalEnd) : null),
+        occurrenceKey: normalizeAnnotationTextValue(target.occurrenceKey),
+        occurrenceGlobalStart: target.occurrenceGlobalStart != null && Number.isInteger(Number(target.occurrenceGlobalStart))
+          ? Number(target.occurrenceGlobalStart) : null,
+        occurrenceGlobalEnd: target.occurrenceGlobalEnd != null && Number.isInteger(Number(target.occurrenceGlobalEnd))
+          ? Number(target.occurrenceGlobalEnd) : null,
         source: 'manual-lightweight-import'
       });
       importedCount += 1;
